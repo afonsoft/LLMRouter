@@ -72,6 +72,7 @@ app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
+app.MapOAuthEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

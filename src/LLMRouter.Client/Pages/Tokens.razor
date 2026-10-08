@@ -1,0 +1,96 @@
+@page "/dashboard/tokens"
+@page "/dashboard/profile"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("tokens.title", "OAuth tokens")</h1>
+<p class="page-desc">@Loc.T("tokens.subtitle", "OAuth connections — start flows, monitor expiry, refresh")</p>
+
+<div class="card card-p" style="margin-bottom:14px">
+    <h3 class="bold" style="margin:0 0 8px">@Loc.T("tokens.start", "Start OAuth")</h3>
+    <div class="flex" style="gap:8px;align-items:end;flex-wrap:wrap">
+        <select class="input" style="width:240px" @bind="_provider">
+            @foreach (var p in _oauthProviders) { <option value="@p">@p</option> }
+        </select>
+        <button class="btn btn-primary btn-sm" @onclick="Start">@Loc.T("tokens.connect", "Connect")</button>
+    </div>
+    @if (_flow is not null)
+    {
+        <div class="card-in" style="margin-top:10px;padding:10px;background:var(--surface-2);border-radius:9px">
+            @if (_flow.Value.TryGetProperty("userCode", out var uc) && uc.ValueKind == JsonValueKind.String)
+            {
+                <p class="bold">@Loc.T("tokens.code", "Code"): <code>@uc.GetString()</code></p>
+            }
+            @if (_flow.Value.TryGetProperty("authUrl", out var au) && au.ValueKind == JsonValueKind.String)
+            {
+                <p><a href="@au.GetString()" target="_blank" rel="noopener">@au.GetString()</a></p>
+            }
+            <p class="muted">@_flowStatus <button class="btn btn-sm" @onclick="Poll">@Loc.T("tokens.check", "Check")</button></p>
+        </div>
+    }
+</div>
+
+@if (_conns is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    <table class="tbl">
+        <thead><tr><th>@Loc.T("common.name", "Name")</th><th>@Loc.T("common.provider", "Provider")</th><th>@Loc.T("tokens.status", "Status")</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var c in _conns)
+            {
+                var cid = c.GetProperty("id").GetString()!;
+                var status = c.GetProperty("status").GetString()!;
+                <tr>
+                    <td>@c.GetProperty("name").GetString()</td>
+                    <td>@c.GetProperty("provider").GetString()</td>
+                    <td><span class="badge @(status == "ok" ? "ok" : status == "expiring" ? "warn" : "err")">@status</span></td>
+                    <td><button class="btn btn-sm" @onclick="() => Refresh(cid)">@Loc.T("tokens.refresh", "Refresh")</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_conns.Length == 0) { <div class="card card-p"><p class="muted">@Loc.T("tokens.empty", "No OAuth connections yet")</p></div> }
+}
+
+@code {
+    private JsonElement[]? _conns;
+    private List<string> _oauthProviders = ["github", "claude", "gemini", "codex", "kiro", "gitlab-duo", "xai-oauth", "grok-cli", "kimi-coding", "cline", "clinepass", "qoder", "agy", "antigravity", "kilocode", "workbuddy", "openference", "ghe-copilot"];
+    private string _provider = "github";
+    private JsonElement? _flow;
+    private string _flowStatus = "";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/token-health");
+        _conns = r.TryGetProperty("connections", out var arr) ? arr.EnumerateArray().ToArray() : [];
+    }
+
+    private async Task Start()
+    {
+        var r = await Api.Raw.PostAsJsonAsync($"api/oauth/{_provider}/start", new { });
+        _flow = r.IsSuccessStatusCode
+            ? JsonSerializer.Deserialize<JsonElement>(await r.Content.ReadAsStringAsync())
+            : null;
+        _flowStatus = _flow is null ? $"error: {await r.Content.ReadAsStringAsync()}" : Loc.T("tokens.waiting", "Waiting for authorization…");
+    }
+
+    private async Task Poll()
+    {
+        if (_flow is null || !_flow.Value.TryGetProperty("poll", out var p)) return;
+        var r = await Api.GetAsync(p.GetString()!.TrimStart('/'));
+        var status = r.TryGetProperty("status", out var s) ? s.GetString() : "?";
+        _flowStatus = status;
+        if (status == "done") { _flow = null; await Load(); }
+    }
+
+    private async Task Refresh(string id)
+    {
+        await Api.PostAsync($"api/token-health/{id}/refresh", new { });
+        await Load();
+    }
+}

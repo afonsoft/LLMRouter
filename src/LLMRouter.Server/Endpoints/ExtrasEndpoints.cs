@@ -35,14 +35,29 @@ public static class ExtrasEndpoints
         });
 
         // ---- free tiers / free-provider rankings ----
+        // providers that are inherently free/local (upstream freeProviderRankings basis)
+        string[] LocalFree = ["ollama", "lmstudio", "llamacpp", "vllm", "jan", "localai", "custom", "custom-node"];
         g.MapGet("/free-tiers", async (LlmRouterDbContext db) =>
         {
             var conns = await db.ProviderConnections.ToListAsync();
-            var free = conns.Where(c =>
-                (c.Data?.ToString().Contains("\"free\":true", StringComparison.OrdinalIgnoreCase) ?? false)
-                || (c.Data?.ToString().Contains("free", StringComparison.OrdinalIgnoreCase) ?? false))
-                .Select(c => new { c.Id, c.Provider, c.IsActive }).ToList();
-            return Results.Json(new { providers = free }, JsonOpts);
+            var free = conns.Select(c =>
+            {
+                var isFree = LocalFree.Contains(c.Provider)
+                    || (c.Data.Contains("\"free\":true", StringComparison.OrdinalIgnoreCase)
+                        || c.Data.Contains("\"freeTier\":true", StringComparison.OrdinalIgnoreCase));
+                long? cooldownUntil = null;
+                try
+                {
+                    var d = JsonDocument.Parse(c.Data).RootElement;
+                    if (d.TryGetProperty("rateLimitedUntil", out var r)
+                        && DateTime.TryParse(r.GetString(), out var dt))
+                        cooldownUntil = new DateTimeOffset(dt).ToUnixTimeMilliseconds();
+                }
+                catch { }
+                return new { c.Id, c.Provider, c.IsActive, isFree, cooldownUntil };
+            }).Where(x => x.isFree).ToList();
+            var healthy = free.Count(x => x.IsActive && (x.cooldownUntil is null || x.cooldownUntil < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+            return Results.Json(new { providers = free, total = free.Count, healthy }, JsonOpts);
         });
 
         // ---- gamification + leaderboard ----
@@ -61,7 +76,11 @@ public static class ExtrasEndpoints
                 .GroupBy(r => r.Model ?? "unknown")
                 .Select(x => new { model = x.Key, requests = x.LongCount(), tokens = x.Sum(r => r.PromptTokens + r.CompletionTokens) })
                 .OrderByDescending(x => x.requests).Take(20).ToListAsync();
-            return Results.Json(new { leaderboard = rows }, JsonOpts);
+            var byProvider = await db.UsageHistory
+                .GroupBy(r => r.Provider ?? "unknown")
+                .Select(x => new { provider = x.Key, requests = x.LongCount(), tokens = x.Sum(r => r.PromptTokens + r.CompletionTokens), cost = x.Sum(r => r.Cost) })
+                .OrderByDescending(x => x.requests).Take(20).ToListAsync();
+            return Results.Json(new { leaderboard = rows, providers = byProvider }, JsonOpts);
         });
 
         // ---- chaos ----
@@ -146,48 +165,114 @@ public static class ExtrasEndpoints
             return Results.Json(new { ok = true }, JsonOpts);
         });
 
-        // ---- batches (sequential chat jobs) ----
-        g.MapPost("/batches", async (LlmRouterDbContext db, HttpContext ctx, IHttpClientFactory hf) =>
+        // ---- batches (sequential chat jobs with lifecycle) ----
+        g.MapPost("/batches", async (LlmRouterDbContext db, HttpContext ctx, IServiceScopeFactory scopeFactory) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var items = b.GetProperty("requests").EnumerateArray().Select(x => x.Clone()).ToList();
+            var items = b.GetProperty("requests").EnumerateArray()
+                .Select(x => x.GetRawText()).ToList();
             var id = Guid.NewGuid().ToString("N")[..10];
-            var row = await db.Kv.FindAsync("batches", "jobs")
-                ?? db.Kv.Add(new KvEntry { Scope = "batches", Key = "jobs", Value = "[]" }).Entity;
-            var jobs = JsonDocument.Parse(row.Value).RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
-            jobs.Add(JsonDocument.Parse(JsonSerializer.Serialize(new
-            { id, createdAt = DateTime.UtcNow, status = "queued", total = items.Count, done = 0 })).RootElement.Clone());
-            row.Value = JsonSerializer.Serialize(jobs);
+            var auth = ctx.Request.Headers.Authorization.ToString();
+            var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+
+            db.Kv.Add(new KvEntry { Scope = "batches", Key = id, Value = JsonSerializer.Serialize(new
+            { id, createdAt = DateTime.UtcNow, status = "queued", total = items.Count, done = 0, results = Array.Empty<object>() }) });
             await db.SaveChangesAsync();
 
-            var auth = ctx.Request.Headers.Authorization.ToString();
-            var http = hf.CreateClient("local");
-            http.BaseAddress = new Uri($"{ctx.Request.Scheme}://{ctx.Request.Host}");
             _ = Task.Run(async () =>
             {
                 var results = new List<object>();
-                foreach (var item in items)
+                try
                 {
-                    try
+                    await using var sc = scopeFactory.CreateAsyncScope();
+                    var db2 = sc.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
+                    var hf2 = sc.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+                    var http = hf2.CreateClient();
+                    http.Timeout = TimeSpan.FromMinutes(10);
+                    http.BaseAddress = new Uri(baseUrl);
+                    await UpdateJob(db2, id, "running", items.Count, 0, results);
+                    var i = 0;
+                    foreach (var item in items)
                     {
-                        var r = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
-                        if (auth != "") r.Headers.TryAddWithoutValidation("Authorization", auth);
-                        r.Content = JsonContent.Create(item);
-                        var resp = await http.SendAsync(r);
-                        results.Add(new { status = (int)resp.StatusCode });
+                        try
+                        {
+                            var r = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
+                            if (auth != "") r.Headers.TryAddWithoutValidation("Authorization", auth);
+                            r.Content = new StringContent(item, System.Text.Encoding.UTF8, "application/json");
+                            var resp = await http.SendAsync(r);
+                            var body = await resp.Content.ReadAsStringAsync();
+                            results.Add(new { index = i, status = (int)resp.StatusCode,
+                                body = body[..Math.Min(2000, body.Length)] });
+                        }
+                        catch (Exception ex) { results.Add(new { index = i, status = 0, error = ex.Message }); }
+                        i++;
+                        await UpdateJob(db2, id, "running", items.Count, i, results);
                     }
-                    catch { results.Add(new { status = 0 }); }
+                    await UpdateJob(db2, id, "done", items.Count, items.Count, results);
                 }
-                // mark done — best effort with a fresh scope-free db is not available here;
-                // completion state is derived client-side via results count.
+                catch { /* worker died; job stays at last persisted state */ }
             });
             return Results.Json(new { id, total = items.Count }, JsonOpts);
         });
+
+        static async Task UpdateJob(LlmRouterDbContext db, string id, string status,
+            int total, int done, List<object> results)
+        {
+            var row = await db.Kv.FindAsync("batches", id);
+            if (row is null) return;
+            row.Value = JsonSerializer.Serialize(new
+            { id, status, total, done, results = results.TakeLast(200) });
+            await db.SaveChangesAsync();
+        }
+
         g.MapGet("/batches", async (LlmRouterDbContext db) =>
         {
-            var raw = (await db.Kv.FindAsync("batches", "jobs"))?.Value;
-            return Results.Json(new { batches = raw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(raw).RootElement.Clone() }, JsonOpts);
+            var rows = await db.Kv.Where(k => k.Scope == "batches").ToListAsync();
+            return Results.Json(new
+            {
+                batches = rows.Select(r => JsonDocument.Parse(r.Value).RootElement.Clone())
+                    .OrderByDescending(b => b.TryGetProperty("createdAt", out var c) ? c.GetString() : "")
+            }, JsonOpts);
         });
+
+        g.MapGet("/batches/{id}", async (LlmRouterDbContext db, string id) =>
+        {
+            var row = await db.Kv.FindAsync("batches", id);
+            return row is null ? Results.NotFound()
+                : Results.Json(JsonDocument.Parse(row.Value).RootElement.Clone(), JsonOpts);
+        });
+
+        // ---- plugins (bundled skills + mcp servers as installed plugins) ----
+        g.MapGet("/plugins", async (LlmRouterDbContext db) =>
+        {
+            var skillsRaw = (await db.Kv.FindAsync("skills", "disabled"))?.Value;
+            var mcpRaw = (await db.Kv.FindAsync("mcpServers", "list"))?.Value;
+            return Results.Json(new
+            {
+                skills = new[] { "token-saver", "combo-builder" },
+                disabledSkills = skillsRaw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(skillsRaw).RootElement.Clone(),
+                mcpServers = mcpRaw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(mcpRaw).RootElement.Clone(),
+            }, JsonOpts);
+        });
+
+        // ---- search-tools index ----
+        g.MapGet("/search-tools", () => Results.Json(new
+        {
+            tools = new object[]
+            {
+                new { name = "chat", endpoint = "POST /v1/chat/completions", desc = "Chat completions via combos/providers" },
+                new { name = "messages", endpoint = "POST /v1/messages", desc = "Anthropic-format chat" },
+                new { name = "responses", endpoint = "POST /v1/responses", desc = "Responses API" },
+                new { name = "embeddings", endpoint = "POST /v1/embeddings", desc = "Text embeddings" },
+                new { name = "images", endpoint = "POST /v1/images/generations", desc = "Image generation" },
+                new { name = "audio.speech", endpoint = "POST /v1/audio/speech", desc = "TTS" },
+                new { name = "audio.transcriptions", endpoint = "POST /v1/audio/transcriptions", desc = "STT" },
+                new { name = "search", endpoint = "POST /v1/search", desc = "Provider search" },
+                new { name = "web.fetch", endpoint = "POST /v1/web/fetch", desc = "URL fetch" },
+                new { name = "mcp", endpoint = "POST /mcp", desc = "MCP JSON-RPC server" },
+                new { name = "a2a", endpoint = "POST /a2a", desc = "Agent-to-agent tasks" },
+            },
+        }, JsonOpts));
 
         // ---- audit ----
         g.MapGet("/audit", async (LlmRouterDbContext db) =>

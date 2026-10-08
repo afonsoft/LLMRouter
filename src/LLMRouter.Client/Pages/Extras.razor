@@ -160,6 +160,37 @@ else if (section is "audit")
     }
     </tbody></table>
 }
+else if (section is "plugins")
+{
+    <h3 class="bold">Bundled skills</h3>
+    @if (_plugins is not null)
+    {
+        <div class="flex" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">
+            @foreach (var sk in _plugins.Value.GetProperty("skills").EnumerateArray())
+            {
+                <span class="badge ok">@sk.GetString()</span>
+            }
+        </div>
+        <h3 class="bold">MCP servers</h3>
+        @foreach (var m in _plugins.Value.GetProperty("mcpServers").EnumerateArray())
+        {
+            <div class="card card-p" style="margin-bottom:6px"><code class="xs">@m.ToString()</code></div>
+        }
+    }
+}
+else if (section is "search-tools")
+{
+    <table class="tbl"><thead><tr><th>Tool</th><th>Endpoint</th><th></th></tr></thead>
+    <tbody>
+    @if (_tools is not null)
+    {
+        @foreach (var t in _tools)
+        {
+            <tr><td class="bold">@t.GetProperty("name").GetString()</td><td class="mono xs">@t.GetProperty("endpoint").GetString()</td><td class="muted xs">@t.GetProperty("desc").GetString()</td></tr>
+        }
+    }
+    </tbody></table>
+}
 else
 {
     <p class="muted">@Loc.T("extras.none", "Nothing here yet — this page is reserved by the spec.")</p>
@@ -167,8 +198,8 @@ else
 
 @code {
     private string _title = "", _subtitle = "";
-    private JsonElement[]? _discovered, _board, _free, _memory, _hooks, _batches, _audit;
-    private JsonElement? _gam;
+    private JsonElement[]? _discovered, _board, _free, _memory, _hooks, _batches, _audit, _tools;
+    private JsonElement? _gam, _plugins;
     private int _errorPct, _latencyMs;
     private string _memContent = "", _memTags = "", _memQ = "", _whUrl = "", _whEvents = "*";
 
@@ -200,6 +231,12 @@ else
                 break;
             case "audit":
                 _audit = (await Api.GetAsync("api/audit")).GetProperty("events").EnumerateArray().ToArray();
+                break;
+            case "plugins":
+                _plugins = await Api.GetAsync("api/plugins");
+                break;
+            case "search-tools":
+                _tools = (await Api.GetAsync("api/search-tools")).GetProperty("tools").EnumerateArray().ToArray();
                 break;
         }
     }

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LLMRouter.Server;
 
-/// <summary>SPEC-016: `llmrouter reset-password <pw>` — writes the PBKDF2 hash into the settings row.</summary>
+/// <summary>SPEC-016: llmrouter reset-password verb — writes the PBKDF2 hash into the settings row.</summary>
 public static class Cli
 {
     private const int Iterations = 100_000;

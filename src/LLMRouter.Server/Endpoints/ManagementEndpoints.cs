@@ -225,13 +225,20 @@ public static class ManagementEndpoints
             var connBase = c.Data.Contains("baseUrl")
                 ? JsonDocument.Parse(c.Data).RootElement.GetProperty("baseUrl").GetString() : null;
             var baseUrl = (connBase ?? p.BaseUrl ?? "https://api.openai.com").TrimEnd('/');
-            var modelsUrl = r.GetModelsUrl(p) is { } mu
-                ? (mu.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? mu : $"{baseUrl}/{mu.TrimStart('/')}")
-                : $"{baseUrl}/v1/models";
-            var secret = Core.Gateway.GatewayEngine.ConnectionSecret(c);
+            var rawModels = r.GetModelsUrl(p);
+            // connection-level baseUrl override wins over the provider's default
+            var modelsUrl = connBase is not null
+                ? $"{baseUrl}/{(rawModels is { } rp && !rp.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? rp.TrimStart('/') : "v1/models")}"
+                : rawModels is { } mu
+                    ? (mu.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? mu : $"{baseUrl}/{mu.TrimStart('/')}")
+                    : $"{baseUrl}/v1/models";
             var req = new HttpRequestMessage(HttpMethod.Get, modelsUrl);
-            if (secret is not null)
-                req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {secret}");
+            if (Core.Gateway.GatewayEngine.ConnectionSecret(c) is { } secret)
+            {
+                var authHeaders = new Dictionary<string, string>();
+                Core.Gateway.GatewayEngine.ApplyAuth(authHeaders, p, secret);
+                foreach (var kv in authHeaders) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            }
             var sw = System.Diagnostics.Stopwatch.StartNew();
             string status; string? errBody = null; int httpStatus = 0;
             try
@@ -302,8 +309,13 @@ public static class ManagementEndpoints
         });
 
         // ---- combos ----
+        static object ComboDto(Combo c) => new
+        {
+            c.Id, c.Name, c.Kind, c.CreatedAt, c.UpdatedAt,
+            models = JsonDocument.Parse(c.Models).RootElement.Clone(),
+        };
         g.MapGet("/combos", async (LlmRouterDbContext db) =>
-            Results.Json(new { combos = await db.Combos.ToListAsync() }, JsonOpts));
+            Results.Json(new { combos = (await db.Combos.ToListAsync()).Select(ComboDto) }, JsonOpts));
 
         g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db) =>
         {

@@ -129,16 +129,37 @@ public sealed class GatewayEngine(
             foreach (var kv in extra) headers[kv.Key] = kv.Value;
 
         var secret = ConnectionSecret(t.Connection);
-        if (secret is not null)
-        {
-            var header = t.Provider.AuthHeader ?? "authorization";
-            var value = t.Provider.AuthPrefix is { Length: > 0 } p ? $"{p}{secret}" : secret;
-            if (header.Equals("authorization", StringComparison.OrdinalIgnoreCase) &&
-                t.Provider.AuthPrefix is null && !value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                value = $"Bearer {value}";
-            headers[header] = value;
-        }
+        if (secret is not null) ApplyAuth(headers, t.Provider, secret);
         return (url, headers);
+    }
+
+    /// <summary>
+    /// providers.json stores an auth *scheme* in authHeader for most providers
+    /// ("bearer", "cookie", "none") rather than a literal header name — map them.
+    /// </summary>
+    public static void ApplyAuth(Dictionary<string, string> headers, ProviderEntry provider, string secret)
+    {
+        var h = provider.AuthHeader ?? "authorization";
+        var value = provider.AuthPrefix is { Length: > 0 } p ? $"{p}{secret}" : secret;
+        switch (h.ToLowerInvariant())
+        {
+            case "bearer":
+                headers["Authorization"] = value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    ? value : $"Bearer {value}";
+                break;
+            case "cookie":
+                headers["Cookie"] = value;
+                break;
+            case "none":
+                break;
+            default:
+                if (h.Equals("authorization", StringComparison.OrdinalIgnoreCase)
+                    && provider.AuthPrefix is null
+                    && !value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    value = $"Bearer {value}";
+                headers[h] = value;
+                break;
+        }
     }
 
     /// <summary>Extract the credential stored on a connection (apiKey / accessToken / token).</summary>
@@ -193,6 +214,7 @@ public sealed class GatewayEngine(
         });
         db.RequestDetails.Add(new RequestDetail
         {
+            Id = Guid.NewGuid().ToString("N"),
             Timestamp = now,
             Provider = provider,
             Model = model,

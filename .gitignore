@@ -1,0 +1,17 @@
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+.vscode/
+*.db
+*.db-shm
+*.db-wal
+node_modules/
+dist/
+.publish/
+TestResults/
+coverage*/
+*.nupkg
+.DS_Store

@@ -1,16 +1,59 @@
 @page "/dashboard/settings"
-@page "/dashboard/settings/general"
+@page "/dashboard/settings/{Section}"
 @inject Api Api
 @inject Loc Loc
 @inject ThemeService Theme
 @inject AuthState Auth
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <h1 class="page-title">@Loc.T("settings.title", "Settings")</h1>
 <p class="page-desc">@Loc.T("settings.subtitle", "Router configuration")</p>
 
-<div class="grid grid-2 mt-6">
-    <div class="card card-p">
-        <h3 class="bold" style="margin:0 0 14px">@Loc.T("settings.appearance", "Appearance")</h3>
+<div class="tabs" style="flex-wrap:wrap">
+    @foreach (var s in Sections)
+    {
+        <a class="tab @(Current == s.Id ? "on" : "")" href="/dashboard/settings/@s.Id">@Loc.T($"settings.sec.{s.Id}", s.Label)</a>
+    }
+</div>
+
+@if (_data is null)
+{
+    <p class="muted">…</p>
+}
+else if (Current == "general")
+{
+    <div class="grid grid-2">
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">General</h3>
+            <label class="lbl">Base URL</label>
+            <div class="mono sm card" style="padding:10px">@_baseUrl</div>
+            <div class="mt-4">
+                <label class="lbl">@Loc.T("settings.language", "Language")</label>
+                <select class="input" value="@Loc.Lang" @onchange='async e => await Loc.SetAsync(e.Value?.ToString() ?? "en")'>
+                    <option value="en">English</option>
+                    <option value="pt-BR">Português (BR)</option>
+                    <option value="es">Español</option>
+                </select>
+            </div>
+            <div class="mt-4">
+                <label class="lbl">@Loc.T("settings.changePassword", "Change admin password")</label>
+                <input class="input" type="password" @bind="_newPw" placeholder="New password" />
+                <button class="btn btn-sm mt-2" @onclick="ChangePw" disabled="@(string.IsNullOrEmpty(_newPw))">@Loc.T("common.save", "Save")</button>
+                @if (_pwMsg is not null) { <span class="sm muted" style="margin-left:8px">@_pwMsg</span> }
+            </div>
+        </div>
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">Runtime</h3>
+            <div class="sm text2">DB: <span class="mono">@_dbPath</span></div>
+            <div class="sm text2 mt-2">Size: @((_dbSize / 1024.0).ToString("0.#")) KB</div>
+            <p class="sm muted mt-4">Port/host: env vars <code>ASPNETCORE_URLS</code>, <code>LLMROUTER_DB_PATH</code>.</p>
+        </div>
+    </div>
+}
+else if (Current == "appearance")
+{
+    <div class="card card-p" style="max-width:520px">
         <label class="lbl">@Loc.T("settings.theme", "Theme")</label>
         <select class="input" value="@Theme.Theme" @onchange='async e => await Theme.SetAsync(e.Value?.ToString() ?? "system")'>
             <option value="light">Light</option>
@@ -18,38 +61,325 @@
             <option value="system">System</option>
         </select>
         <div class="mt-4">
-            <label class="lbl">@Loc.T("settings.language", "Language")</label>
-            <select class="input" value="@Loc.Lang" @onchange='async e => await Loc.SetAsync(e.Value?.ToString() ?? "en")'>
-                <option value="en">English</option>
-                <option value="pt-BR">Português (BR)</option>
-                <option value="es">Español</option>
+            <label class="lbl">Accent</label>
+            <div class="flex" style="gap:8px">
+                @foreach (var a in Accents)
+                {
+                    <button class="btn btn-sm" style="@(GetS("accent") == a ? "outline:2px solid var(--primary)" : "")" @onclick='() => SetS("accent", a)' ><span class="dot" style="background:@a"></span>@a</button>
+                }
+            </div>
+        </div>
+        <div class="mt-4">
+            <label class="lbl">Density</label>
+            <select class="input" value="@GetS("density", "comfortable")" @onchange='e => SetS("density", e.Value?.ToString())'>
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
             </select>
         </div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
     </div>
-
-    <div class="card card-p">
-        <h3 class="bold" style="margin:0 0 14px">@Loc.T("settings.security", "Security")</h3>
+}
+else if (Current == "ai")
+{
+    <div class="card card-p" style="max-width:520px">
+        <label class="lbl">Default model / combo</label>
+        <input class="input" value="@GetS("defaultModel")" @onchange='e => SetS("defaultModel", e.Value?.ToString())' placeholder="provider/model or combo name" />
+        <div class="mt-4"><label class="lbl">Default temperature</label>
+            <input class="input" type="number" step="0.1" min="0" max="2" value="@GetS("defaultTemperature")" @onchange='e => SetS("defaultTemperature", e.Value?.ToString())' /></div>
+        <div class="mt-4"><label class="lbl">Thinking level</label>
+            <select class="input" value="@GetS("thinkingLevel")" @onchange='e => SetS("thinkingLevel", e.Value?.ToString())'>
+                <option value="">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+            </select></div>
+        <div class="flex between mt-4">
+            <span class="sm">Auto-title new chats</span>
+            <input type="checkbox" checked="@GetB("autoTitle")" @onchange='e => SetB("autoTitle", (bool)(e.Value ?? false))' />
+        </div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+    </div>
+}
+else if (Current == "modality-bridge")
+{
+    <div class="card card-p" style="max-width:520px">
+        <div class="flex between">
+            <span class="sm">Bridge image input → text for non-vision models</span>
+            <input type="checkbox" checked="@GetB("modalityBridgeEnabled")" @onchange='e => SetB("modalityBridgeEnabled", (bool)(e.Value ?? false))' />
+        </div>
+        <div class="mt-4"><label class="lbl">Vision model (imageToText)</label>
+            <input class="input" value="@GetS("visionModel")" @onchange='e => SetS("visionModel", e.Value?.ToString())' placeholder="provider/model with vision" /></div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+    </div>
+}
+else if (Current == "routing")
+{
+    <div class="card card-p" style="max-width:560px">
+        <label class="lbl">Default combo strategy</label>
+        <select class="input" value="@GetS("defaultStrategy", "priority")" @onchange='e => SetS("defaultStrategy", e.Value?.ToString())'>
+            @foreach (var st in Strategies) { <option value="@st">@st</option> }
+        </select>
+        <div class="flex between mt-4">
+            <span class="sm">Capability auto-switch (image/tool requests → capable models)</span>
+            <input type="checkbox" checked="@GetB("capabilityAutoSwitch")" @onchange='e => SetB("capabilityAutoSwitch", (bool)(e.Value ?? false))' />
+        </div>
+        <div class="mt-4"><label class="lbl">Emergency fallback provider</label>
+            <input class="input" value="@GetS("emergencyFallback")" @onchange='e => SetS("emergencyFallback", e.Value?.ToString())' placeholder="provider id used when all else fails" /></div>
+        <div class="mt-4"><label class="lbl">Model aliases (JSON)</label>
+            <textarea class="input mono" rows="5" value="@GetS("modelAliasesJson")" @onchange='e => SetS("modelAliasesJson", e.Value?.ToString())' placeholder='{"gpt-5":"openai/gpt-4o"}'></textarea>
+            <p class="sm muted mt-2">Manage aliases interactively in <a href="/dashboard/combos">Combos → Aliases</a>.</p></div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+    </div>
+}
+else if (Current == "resilience")
+{
+    <div class="card card-p" style="max-width:520px">
+        <h3 class="bold" style="margin:0 0 14px">Cooldown / retries</h3>
+        <label class="lbl">Consecutive failures before cooldown</label>
+        <input class="input" type="number" min="1" value="@GetN("resilience", "failureThreshold", 3)" @onchange='e => SetN("resilience", "failureThreshold", int.TryParse(e.Value?.ToString(), out var v) ? v : 3)' />
+        <div class="grid grid-2 mt-4">
+            <div><label class="lbl">Base cooldown (s)</label>
+                <input class="input" type="number" min="1" value="@GetN("resilience", "cooldownBaseSeconds", 30)" @onchange='e => SetN("resilience", "cooldownBaseSeconds", double.TryParse(e.Value?.ToString(), out var v) ? v : 30)' /></div>
+            <div><label class="lbl">Max cooldown (s)</label>
+                <input class="input" type="number" min="1" value="@GetN("resilience", "cooldownMaxSeconds", 300)" @onchange='e => SetN("resilience", "cooldownMaxSeconds", double.TryParse(e.Value?.ToString(), out var v) ? v : 300)' /></div>
+        </div>
+        <div class="grid grid-2 mt-4">
+            <div><label class="lbl">Retries on 429</label>
+                <input class="input" type="number" min="0" value="@GetN("resilience", "retry429", 2)" @onchange='e => SetN("resilience", "retry429", int.TryParse(e.Value?.ToString(), out var v) ? v : 2)' /></div>
+            <div><label class="lbl">Retries on 5xx</label>
+                <input class="input" type="number" min="0" value="@GetN("resilience", "retry5xx", 2)" @onchange='e => SetN("resilience", "retry5xx", int.TryParse(e.Value?.ToString(), out var v) ? v : 2)' /></div>
+        </div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+        <p class="sm muted mt-2">Applies immediately to new requests. Active cooldowns: <a href="/dashboard/resilience/cooldowns">resilience/cooldowns</a>.</p>
+    </div>
+}
+else if (Current == "advanced")
+{
+    <div class="grid grid-2">
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">Logging & retention</h3>
+            <div class="flex between">
+                <span class="sm">Capture request details</span>
+                <input type="checkbox" checked="@GetB("requestDetailsCapture", true)" @onchange='e => SetB("requestDetailsCapture", (bool)(e.Value ?? true))' />
+            </div>
+            <div class="mt-4"><label class="lbl">Log retention (days)</label>
+                <input class="input" type="number" min="1" value="@GetN("logRetentionDays", 30)" @onchange='e => SetN("logRetentionDays", int.TryParse(e.Value?.ToString(), out var v) ? v : 30)' /></div>
+            <button class="btn btn-sm mt-2" @onclick="PruneNow">Prune now</button>
+            <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+        </div>
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">Export / import</h3>
+            <a class="btn btn-sm" href="api/settings/export" download="llmrouter-settings.json">Export settings JSON</a>
+            <div class="mt-4"><label class="lbl">Import JSON</label>
+                <textarea class="input mono" rows="4" @bind="_importJson" placeholder='{"resilience":{...}}'></textarea>
+                <button class="btn btn-sm mt-2" @onclick="Import" disabled="@(string.IsNullOrWhiteSpace(_importJson))">Import</button></div>
+            <h3 class="bold" style="margin:18px 0 10px;color:var(--danger,#dc2626)">Danger zone</h3>
+            <button class="btn btn-sm" style="color:var(--danger,#dc2626)" @onclick="ResetAll">Reset all settings</button>
+            @if (_advMsg is not null) { <p class="sm muted mt-2">@_advMsg</p> }
+        </div>
+    </div>
+}
+else if (Current == "security")
+{
+    <div class="card card-p" style="max-width:560px">
         <div class="flex between">
             <span class="sm text2">@Loc.T("settings.requireLogin", "Require login for dashboard")</span>
             <input type="checkbox" checked="@_requireLogin" @onchange="ToggleRequireLogin" />
         </div>
-        <div class="mt-4">
-            <label class="lbl">@Loc.T("settings.changePassword", "Change admin password")</label>
-            <input class="input" type="password" @bind="_newPw" placeholder="New password" />
-            <button class="btn btn-sm mt-2" @onclick="ChangePw" disabled="@(string.IsNullOrEmpty(_newPw))">@Loc.T("common.save", "Save")</button>
-            @if (_pwMsg is not null) { <span class="sm muted" style="margin-left:8px">@_pwMsg</span> }
-        </div>
+        <div class="mt-4"><label class="lbl">CORS allowed origins (comma separated)</label>
+            <input class="input" value="@GetS("corsOrigins")" @onchange='e => SetS("corsOrigins", e.Value?.ToString())' placeholder="https://app.example.com" /></div>
+        <div class="mt-4"><label class="lbl">Gateway rate limit (requests/min per key, 0 = off)</label>
+            <input class="input" type="number" min="0" value="@GetN("rateLimitRpm", 0)" @onchange='e => SetN("rateLimitRpm", int.TryParse(e.Value?.ToString(), out var v) ? v : 0)' /></div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+        <p class="sm muted mt-2">Gateway API keys: <a href="/dashboard/api-manager">API manager</a>.</p>
     </div>
-</div>
+}
+else if (Current == "access-tokens")
+{
+    <div class="card card-p" style="max-width:640px">
+        <div class="flex between" style="margin-bottom:12px">
+            <h3 class="bold" style="margin:0">Dashboard access tokens</h3>
+            <div class="flex" style="gap:8px">
+                <input class="input" style="width:180px" @bind="_tokName" placeholder="token name" />
+                <button class="btn btn-primary btn-sm" @onclick="CreateToken" disabled="@(string.IsNullOrWhiteSpace(_tokName))">Create</button>
+            </div>
+        </div>
+        @if (_newToken is not null)
+        {
+            <div class="card" style="padding:10px;margin-bottom:10px"><span class="sm muted">Copy now — shown once:</span> <span class="mono sm">@_newToken</span></div>
+        }
+        <table class="table">
+            <thead><tr><th>Name</th><th>Token</th><th>Created</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var t in Tokens())
+                {
+                    <tr>
+                        <td>@t.GetProperty("name").GetString()</td>
+                        <td class="mono sm">@(t.GetProperty("token").GetString()?[..12])…</td>
+                        <td class="sm text2">@t.GetProperty("createdAt").GetString()</td>
+                        <td><button class="btn btn-sm" @onclick='() => DelToken(t.GetProperty("id").GetString()!)'>Delete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else if (Current == "feature-flags")
+{
+    <div class="card card-p" style="max-width:640px">
+        <table class="table">
+            <thead><tr><th>Flag</th><th>Description</th><th>Enabled</th></tr></thead>
+            <tbody>
+                @foreach (var f in Flags)
+                {
+                    <tr>
+                        <td class="mono sm">@f.Id</td>
+                        <td class="sm text2">@f.Desc</td>
+                        <td><input type="checkbox" checked="@GetFlag(f.Id)" @onchange='e => SetFlag(f.Id, (bool)(e.Value ?? false))' /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+    </div>
+}
+else if (Current == "cache")
+{
+    <div class="card card-p" style="max-width:520px">
+        <div class="flex between"><span class="sm">Response cache</span>
+            <input type="checkbox" checked="@GetN("cache","enabled",0) == 1" @onchange='e => SetN("cache","enabled",(bool)(e.Value ?? false) ? 1 : 0)' /></div>
+        <div class="flex between mt-3"><span class="sm">Semantic cache (embedding similarity)</span>
+            <input type="checkbox" checked="@GetN("cache","semantic",0) == 1" @onchange='e => SetN("cache","semantic",(bool)(e.Value ?? false) ? 1 : 0)' /></div>
+        <div class="flex between mt-3"><span class="sm">Prompt cache (prefix reuse)</span>
+            <input type="checkbox" checked="@GetN("cache","prompt",0) == 1" @onchange='e => SetN("cache","prompt",(bool)(e.Value ?? false) ? 1 : 0)' /></div>
+        <div class="grid grid-2 mt-4">
+            <div><label class="lbl">TTL (seconds)</label>
+                <input class="input" type="number" min="0" value="@GetN("cache","ttlSeconds",3600)" @onchange='e => SetN("cache","ttlSeconds", int.TryParse(e.Value?.ToString(), out var v) ? v : 3600)' /></div>
+            <div><label class="lbl">Max entries</label>
+                <input class="input" type="number" min="0" value="@GetN("cache","maxEntries",1000)" @onchange='e => SetN("cache","maxEntries", int.TryParse(e.Value?.ToString(), out var v) ? v : 1000)' /></div>
+        </div>
+        <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+    </div>
+}
+else if (Current == "sidebar")
+{
+    <div class="card card-p" style="max-width:560px">
+        <h3 class="bold" style="margin:0 0 12px">Visible sections</h3>
+        @foreach (var sec in SidebarData.Sections)
+        {
+            <div class="flex between" style="padding:6px 0">
+                <span class="sm">@Loc.T($"sidebar.{sec.TitleKey}", sec.TitleFallback ?? sec.Id)</span>
+                <input type="checkbox" checked="@(!_hiddenSections.Contains(sec.Id))" @onchange='e => ToggleSection(sec.Id, (bool)(e.Value ?? true))' />
+            </div>
+        }
+        <button class="btn btn-primary btn-sm mt-4" @onclick="SaveSidebar">@Loc.T("common.save", "Save")</button>
+        <p class="sm muted mt-2">@Loc.T("settings.sidebarHint", "Aplica-se na próxima navegação/recarregamento.")</p>
+    </div>
+}
 
 @code {
+    [Parameter] public string? Section { get; set; }
+    private string Current => string.IsNullOrEmpty(Section) ? "general" : Section;
+
+    private static readonly (string Id, string Label)[] Sections =
+    [
+        ("general","General"), ("appearance","Appearance"), ("ai","AI"),
+        ("modality-bridge","Modality bridge"), ("routing","Routing"),
+        ("resilience","Resilience"), ("advanced","Advanced"), ("security","Security"),
+        ("access-tokens","Access tokens"), ("feature-flags","Feature flags"),
+        ("cache","Cache"), ("sidebar","Sidebar"),
+    ];
+    private static readonly string[] Accents = ["#e54d5e", "#6366f1", "#10b981", "#f59e0b", "#0ea5e9"];
+    private static readonly string[] Strategies = ["priority","round-robin","sticky-round-robin","least-used","random","cost-optimized","weighted","p2c","auto"];
+    private static readonly (string Id, string Desc)[] Flags =
+    [
+        ("responseCache","Cache identical chat requests"),
+        ("semanticCache","Similarity-based cache hits"),
+        ("fusionCombo","Parallel fan-out + judge synthesis"),
+        ("contextCompression","Compress long contexts before upstream"),
+        ("oauth","OAuth provider flows"),
+        ("mcp","MCP server integration"),
+        ("a2a","Agent-to-agent protocol endpoint"),
+        ("proxyPools","Outbound HTTP proxy pools"),
+        ("mitmInspector","Live request inspector"),
+        ("mediaProviders","Image/audio/video modalities"),
+    ];
+
+    private Dictionary<string, JsonElement>? _data;
     private bool _requireLogin = true;
     private string _newPw = "";
     private string? _pwMsg;
+    private string? _advMsg;
+    private string? _importJson;
+    private string _baseUrl = "";
+    private string _dbPath = "";
+    private long _dbSize;
+    private string _tokName = "";
+    private string? _newToken;
+    private HashSet<string> _hiddenSections = [];
 
     protected override async Task OnInitializedAsync()
     {
         _requireLogin = Auth.RequireLogin;
+        var s = await Api.GetAsync("api/settings");
+        if (s.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object)
+            _data = d.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone());
+        _data ??= [];
+        try
+        {
+            var ep = await Api.GetAsync("api/endpoint");
+            if (ep.TryGetProperty("baseUrl", out var b)) _baseUrl = b.GetString() ?? "";
+            var rt = await Api.GetAsync("api/runtime");
+            if (rt.TryGetProperty("dbPath", out var p)) _dbPath = p.GetString() ?? "";
+            if (rt.TryGetProperty("dbSizeBytes", out var sz)) _dbSize = sz.GetInt64();
+        }
+        catch { }
+        var hid = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-hidden-sections");
+        if (hid is not null) _hiddenSections = hid.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        else if (_data.TryGetValue("sidebarHidden", out var sh) && sh.ValueKind == JsonValueKind.Array)
+            _hiddenSections = sh.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x != "").ToHashSet();
+    }
+
+    // settings.data helpers
+    private string GetS(string key, string def = "") =>
+        _data!.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? def : def;
+    private bool GetB(string key, bool def = false) =>
+        _data!.TryGetValue(key, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : def;
+    private void SetS(string key, string? v) => _data![key] = JsonSerializer.SerializeToElement(v ?? "");
+    private void SetB(string key, bool v) => _data![key] = JsonSerializer.SerializeToElement(v);
+    private void SetN(string key, double v) => _data![key] = JsonSerializer.SerializeToElement(v);
+
+    private double GetN(string key, double def) =>
+        _data!.TryGetValue(key, out var v) && v.TryGetDouble(out var d) ? d : def;
+    private void SetN(string key, int v) => _data![key] = JsonSerializer.SerializeToElement(v);
+
+    private double GetN(string obj, string key, double def) =>
+        _data!.TryGetValue(obj, out var o) && o.ValueKind == JsonValueKind.Object
+        && o.TryGetProperty(key, out var v) && v.TryGetDouble(out var d) ? d : def;
+    private void SetN(string obj, string key, double v)
+    {
+        var o = _data!.TryGetValue(obj, out var e) && e.ValueKind == JsonValueKind.Object
+            ? e.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone()) : [];
+        o[key] = JsonSerializer.SerializeToElement(v);
+        _data![obj] = JsonSerializer.SerializeToElement(o);
+    }
+
+    private bool GetFlag(string id) =>
+        _data!.TryGetValue("featureFlags", out var f) && f.ValueKind == JsonValueKind.Object
+        && f.TryGetProperty(id, out var v) && v.ValueKind == JsonValueKind.True;
+    private void SetFlag(string id, bool on)
+    {
+        var f = _data!.TryGetValue("featureFlags", out var e) && e.ValueKind == JsonValueKind.Object
+            ? e.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone()) : [];
+        f[id] = JsonSerializer.SerializeToElement(on);
+        _data!["featureFlags"] = JsonSerializer.SerializeToElement(f);
+    }
+
+    private IEnumerable<JsonElement> Tokens() =>
+        _data!.TryGetValue("accessTokens", out var t) && t.ValueKind == JsonValueKind.Array
+            ? t.EnumerateArray() : [];
+
+    private async Task Save()
+    {
+        await Api.PutAsync("api/settings", _data!);
+        _pwMsg = null;
     }
 
     private async Task ToggleRequireLogin()
@@ -63,5 +393,68 @@
         await Auth.RawChangePassword(_newPw);
         _pwMsg = "✓";
         _newPw = "";
+    }
+
+    private async Task PruneNow()
+    {
+        await Api.PostAsync($"api/logs/prune?days={(int)GetN("logRetentionDays", 30)}", new { });
+        _advMsg = "Pruned.";
+    }
+
+    private async Task Import()
+    {
+        try
+        {
+            var doc = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(_importJson!) ?? [];
+            await Api.PutAsync("api/settings", doc);
+            foreach (var kv in doc) _data![kv.Key] = kv.Value;
+            _advMsg = "Imported.";
+            _importJson = null;
+        }
+        catch { _advMsg = "Invalid JSON."; }
+    }
+
+    private async Task ResetAll()
+    {
+        await Api.PostAsync("api/settings/reset", new { });
+        _data!.Clear();
+        _advMsg = "Settings reset.";
+    }
+
+    private async Task CreateToken()
+    {
+        var tokens = Tokens().Select(t => JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(t.GetRawText())!).ToList();
+        var tok = $"llr_{Guid.NewGuid():N}";
+        tokens.Add(new()
+        {
+            ["id"] = JsonSerializer.SerializeToElement(Guid.NewGuid().ToString("N")[..8]),
+            ["name"] = JsonSerializer.SerializeToElement(_tokName),
+            ["token"] = JsonSerializer.SerializeToElement(tok),
+            ["createdAt"] = JsonSerializer.SerializeToElement(DateTime.UtcNow.ToString("o")),
+        });
+        _data!["accessTokens"] = JsonSerializer.SerializeToElement(tokens);
+        await Save();
+        _newToken = tok;
+        _tokName = "";
+    }
+
+    private async Task DelToken(string id)
+    {
+        var tokens = Tokens().Select(t => JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(t.GetRawText())!)
+            .Where(t => t["id"].GetString() != id).ToList();
+        _data!["accessTokens"] = JsonSerializer.SerializeToElement(tokens);
+        await Save();
+    }
+
+    private void ToggleSection(string id, bool visible)
+    {
+        if (visible) _hiddenSections.Remove(id); else _hiddenSections.Add(id);
+    }
+
+    private async Task SaveSidebar()
+    {
+        _data!["sidebarHidden"] = JsonSerializer.SerializeToElement(_hiddenSections.ToArray());
+        await Save();
+        await JS.InvokeVoidAsync("llmrouter.set", "sidebar-hidden-sections", string.Join(',', _hiddenSections));
     }
 }

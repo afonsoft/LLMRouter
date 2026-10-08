@@ -1,0 +1,131 @@
+@page "/dashboard/costs"
+@page "/dashboard/costs/pricing"
+@page "/dashboard/costs/budget"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("costsOverview", "Costs")</h1>
+        <p class="page-desc">Spend estimate from registry pricing + overrides</p>
+    </div>
+</div>
+
+<div class="flex gap-2 mt-6">
+    <a class="tab @(Tab == "overview" ? "on" : "")" href="/dashboard/costs">Overview</a>
+    <a class="tab @(Tab == "pricing" ? "on" : "")" href="/dashboard/costs/pricing">Pricing</a>
+    <a class="tab @(Tab == "budget" ? "on" : "")" href="/dashboard/costs/budget">Budget</a>
+</div>
+
+@if (Tab == "overview")
+{
+    <div class="grid grid-3 mt-4">
+        <div class="card stat"><div><div class="stat-value">$@_monthCost.ToString("F4")</div><div class="stat-label">This month</div></div></div>
+        <div class="card stat"><div><div class="stat-value">@_monthTokens.ToString("N0")</div><div class="stat-label">Tokens</div></div></div>
+        <div class="card stat"><div><div class="stat-value">@_monthRequests.ToString("N0")</div><div class="stat-label">Requests</div></div></div>
+    </div>
+    @if (_budget > 0)
+    {
+        var pct = Math.Min(100, _budget == 0 ? 0 : 100 * _monthCost / _budget);
+        <div class="card card-p mt-6">
+            <div class="flex between"><span class="bold">Monthly budget</span><span class="mono sm">$@_monthCost.ToString("F2") / $@_budget.ToString("F2")</span></div>
+            <div style="height:8px;background:var(--border);border-radius:4px;margin-top:10px">
+                <div style="height:8px;width:@(pct.ToString("F0"))%;border-radius:4px;background:@(pct > 90 ? "var(--primary)" : "var(--accent)")"></div>
+            </div>
+        </div>
+    }
+    <div class="grid grid-2 mt-6">
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 12px">Cost by provider</h3>
+            @foreach (var p in _byProvider)
+            {
+                var share = _monthCost > 0 ? p.Cost / _monthCost : 0;
+                <div class="mt-2">
+                    <div class="flex between"><span class="mono sm">@p.Provider</span><span class="mono sm">$@p.Cost.ToString("F4")</span></div>
+                    <div style="height:6px;background:var(--border);border-radius:3px;margin-top:4px">
+                        <div style="height:6px;width:@((share * 100).ToString("F0"))%;background:var(--primary);border-radius:3px"></div>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 12px">Top models by cost</h3>
+            <table class="tbl"><thead><tr><th>Model</th><th>Reqs</th><th>Cost</th></tr></thead><tbody>
+                @foreach (var m in _byModel)
+                {
+                    <tr><td class="mono sm">@m.Model</td><td>@m.Requests</td><td class="mono sm">$@m.Cost.ToString("F4")</td></tr>
+                }
+            </tbody></table>
+        </div>
+    </div>
+}
+else if (Tab == "pricing")
+{
+    <div class="card card-p mt-4">
+        <table class="tbl">
+            <thead><tr><th>Provider/Model</th><th>Input $/1M</th><th>Output $/1M</th><th>Override</th></tr></thead>
+            <tbody>
+                @foreach (var m in _catalog)
+                {
+                    <tr>
+                        <td class="mono sm">@m.Provider/@m.Model</td>
+                        <td class="mono sm">@Fmt(m.Input)</td>
+                        <td class="mono sm">@Fmt(m.Output)</td>
+                        <td><span class="badge @(m.Override ? "info" : "")">@(m.Override ? "custom" : "registry")</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="card card-p mt-4" style="max-width:420px">
+        <label class="lbl">Monthly budget (USD)</label>
+        <input class="input mono" type="number" step="0.01" @bind="_budgetInput" />
+        <div class="mt-4"><button class="btn btn-primary" @onclick="SaveBudget">@Loc.T("common.save", "Save")</button></div>
+    </div>
+}
+
+@code {
+    private string Tab => Nav.Uri.Contains("/pricing") ? "pricing" : Nav.Uri.Contains("/budget") ? "budget" : "overview";
+    private double _monthCost, _budget, _budgetInput;
+    private long _monthTokens, _monthRequests;
+    private List<(string Provider, double Cost, long Requests)> _byProvider = [];
+    private List<(string Model, double Cost, long Requests)> _byModel = [];
+    private List<(string Provider, string Model, double? Input, double? Output, bool Override)> _catalog = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/costs");
+        _monthCost = r.GetProperty("monthCost").GetDouble();
+        _monthTokens = r.GetProperty("monthTokens").GetInt64();
+        _monthRequests = r.GetProperty("monthRequests").GetInt64();
+        _budget = _budgetInput = r.GetProperty("budget").GetDouble();
+        _byProvider = r.GetProperty("byProvider").EnumerateArray()
+            .Select(x => (x.GetProperty("provider").GetString() ?? "?", x.GetProperty("cost").GetDouble(), x.GetProperty("requests").GetInt64())).ToList();
+        _byModel = r.GetProperty("byModel").EnumerateArray()
+            .Select(x => (x.GetProperty("model").GetString() ?? "?", x.GetProperty("cost").GetDouble(), x.GetProperty("requests").GetInt64())).ToList();
+        var pr = await Api.GetAsync("api/pricing");
+        _catalog = pr.GetProperty("catalog").EnumerateArray().Select(x =>
+        {
+            double? i = null, o = null;
+            if (x.TryGetProperty("price", out var p) && p.ValueKind == JsonValueKind.Object)
+            {
+                if (p.TryGetProperty("input", out var ii) && ii.ValueKind == JsonValueKind.Number) i = ii.GetDouble();
+                if (p.TryGetProperty("output", out var oo) && oo.ValueKind == JsonValueKind.Number) o = oo.GetDouble();
+            }
+            return (x.GetProperty("provider").GetString() ?? "", x.GetProperty("model").GetString() ?? "",
+                i, o, x.GetProperty("hasOverride").GetBoolean());
+        }).ToList();
+    }
+
+    private static string Fmt(double? v) => v is null ? "—" : v.Value.ToString("F2");
+
+    private async Task SaveBudget()
+    {
+        await Api.PutAsync("api/costs/budget", new { budget = _budgetInput });
+        _budget = _budgetInput;
+    }
+}

@@ -115,6 +115,7 @@ public class UsageRecord
     public long PromptTokens { get; set; }
     public long CompletionTokens { get; set; }
     public double Cost { get; set; }
+    public long LatencyMs { get; set; }
     public string? Status { get; set; }
     public string? Tokens { get; set; }
     public string? Meta { get; set; }

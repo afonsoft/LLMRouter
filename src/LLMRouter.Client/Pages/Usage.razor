@@ -32,6 +32,30 @@
         <div class="stat-icon" style="background:rgba(229,77,94,.14);color:var(--primary)"><span class="material-symbols-outlined">output</span></div>
         <div><div class="stat-value">@_completion.ToString("N0")</div><div class="stat-label">@Loc.T("usage.completionTokens", "Completion tokens")</div></div>
     </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(99,102,241,.14);color:var(--accent)"><span class="material-symbols-outlined">payments</span></div>
+        <div><div class="stat-value">$@_cost.ToString("F4")</div><div class="stat-label">@Loc.T("usage.cost", "Est. cost")</div></div>
+    </div>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 class="bold" style="margin:0 0 12px">@Loc.T("usage.timeseries", "Requests over time")</h3>
+    @if (_series.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">show_chart</span>No data</div>
+    }
+    else
+    {
+        var max = _series.Max(b => b.Tokens);
+        <div class="flex gap-1" style="align-items:flex-end;height:120px">
+            @foreach (var b in _series)
+            {
+                var h = max == 0 ? 0 : 100.0 * b.Tokens / max;
+                <div title="@b.Bucket — @b.Requests reqs, @b.Tokens.ToString("N0") tok"
+                     style="flex:1;min-width:4px;height:@(h.ToString("F0"))%;background:var(--accent);border-radius:3px 3px 0 0"></div>
+            }
+        </div>
+    }
 </div>
 
 <div class="grid grid-2 mt-6">
@@ -64,6 +88,8 @@
 @code {
     private string _range = "today";
     private long _requests, _tokens, _prompt, _completion;
+    private double _cost;
+    private List<(string Bucket, long Requests, long Tokens)> _series = [];
     private List<(string Provider, int Requests, long Tokens)> _byProvider = [];
     private List<(string Model, int Requests, long Tokens)> _byModel = [];
 
@@ -80,5 +106,9 @@
             .Select(x => (x.GetProperty("provider").GetString()!, x.GetProperty("requests").GetInt32(), x.GetProperty("tokens").GetInt64())).ToList();
         _byModel = r.GetProperty("byModel").EnumerateArray()
             .Select(x => (x.GetProperty("model").GetString()!, x.GetProperty("requests").GetInt32(), x.GetProperty("tokens").GetInt64())).ToList();
+        var ts = await Api.GetAsync($"api/usage/timeseries?range={_range}");
+        _series = ts.GetProperty("buckets").EnumerateArray()
+            .Select(x => (x.GetProperty("bucket").GetString()!, x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64())).ToList();
+        _cost = ts.GetProperty("buckets").EnumerateArray().Sum(x => x.GetProperty("cost").GetDouble());
     }
 }

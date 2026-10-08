@@ -5,8 +5,13 @@
 <h1 class="page-title">@Loc.T("models.title", "Models & Combos")</h1>
 <p class="page-desc">@Loc.T("models.subtitle", "All models reachable through your connections")</p>
 
-<div class="mt-4" style="max-width:340px">
-    <input class="input" placeholder="@Loc.T("models.search", "Search models…")" @bind="_q" @bind:event="oninput" />
+<div class="mt-4 flex gap-2" style="align-items:center">
+    <input class="input" style="max-width:340px" placeholder="@Loc.T("models.search", "Search models…")" @bind="_q" @bind:event="oninput" />
+    <button class="btn" @onclick="() => Reload(true)" disabled="@_loading">
+        <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
+        @Loc.T("models.fetchLive", "Fetch live")
+    </button>
+    @if (_loading) { <span class="muted sm">…</span> }
 </div>
 
 <div class="card mt-4 scroll-x">
@@ -35,10 +40,18 @@
     private record M(string Model, string Provider, int? ContextLength, string Caps, string Connection);
     private List<M> _models = [];
     private string _q = "";
+    private bool _loading;
 
     protected override async Task OnInitializedAsync()
     {
-        var r = await Api.GetAsync("api/models");
+        await Reload(false);
+    }
+
+    private async Task Reload(bool live)
+    {
+        _loading = true; _models = [];
+        var r = await Api.GetAsync(live ? "api/models?live=true" : "api/models");
+        _loading = false;
         foreach (var m in r.GetProperty("models").EnumerateArray())
         {
             var caps = m.TryGetProperty("capabilities", out var c) && c.ValueKind == JsonValueKind.Array

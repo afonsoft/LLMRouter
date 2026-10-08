@@ -1,0 +1,52 @@
+@page "/dashboard/providers/services"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">@Loc.T("services.title", "Embedded services")</h1>
+<p class="page-desc">@Loc.T("services.subtitle", "Catalog entries that expose extra service kinds (embeddings, TTS, search, images…)")</p>
+
+<div class="card mt-6 scroll-x">
+    <table class="table">
+        <thead><tr><th>@Loc.T("providers.name", "Name")</th><th>@Loc.T("providers.category", "Category")</th><th>@Loc.T("services.kinds", "Service kinds")</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var s in _services)
+            {
+                <tr>
+                    <td class="flex gap-2" style="align-items:center">
+                        <span class="pcard-icon" style="@(s.Color is not null ? $"color:{s.Color}" : "")">
+                            <span class="material-symbols-outlined" style="font-size:18px">@(s.Icon ?? "deployed_code")</span>
+                        </span>
+                        @s.Name
+                    </td>
+                    <td class="muted sm">@s.Category</td>
+                    <td class="xs">@string.Join(" · ", s.Kinds)</td>
+                    <td><a class="link sm" href="/dashboard/providers/@s.Id">@Loc.T("services.open", "Open")</a></td>
+                </tr>
+            }
+            @if (_services.Count == 0)
+            {
+                <tr><td colspan="4"><div class="empty"><span class="material-symbols-outlined">deployed_code</span>@Loc.T("services.empty", "No embedded services")</div></td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private record S(string Id, string? Name, string? Icon, string? Color, string Category, string[] Kinds);
+    private List<S> _services = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/providers/services");
+        _services = r.GetProperty("services").EnumerateArray().Select(s => new S(
+            s.GetProperty("id").GetString()!,
+            s.TryGetProperty("name", out var n) ? n.GetString() : null,
+            s.TryGetProperty("icon", out var i) ? i.GetString() : null,
+            s.TryGetProperty("color", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null,
+            s.TryGetProperty("category", out var k) ? k.GetString() ?? "" : "",
+            s.TryGetProperty("serviceKinds", out var sk) && sk.ValueKind == JsonValueKind.Array
+                ? sk.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToArray() : []))
+            .OrderBy(s => s.Name ?? s.Id, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+}

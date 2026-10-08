@@ -18,6 +18,7 @@ builder.Services.AddSingleton<ProviderRegistry>();
 builder.Services.AddSingleton<ComboPlanner>();
 builder.Services.AddSingleton<ModelResolver>();
 builder.Services.AddScoped<GatewayEngine>();
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(10);

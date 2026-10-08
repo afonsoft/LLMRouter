@@ -74,7 +74,8 @@ public sealed class GatewayEngine(
         foreach (var m in models)
         {
             var (providerId, upstreamModel) = resolver.Resolve(m, aliases);
-            var provider = registry.GetProvider(providerId);
+            var provider = registry.GetProvider(providerId)
+                ?? await NodeResolver.ResolveAsync(db, providerId, ct);
             if (provider is null) continue;
             var conns = await db.ProviderConnections
                 .Where(c => c.Provider == provider.Id && c.IsActive)

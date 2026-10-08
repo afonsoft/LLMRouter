@@ -33,10 +33,19 @@ public class LlmRouterDbContext : DbContext
         mb.Entity<ProviderNode>().HasIndex(e => e.Type);
     }
 
+    // EnsureCreated isn't atomic across concurrent contexts (parallel WebApplicationFactory
+    // hosts in tests) — serialize creation and tolerate a schema another host just created.
+    private static readonly object EnsureCreatedLock = new();
+
     /// <summary>Creates the schema (single-file embedded DB, mirroring the upstream bootstrap).</summary>
     public void EnsureCreated()
     {
-        Database.EnsureCreated();
+        lock (EnsureCreatedLock)
+        {
+            try { Database.EnsureCreated(); }
+            catch (Exception ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            { /* schema raced by a parallel host */ }
+        }
         // Lightweight column migration for DBs created before the column existed.
         var conn = Database.GetDbConnection();
         var opened = conn.State != System.Data.ConnectionState.Open;

@@ -17,7 +17,7 @@ Status: ✅ done · 🟡 partial · ⬜ planned (spec)
 | Embeddings/images/audio/search/responses endpoints | `api/v1/*` | 003 | 🟡 |
 | Combos advanced + studio + aliases | `/dashboard/combos*` | 004 | 🟡 |
 | Usage charts/costs/pricing/provider-stats | `/dashboard/{usage,analytics,costs}` | 005 | 🟡 |
-| Logs/console/timeline/health/resilience/export | `/dashboard/{logs,health}` | 006 | ⬜ |
+| Logs/console/timeline/health/resilience/export | `/dashboard/{logs,health}` | 006 | 🟡 |
 | All settings sections | `/dashboard/settings/*` | 007 | ⬜ |
 | Quota/token-saver/proxy-pools | 9router pages | 008 | ⬜ |
 | CLI tools/translator/skills pages | `/dashboard/{cli-tools,translator,skills}` | 009 | ⬜ |

@@ -6,6 +6,7 @@ using LLMRouter.Server.Endpoints;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddProvider(LLMRouter.Server.Services.ConsoleLogBuffer.Instance);
 
 var dbPath = Environment.GetEnvironmentVariable("LLMROUTER_DB_PATH")
     ?? Path.Combine(

@@ -313,6 +313,7 @@ public static class GatewayEndpoints
                 using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
                 if (!resp.IsSuccessStatusCode)
                 {
+                    Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
                     var errBody = await resp.Content.ReadAsStringAsync();
                     if (ShouldCascade(resp.StatusCode) && target != targets[^1])
                     {
@@ -334,6 +335,7 @@ public static class GatewayEndpoints
                     ctx.Response.Headers.CacheControl = "no-cache";
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
                     var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
+                    Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds);
                 }
@@ -343,6 +345,7 @@ public static class GatewayEndpoints
                     var translated = Translators.TranslateResponse(upstream, call.OutboundFormat, inbound, model);
                     var (pt, ct) = ExtractUsage(translated, inbound);
                     ctx.Response.ContentType = "application/json";
+                    Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds);

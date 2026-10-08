@@ -1,0 +1,33 @@
+@page "/dashboard/runtime"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">Runtime</h1>
+    <p class="page-desc">Server process info</p>
+</div>
+
+<div class="grid grid-3 mt-6">
+    <div class="card stat"><div><div class="stat-value">@_version</div><div class="stat-label">Version</div></div></div>
+    <div class="card stat"><div><div class="stat-value">@_uptime</div><div class="stat-label">Uptime</div></div></div>
+    <div class="card stat"><div><div class="stat-value">@_dbSize</div><div class="stat-label">DB size</div></div></div>
+    <div class="card stat"><div><div class="stat-value">@_gc</div><div class="stat-label">GC memory</div></div></div>
+    <div class="card stat"><div><div class="stat-value">@_env</div><div class="stat-label">Environment</div></div></div>
+    <div class="card stat"><div><div class="stat-value sm">@_started</div><div class="stat-label">Started</div></div></div>
+</div>
+
+@code {
+    private string _version = "", _uptime = "", _dbSize = "", _gc = "", _env = "", _started = "";
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/runtime");
+        _version = r.GetProperty("version").GetString() ?? "";
+        var up = r.GetProperty("uptimeSeconds").GetDouble();
+        _uptime = up > 3600 ? $"{up / 3600:F1}h" : up > 60 ? $"{up / 60:F1}m" : $"{up:F0}s";
+        var db = r.GetProperty("dbSizeBytes").GetInt64();
+        _dbSize = db > 1e6 ? $"{db / 1e6:F1} MB" : $"{db / 1e3:F0} KB";
+        _gc = $"{r.GetProperty("gcMemoryMb").GetDouble():F0} MB";
+        _env = r.GetProperty("environment").GetString() ?? "";
+        _started = r.GetProperty("started").GetString()?[..16].Replace('T', ' ') ?? "";
+    }
+}

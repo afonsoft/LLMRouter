@@ -11,9 +11,17 @@ public static class CooldownTracker
     private sealed record State(int Failures, DateTimeOffset Until);
     private static readonly ConcurrentDictionary<string, State> States = new();
 
-    public const int FailureThreshold = 3;
-    public static readonly TimeSpan BaseCooldown = TimeSpan.FromSeconds(30);
-    public static readonly TimeSpan MaxCooldown = TimeSpan.FromMinutes(5);
+    public static int FailureThreshold { get; private set; } = 3;
+    public static TimeSpan BaseCooldown { get; private set; } = TimeSpan.FromSeconds(30);
+    public static TimeSpan MaxCooldown { get; private set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Apply resilience overrides from settings.data.resilience (SPEC-007).</summary>
+    public static void Configure(int? failureThreshold, double? baseSeconds, double? maxSeconds)
+    {
+        if (failureThreshold is > 0) FailureThreshold = failureThreshold.Value;
+        if (baseSeconds is > 0) BaseCooldown = TimeSpan.FromSeconds(baseSeconds.Value);
+        if (maxSeconds is > 0) MaxCooldown = TimeSpan.FromSeconds(maxSeconds.Value);
+    }
 
     public static void ReportSuccess(string connectionId) =>
         States.TryRemove(connectionId, out _);

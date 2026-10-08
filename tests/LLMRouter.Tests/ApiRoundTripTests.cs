@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Shouldly;
 
 namespace LLMRouter.Tests;
@@ -15,8 +16,9 @@ public class ApiRoundTripTests : IDisposable
 
     public ApiRoundTripTests()
     {
-        Environment.SetEnvironmentVariable("LLMROUTER_DB_PATH", _dbPath);
-        _factory = new WebApplicationFactory<Program>();
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, c) =>
+                c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = _dbPath })));
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
     }
 

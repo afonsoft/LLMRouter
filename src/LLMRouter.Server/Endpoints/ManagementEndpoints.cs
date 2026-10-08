@@ -311,6 +311,16 @@ public static class ManagementEndpoints
         });
 
         // ---- combos ----
+        /// <summary>Push settings.data.resilience into the static CooldownTracker (SPEC-007).</summary>
+        static void ApplyResilienceSettings(Dictionary<string, JsonElement> d)
+        {
+            if (!d.TryGetValue("resilience", out var r) || r.ValueKind != JsonValueKind.Object) return;
+            int? th = r.TryGetProperty("failureThreshold", out var t1) && t1.TryGetInt32(out var i1) ? i1 : null;
+            double? bs = r.TryGetProperty("cooldownBaseSeconds", out var t2) && t2.TryGetDouble(out var d2) ? d2 : null;
+            double? ms = r.TryGetProperty("cooldownMaxSeconds", out var t3) && t3.TryGetDouble(out var d3) ? d3 : null;
+            LLMRouter.Core.Resilience.CooldownTracker.Configure(th, bs, ms);
+        }
+
         static object ComboDto(Combo c) => new
         {
             c.Id, c.Name, c.Kind, c.StickyLimit, c.CreatedAt, c.UpdatedAt,
@@ -799,7 +809,23 @@ public static class ManagementEndpoints
                 d[kv.Name] = kv.Value.Clone();
             s.Data = JsonSerializer.Serialize(d);
             await db.SaveChangesAsync();
+            ApplyResilienceSettings(d);
             return Results.Json(new { success = true });
+        });
+
+        // SPEC-007: dangerous zone — wipe all settings.data
+        g.MapPost("/settings/reset", async (LlmRouterDbContext db) =>
+        {
+            var s = await db.Settings.FirstOrDefaultAsync();
+            if (s is not null) { s.Data = "{}"; await db.SaveChangesAsync(); }
+            return Results.Json(new { success = true });
+        });
+
+        // SPEC-007: export settings.data as downloadable JSON
+        g.MapGet("/settings/export", async (LlmRouterDbContext db) =>
+        {
+            var s = await db.Settings.FirstOrDefaultAsync();
+            return Results.Text(s?.Data ?? "{}", "application/json");
         });
 
         // ---- endpoint info (for /dashboard/endpoint page) ----

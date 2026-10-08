@@ -70,11 +70,15 @@
     private bool _mobileOpen;
     private string _query = "";
     private HashSet<string> _expanded = [];
+    private HashSet<string> _hidden = [];
 
     protected override async Task OnInitializedAsync()
     {
         var saved = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-collapsed");
         _collapsed = saved == "true";
+        var hid = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-hidden-sections");
+        if (hid is not null)
+            _hidden = hid.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         var exp = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-expanded-sections");
         _expanded = exp is not null
             ? new HashSet<string>(exp.Split(',', StringSplitOptions.RemoveEmptyEntries))
@@ -111,8 +115,10 @@
 
     private IEnumerable<SidebarData.NavSection> Filtered()
     {
-        if (string.IsNullOrWhiteSpace(_query)) return SidebarData.Sections;
-        return SidebarData.Sections.Select(s =>
+        if (string.IsNullOrWhiteSpace(_query))
+            return _hidden.Count == 0 ? SidebarData.Sections
+                : SidebarData.Sections.Where(s => !_hidden.Contains(s.Id));
+        return SidebarData.Sections.Where(s => !_hidden.Contains(s.Id)).Select(s =>
             s with
             {
                 Items = s.Items is null ? null : FilterItems(s.Items).ToArray(),

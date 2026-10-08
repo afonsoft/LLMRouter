@@ -1,3 +1,7 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Mvc.Testing;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using LLMRouter.Core.Orchestration;
 using Shouldly;
@@ -169,5 +173,60 @@ public class DistributionTests
         {
             if (File.Exists(dbPath)) File.Delete(dbPath);
         }
+    }
+}
+
+public class BatchesTests : IDisposable
+{
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly HttpClient _client;
+
+    public BatchesTests()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, c) =>
+                c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = _dbPath })));
+        _client = _factory.CreateClient();
+        _client.PostAsJsonAsync("/api/auth/login", new { password = "test1234" }).Wait();
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose(); _factory.Dispose();
+        foreach (var f in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
+            try { File.Delete(f); } catch { }
+    }
+
+    [Fact]
+    public async Task Batch_job_completes_with_results()
+    {
+        var c = _client;
+        var resp = await c.PostAsJsonAsync("/api/batches", new
+        {
+            requests = new[] { new { model = "nope", messages = Array.Empty<object>() } }
+        });
+        resp.EnsureSuccessStatusCode();
+        var id = (await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+        // worker runs async — poll for done
+        JsonElement job = default;
+        for (var i = 0; i < 30; i++)
+        {
+            job = (await c.GetFromJsonAsync<JsonElement>($"/api/batches/{id}"))!;
+            if (job.GetProperty("status").GetString() == "done") break;
+            await Task.Delay(100);
+        }
+        job.GetProperty("status").GetString().ShouldBe("done");
+        job.GetProperty("done").GetInt32().ShouldBe(1);
+        job.GetProperty("results").GetArrayLength().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SearchTools_and_plugins_return_data()
+    {
+        var tools = (await _client.GetFromJsonAsync<JsonElement>("/api/search-tools"))!;
+        tools.GetProperty("tools").GetArrayLength().ShouldBeGreaterThan(5);
+        var plugins = (await _client.GetFromJsonAsync<JsonElement>("/api/plugins"))!;
+        plugins.GetProperty("skills").GetArrayLength().ShouldBeGreaterThan(0);
     }
 }

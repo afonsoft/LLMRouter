@@ -1,0 +1,55 @@
+@page "/dashboard/a2a"
+@page "/dashboard/acp-agents"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("a2a.title", "A2A agents")</h1>
+<p class="page-desc">@Loc.T("a2a.subtitle", "Agent-to-Agent protocol — this router's agent card and task endpoint")</p>
+
+<div class="card card-p" style="margin-bottom:14px">
+    <h3 class="bold" style="margin:0 0 6px">@Loc.T("a2a.card", "Agent card")</h3>
+    <p class="muted" style="font-size:12px">served at <code>/.well-known/agent.json</code> — tasks via JSON-RPC <code>POST /a2a</code> (<code>tasks/send</code>, <code>message/send</code>)</p>
+    @if (_card is not null)
+    {
+        <pre class="code-block" style="font-size:12px;max-height:220px;overflow:auto">@_card</pre>
+    }
+</div>
+
+<div class="card card-p">
+    <h3 class="bold" style="margin:0 0 8px">@Loc.T("a2a.send", "Send task")</h3>
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <input class="input" style="width:200px" @bind="_model" placeholder="model/combo" />
+        <input class="input" style="flex:1;min-width:220px" @bind="_text" placeholder="task text" />
+        <button class="btn btn-primary btn-sm" @onclick="Send">@Loc.T("a2a.submit", "Submit")</button>
+    </div>
+    @if (_result is not null)
+    {
+        <pre class="code-block" style="font-size:12px;margin-top:10px;max-height:260px;overflow:auto">@_result</pre>
+    }
+</div>
+
+@code {
+    private string? _card, _result;
+    private string _model = "", _text = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var r = await Api.Raw.GetAsync(".well-known/agent.json");
+            _card = JsonNode.Parse(await r.Content.ReadAsStringAsync())?.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { }
+    }
+
+    private async Task Send()
+    {
+        var r = await Api.Raw.PostAsJsonAsync("a2a", new
+        {
+            jsonrpc = "2.0", id = 1, method = "tasks/send",
+            @params = new { model = _model, message = new { parts = new[] { new { type = "text", text = _text } } } },
+        });
+        _result = JsonNode.Parse(await r.Content.ReadAsStringAsync())?.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+            ?? await r.Content.ReadAsStringAsync();
+    }
+}

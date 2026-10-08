@@ -192,3 +192,74 @@ public class TranslatorRoundTripTests
         ExtendedTranslators.AdjustMaxTokens(200000, "gpt-5", "openai").ShouldBe(200000);
     }
 }
+
+public class TranslatorDepthTests
+{
+    private static JsonDocument J(string s) => JsonDocument.Parse(s);
+
+    [Fact]
+    public void ClaudePrepare_anchors_cache_breakpoints_when_absent()
+    {
+        var req = J("""{"messages":[{"role":"system","content":"sys"},{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"text","text":"a"}]},{"role":"user","content":[{"type":"text","text":"go"}]}],"tools":[{"type":"function","function":{"name":"t"}}],"max_tokens":100}""").RootElement;
+        var tr = LLMRouter.Core.Translation.Translators.Translate(req, "openai", "claude", "m", false);
+        // last system block, last tool, last msg block anchored
+        tr["system"]!.AsArray()[^1]!["cache_control"]!["type"]!.GetValue<string>().ShouldBe("ephemeral");
+        tr["tools"]!.AsArray()[^1]!["cache_control"]!["type"]!.GetValue<string>().ShouldBe("ephemeral");
+        tr["messages"]!.AsArray()[^1]!["content"]!.AsArray()[^1]!["cache_control"]!["type"]!.GetValue<string>().ShouldBe("ephemeral");
+    }
+
+    [Fact]
+    public void ClaudePrepare_preserves_client_cache_control()
+    {
+        var req = J("""{"messages":[{"role":"user","content":[{"type":"text","text":"x","cache_control":{"type":"ephemeral"}}]}],"max_tokens":10}""").RootElement;
+        var tr = LLMRouter.Core.Translation.Translators.Translate(req, "claude", "claude", "m", false);
+        // client marker preserved; heuristic adds none (1 marker total)
+        var raw = tr.ToJsonString();
+        System.Text.RegularExpressions.Regex.Matches(raw, "cache_control").Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Tool_result_images_hoisted_to_user_message()
+    {
+        var req = J("""{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"shot","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}]}]}],"max_tokens":10}""").RootElement;
+        var tr = LLMRouter.Core.Translation.Translators.Translate(req, "claude", "openai", "m", false);
+        var msgs = tr["messages"]!.AsArray();
+        msgs.ShouldContain(m => m!["role"]!.GetValue<string>() == "tool");
+        msgs.Any(m => m!["role"]!.GetValue<string>() == "user"
+            && m["content"] is JsonArray c && c.Any(p => p!["type"]!.GetValue<string>() == "image_url"
+                && p["image_url"]!["url"]!.GetValue<string>().StartsWith("data:image/png"))).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("openai", "claude")]
+    [InlineData("openai", "gemini")]
+    [InlineData("openai", "responsesApi")]
+    [InlineData("claude", "openai")]
+    [InlineData("claude", "gemini")]
+    [InlineData("gemini", "openai")]
+    [InlineData("gemini", "claude")]
+    [InlineData("responsesApi", "openai")]
+    [InlineData("responsesApi", "claude")]
+    public void Roundtrip_matrix_produces_valid_shape(string inbound, string outbound)
+    {
+        var body = inbound switch
+        {
+            "claude" => """{"model":"m","max_tokens":100,"system":"s","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}""",
+            "gemini" => """{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":100}}""",
+            "responsesApi" => """{"model":"m","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}]}""",
+            _ => """{"model":"m","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}""",
+        };
+        var tr = LLMRouter.Core.Translation.Translators.Translate(J(body).RootElement, inbound, outbound, "m", false);
+        tr.ShouldNotBeNull();
+        tr["model"]!.GetValue<string>().ShouldBe("m");
+        // each outbound shape carries its messages/contents/input
+        var has = outbound switch
+        {
+            "claude" => tr["messages"] is JsonArray { Count: > 0 },
+            "gemini" => tr["contents"] is JsonArray { Count: > 0 },
+            "responsesApi" => tr["input"] is JsonArray { Count: > 0 },
+            _ => tr["messages"] is JsonArray { Count: > 0 },
+        };
+        has.ShouldBeTrue($"{inbound}→{outbound}: {tr.ToJsonString()[..Math.Min(400, tr.ToJsonString().Length)]}");
+    }
+}

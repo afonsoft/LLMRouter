@@ -255,7 +255,9 @@ public static class Translators
                     };
                     messages.Add(msg);
                 }
+                var hoisted = new JsonArray();
                 foreach (var tr in toolResults)
+                {
                     messages.Add(new JsonObject
                     {
                         ["role"] = "tool",
@@ -264,6 +266,26 @@ public static class Translators
                             ? string.Join("\n", tc.Select(p => p?["text"]?.GetValue<string>()))
                             : tr?["content"]?.DeepClone(),
                     });
+                    // SPEC-018 hoistToolResultImages: openai tool messages are
+                    // text-only — image parts move to a following user message
+                    if (tr?["content"] is JsonArray tcArr)
+                        foreach (var p in tcArr)
+                            if (p?["type"]?.GetValue<string>() == "image")
+                            {
+                                var src = p["source"];
+                                var url = src?["type"]?.GetValue<string>() == "base64"
+                                    ? $"data:{src["media_type"]?.GetValue<string>()};base64,{src["data"]?.GetValue<string>()}"
+                                    : src?["url"]?.GetValue<string>();
+                                if (url is not null)
+                                    hoisted.Add(new JsonObject
+                                    {
+                                        ["type"] = "image_url",
+                                        ["image_url"] = new JsonObject { ["url"] = url },
+                                    });
+                            }
+                }
+                if (hoisted.Count > 0)
+                    messages.Add(new JsonObject { ["role"] = "user", ["content"] = hoisted });
                 if (toolUses.Count == 0 && toolResults.Count == 0)
                     messages.Add(new JsonObject { ["role"] = role, ["content"] = ToOpenAiContent(content) });
                 continue;

@@ -15,7 +15,7 @@ public class TranslatorTests
         var r = Translators.Translate(
             Body("""{"model":"x","max_tokens":50,"messages":[{"role":"system","content":"sys"},{"role":"user","content":"hi"}]}"""),
             "openai", "claude", "claude-x", false);
-        r["system"]!.AsArray()[0]!.GetValue<string>().ShouldBe("sys");
+        r["system"]!.AsArray()[0]!["text"]!.GetValue<string>().ShouldBe("sys");
         r["messages"]!.AsArray().Count.ShouldBe(1);
         r["messages"]![0]!["role"]!.GetValue<string>().ShouldBe("user");
         r["max_tokens"]!.GetValue<int>().ShouldBe(50);

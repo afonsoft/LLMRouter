@@ -10,7 +10,7 @@ public static class Cli
 {
     private const int Iterations = 100_000;
 
-    public static void ResetPassword(string newPassword)
+    public static void ResetPassword(string newPassword, string? dbPath = null)
     {
         if (string.IsNullOrEmpty(newPassword))
         {
@@ -18,7 +18,7 @@ public static class Cli
             Environment.ExitCode = 2;
             return;
         }
-        var dbPath = Environment.GetEnvironmentVariable("LLMROUTER_DB_PATH")
+        dbPath ??= Environment.GetEnvironmentVariable("LLMROUTER_DB_PATH")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "LLMRouter", "llmrouter.db");
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);

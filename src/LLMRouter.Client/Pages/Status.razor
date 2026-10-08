@@ -1,0 +1,35 @@
+@page "/status"
+@layout AuthLayout
+@inject Api Api
+@inject Loc Loc
+
+<div style="max-width:480px;margin:80px auto" class="card card-p">
+    <h1 class="page-title" style="margin-bottom:16px">@Loc.T("status.title", "Status")</h1>
+    @if (_s is not null)
+    {
+        <div class="flex between" style="padding:8px 0;border-bottom:1px solid var(--surface-2)">
+            <span>@Loc.T("status.status", "Status")</span>
+            <span class="badge ok">@_s.Value.GetProperty("status").GetString()</span>
+        </div>
+        <div class="flex between" style="padding:8px 0;border-bottom:1px solid var(--surface-2)">
+            <span>@Loc.T("status.version", "Version")</span><b>@_s.Value.GetProperty("version").GetString()</b>
+        </div>
+        <div class="flex between" style="padding:8px 0;border-bottom:1px solid var(--surface-2)">
+            <span>@Loc.T("status.uptime", "Uptime")</span><b>@FormatUptime(_s.Value.GetProperty("uptimeSec").GetInt32())</b>
+        </div>
+        <div class="flex between" style="padding:8px 0">
+            <span>@Loc.T("status.providers", "Active connections")</span><b>@_s.Value.GetProperty("providers").GetInt32()</b>
+        </div>
+    }
+    else { <p class="muted">…</p> }
+</div>
+
+@code {
+    private JsonElement? _s;
+    protected override async Task OnInitializedAsync()
+    {
+        try { _s = await Api.GetAsync("api/status"); } catch { }
+    }
+    private static string FormatUptime(int sec) =>
+        sec < 3600 ? $"{sec / 60}m" : $"{sec / 3600}h {sec % 3600 / 60}m";
+}

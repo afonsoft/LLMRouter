@@ -23,6 +23,9 @@
             } catch (e) { }
         })();
     </script>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#e54d5e" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
     <link href="css/app.css" rel="stylesheet" />
     <link href="LLMRouter.Client.styles.css" rel="stylesheet" />
 </head>
@@ -56,6 +59,7 @@
                 catch (e) { return false; }
             },
             registerHotkeys: function (ref) {
+                if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
                 window.__cmdk = ref;
                 document.addEventListener("keydown", function (e) {
                     if ((e.metaKey || e.ctrlKey) && e.key === "k") {

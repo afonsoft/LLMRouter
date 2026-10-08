@@ -1,0 +1,74 @@
+@page "/dashboard/onboarding"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">@Loc.T("onboard.title", "Welcome — let's set up")</h1>
+
+<div class="card card-p" style="max-width:520px;margin:24px auto">
+    <div class="flex" style="gap:6px;margin-bottom:18px">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div style="flex:1;height:4px;border-radius:2px;background:@(i <= _step ? "var(--accent)" : "var(--surface-2)")"></div>
+        }
+    </div>
+
+    @if (_step == 0)
+    {
+        <h3>@Loc.T("onboard.welcome", "Welcome to LLMRouter")</h3>
+        <p class="muted">@Loc.T("onboard.welcomeDesc", "Route every LLM provider through one API key with automatic fallback.")</p>
+        <button class="btn btn-primary" @onclick="() => _step = 1">@Loc.T("onboard.next", "Next")</button>
+    }
+    else if (_step == 1)
+    {
+        <h3>@Loc.T("onboard.provider", "Add your first provider")</h3>
+        <input class="input" style="width:100%;margin-bottom:8px" @bind="_provider" placeholder="provider (e.g. openai)" />
+        <input class="input" style="width:100%" @bind="_apiKey" placeholder="api key" />
+        <button class="btn btn-primary" style="margin-top:10px" @onclick="AddProvider" disabled="@(string.IsNullOrWhiteSpace(_provider))">@Loc.T("onboard.next", "Next")</button>
+        <button class="btn btn-sm" style="margin-top:10px;margin-left:6px" @onclick="() => _step = 2">@Loc.T("onboard.skip", "Skip")</button>
+    }
+    else if (_step == 2)
+    {
+        <h3>@Loc.T("onboard.apikey", "Create an API key")</h3>
+        <input class="input" style="width:100%" @bind="_keyName" placeholder="key name (e.g. dev)" />
+        <button class="btn btn-primary" style="margin-top:10px" @onclick="CreateKey">@Loc.T("onboard.next", "Next")</button>
+        @if (_newKey is not null) { <pre class="code-block" style="margin-top:8px">@_newKey</pre> }
+        <button class="btn btn-sm" style="margin-top:10px;margin-left:6px" @onclick="() => _step = 3">@Loc.T("onboard.skip", "Skip")</button>
+    }
+    else
+    {
+        <h3>@Loc.T("onboard.done", "All set")</h3>
+        <p class="muted">@Loc.T("onboard.doneDesc", "Point your apps at /v1 with your new key.")</p>
+        <button class="btn btn-primary" @onclick="Finish">@Loc.T("onboard.finish", "Go to dashboard")</button>
+    }
+</div>
+
+@code {
+    private int _step;
+    private string _provider = "", _apiKey = "", _keyName = "dev";
+    private string? _newKey;
+
+    private async Task AddProvider()
+    {
+        object data = _apiKey == "" ? new { } : new { apiKey = _apiKey };
+        await Api.PostAsync("api/provider-connections",
+            new { provider = _provider, name = _provider, data });
+        _step = 2;
+    }
+
+    private async Task CreateKey()
+    {
+        var r = await Api.PostAsync("api/keys", new { name = _keyName });
+        _newKey = r.TryGetProperty("key", out var k) && k.TryGetProperty("key", out var kk) ? kk.GetString() : null;
+    }
+
+    private async Task Finish()
+    {
+        try
+        {
+            await Api.PutAsync("api/settings", new { setupComplete = true });
+        }
+        catch { }
+        Nav.NavigateTo("/");
+    }
+}

@@ -155,6 +155,8 @@ public static class GatewayEndpoints
         model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
 
         var targets = await engine.ResolveAsync(model, body);
+        targets = Core.Routing.MediaKinds.Filter(targets,
+            Core.Routing.MediaKinds.KindForPath(ctx.Request.Path.Value ?? ""), t => t.Connection);
         if (targets.Count == 0)
         {
             ctx.Response.StatusCode = 400;

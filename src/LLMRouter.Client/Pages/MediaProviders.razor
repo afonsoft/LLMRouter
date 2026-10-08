@@ -1,0 +1,97 @@
+@page "/dashboard/media-providers"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("media.title", "Media providers")</h1>
+<p class="page-desc">@Loc.T("media.subtitle", "Connections serving embedding, image, video, TTS, STT, search and fetch endpoints")</p>
+
+<div class="tabs" style="margin-bottom:14px">
+    @foreach (var k in _kinds)
+    {
+        <button class="tab @(_kind == k ? "active" : "")" @onclick='() => _kind = k'>@k</button>
+    }
+</div>
+
+<div class="card card-p" style="margin-bottom:14px">
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <select class="input" style="width:220px" @bind="_provider">
+            @foreach (var p in _providers) { <option value="@p">@p</option> }
+        </select>
+        <input class="input" style="width:140px" @bind="_name" placeholder="name" />
+        <input class="input" style="flex:1;min-width:200px" @bind="_apiKey" placeholder="api key" />
+        <input class="input" style="flex:1;min-width:160px" @bind="_baseUrl" placeholder="base url (optional)" />
+        <button class="btn btn-primary btn-sm" @onclick="Add">@Loc.T("common.add", "Add")</button>
+    </div>
+</div>
+
+@if (_conns is null)
+{
+    <p class="muted">…</p>
+}
+else if (KindConns().Count == 0)
+{
+    <div class="card card-p"><p class="muted">@Loc.T("media.empty", "No connections for this kind yet")</p></div>
+}
+else
+{
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+        @foreach (var c in KindConns())
+        {
+            var cid = c.GetProperty("id").GetString()!;
+            <div class="card card-p">
+                <div class="flex between">
+                    <h3 class="bold" style="margin:0">@c.GetProperty("name").GetString()</h3>
+                    <button class="btn btn-sm" @onclick="() => Remove(cid)">@Loc.T("common.delete", "Delete")</button>
+                </div>
+                <p class="muted" style="font-size:12px">@c.GetProperty("provider").GetString() · @string.Join(", ", c.GetProperty("kinds").EnumerateArray().Select(x => x.GetString()))</p>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private readonly string[] _kinds = ["embedding", "image", "video", "tts", "stt", "search", "fetch", "systemone"];
+    private string _kind = "embedding";
+    private JsonElement[]? _conns;
+    private List<string> _providers = [];
+    private string _provider = "", _name = "", _apiKey = "", _baseUrl = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        try
+        {
+            var provs = await Api.GetAsync("api/providers");
+            if (provs.TryGetProperty("providers", out var arr))
+                _providers = arr.EnumerateArray()
+                    .Select(p => p.TryGetProperty("id", out var i) ? i.GetString()! : "").Where(s => s != "").ToList();
+        }
+        catch { _providers = []; }
+        _provider = _providers.FirstOrDefault() ?? "";
+    }
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/media-providers");
+        if (r.TryGetProperty("connections", out var all))
+            _conns = all.EnumerateObject().SelectMany(p => p.Value.EnumerateArray()).ToArray();
+        else _conns = [];
+    }
+
+    private List<JsonElement> KindConns() =>
+        _conns?.Where(c => c.GetProperty("kinds").EnumerateArray()
+            .Any(k => k.GetString() == _kind)).ToList() ?? [];
+
+    private async Task Add()
+    {
+        var data = new Dictionary<string, object> { ["mediaKinds"] = new[] { _kind } };
+        if (_apiKey != "") data["apiKey"] = _apiKey;
+        if (_baseUrl != "") data["baseUrl"] = _baseUrl;
+        await Api.PostAsync("api/provider-connections",
+            new { provider = _provider, name = _name == "" ? _provider : _name, data });
+        _name = _apiKey = _baseUrl = "";
+        await Load();
+    }
+
+    private async Task Remove(string id) { await Api.DeleteAsync($"api/provider-connections/{id}"); await Load(); }
+}

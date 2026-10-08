@@ -230,3 +230,118 @@ public class BatchesTests : IDisposable
         plugins.GetProperty("skills").GetArrayLength().ShouldBeGreaterThan(0);
     }
 }
+
+public class McpToolsTests : IDisposable
+{
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly HttpClient _client;
+
+    public McpToolsTests()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, c) =>
+                c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = _dbPath })));
+        _client = _factory.CreateClient();
+        _client.PostAsJsonAsync("/api/auth/login", new { password = "test1234" }).Wait();
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose(); _factory.Dispose();
+        foreach (var f in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
+            try { File.Delete(f); } catch { }
+    }
+
+    private async Task<JsonElement> Rpc(string method, object? prms = null)
+    {
+        var resp = await _client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method,
+            @params = prms ?? new { },
+        });
+        resp.EnsureSuccessStatusCode();
+        return (await resp.Content.ReadFromJsonAsync<JsonElement>())!.GetProperty("result");
+    }
+
+    private static JsonElement CalledText(JsonElement result) =>
+        JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!).RootElement;
+
+    [Fact]
+    public async Task Tools_list_exposes_canonical_names()
+    {
+        var result = await Rpc("tools/list");
+        var names = result.GetProperty("tools").EnumerateArray()
+            .Select(t => t.GetProperty("name").GetString()!).ToHashSet();
+        foreach (var expected in new[]
+        {
+            "providers.list", "providers.get", "providers.test", "models.list",
+            "connections.list", "connections.create", "apiKeys.list", "apiKeys.create",
+            "apiKeys.revoke", "combos.list", "combos.create", "combos.run",
+            "usage.stats", "usage.timeseries", "logs.list", "settings.get",
+            "settings.update", "skills.list", "memory.search", "memory.add",
+            "pools.list", "token-health.list", "docs.search", "system.status", "chat",
+        })
+            names.ShouldContain(expected);
+    }
+
+    [Fact]
+    public async Task Tools_call_dispatches_read_tools()
+    {
+        var providers = CalledText(await Rpc("tools/call",
+            new { name = "providers.list", arguments = new { } }));
+        providers.GetProperty("providers").GetArrayLength().ShouldBeGreaterThan(0);
+
+        var stats = CalledText(await Rpc("tools/call",
+            new { name = "usage.stats", arguments = new { } }));
+        stats.GetProperty("total").GetInt32().ShouldBe(0);
+
+        var combos = CalledText(await Rpc("tools/call",
+            new { name = "combos.list", arguments = new { } }));
+        combos.GetProperty("combos").GetArrayLength().ShouldBe(0);
+
+        var status = CalledText(await Rpc("tools/call",
+            new { name = "system.status", arguments = new { } }));
+        status.GetProperty("name").GetString().ShouldBe("LLMRouter");
+        status.GetProperty("counts").GetProperty("providers").GetInt32().ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Tools_call_writes_and_reads_back()
+    {
+        // apiKeys.create → apiKeys.list shows it
+        var created = CalledText(await Rpc("tools/call",
+            new { name = "apiKeys.create", arguments = new { name = "mcp-test" } }));
+        var keyId = created.GetProperty("id").GetString()!;
+        created.GetProperty("key").GetString().ShouldStartWith("sk-llmr-");
+        var keys = CalledText(await Rpc("tools/call",
+            new { name = "apiKeys.list", arguments = new { } }));
+        keys.GetProperty("keys").EnumerateArray().Any(k => k.GetProperty("id").GetString() == keyId).ShouldBeTrue();
+        var revoked = CalledText(await Rpc("tools/call",
+            new { name = "apiKeys.revoke", arguments = new { id = keyId } }));
+        revoked.GetProperty("revoked").GetBoolean().ShouldBeTrue();
+
+        // memory.add → memory.search finds it
+        await Rpc("tools/call", new { name = "memory.add", arguments = new { content = "mcp needle item" } });
+        var mem = CalledText(await Rpc("tools/call",
+            new { name = "memory.search", arguments = new { q = "needle" } }));
+        mem.GetProperty("items").GetArrayLength().ShouldBe(1);
+
+        // settings.update → settings.get
+        await Rpc("tools/call", new { name = "settings.update", arguments = new { data = new { theme = "dark" } } });
+        var settings = CalledText(await Rpc("tools/call",
+            new { name = "settings.get", arguments = new { } }));
+        settings.GetProperty("theme").GetString().ShouldBe("dark");
+
+        // unknown tool → error
+        var err = await _client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0", id = 9, method = "tools/call",
+            @params = new { name = "nope.nothing", arguments = new { } },
+        });
+        var errJson = await err.Content.ReadFromJsonAsync<JsonElement>();
+        errJson!.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32602);
+    }
+}

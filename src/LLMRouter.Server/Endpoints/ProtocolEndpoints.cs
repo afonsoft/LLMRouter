@@ -40,7 +40,7 @@ public static class ProtocolEndpoints
     }
 
     private static JsonObject RpcResult(object id, object result) => new()
-    { ["jsonrpc"] = "2.0", ["id"] = JsonValue.Create(id), ["result"] = JsonValue.Create(JsonSerializer.SerializeToNode(result)) };
+    { ["jsonrpc"] = "2.0", ["id"] = JsonValue.Create(id), ["result"] = JsonSerializer.SerializeToNode(result) };
 
     private static JsonObject RpcError(object? id, int code, string msg) => new()
     { ["jsonrpc"] = "2.0", ["id"] = id is null ? null : JsonValue.Create(id), ["error"] = new JsonObject { ["code"] = code, ["message"] = msg } };
@@ -48,7 +48,7 @@ public static class ProtocolEndpoints
     public static void MapProtocolEndpoints(this WebApplication app)
     {
         // ---- MCP server (JSON-RPC 2.0) — expose gateway models as tools ----
-        app.MapPost("/mcp", async (HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf) =>
+        app.MapPost("/mcp", async (HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, LLMRouter.Core.Registry.ProviderRegistry registry) =>
         {
             JsonElement rpc;
             try { rpc = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
@@ -70,8 +70,9 @@ public static class ProtocolEndpoints
                     return Results.Ok();
                 case "tools/list":
                 {
+                    // SPEC-019: canonical tools + dynamic chat__<model> tools
                     var models = await db.Combos.Select(c => c.Name).ToListAsync();
-                    var tools = models.Select(mn => (object)new
+                    var dynamic = models.Select(mn => (object)new
                     {
                         name = $"chat__{mn.Replace('-', '_').Replace('/', '_')}",
                         description = $"Chat via combo/model '{mn}'",
@@ -82,14 +83,32 @@ public static class ProtocolEndpoints
                             required = new[] { "prompt" },
                         },
                     });
-                    return Results.Json(RpcResult(id!, new { tools }));
+                    return Results.Json(RpcResult(id!, new
+                    {
+                        tools = Mcp.McpTools.ListTools().Concat(dynamic),
+                    }));
                 }
                 case "tools/call":
                 {
-                    var args = rpc.GetProperty("params");
-                    var name = args.GetProperty("name").GetString()!.Replace("chat__", "").Replace('_', '-');
-                    var prompt = args.GetProperty("arguments").GetProperty("prompt").GetString() ?? "";
-                    var text = await ChatAsync(ctx, hf, name, prompt);
+                    var prms = rpc.GetProperty("params");
+                    var toolName = prms.GetProperty("name").GetString()!;
+                    var callArgs = prms.TryGetProperty("arguments", out var ca) ? ca.Clone() : default;
+                    string text;
+                    if (toolName.StartsWith("chat__"))
+                    {
+                        var model = toolName["chat__".Length..].Replace('_', '-');
+                        var prompt = callArgs.ValueKind == JsonValueKind.Object
+                            && callArgs.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "";
+                        text = await ChatAsync(ctx, hf, model, prompt);
+                    }
+                    else
+                    {
+                        var result = await Mcp.McpTools.DispatchAsync(toolName, callArgs, ctx, db, registry, hf,
+                            (m, p) => ChatAsync(ctx, hf, m, p));
+                        if (result is null)
+                            return Results.Json(RpcError(id, -32602, $"unknown tool or missing args: {toolName}"));
+                        text = JsonSerializer.Serialize(result, JsonOpts);
+                    }
                     return Results.Json(RpcResult(id!, new
                     {
                         content = new[] { new { type = "text", text } },

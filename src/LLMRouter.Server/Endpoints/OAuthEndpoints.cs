@@ -90,6 +90,31 @@ public static class OAuthEndpoints
             return Results.Content("<html><body><h3>Connected — close this tab.</h3></body></html>", "text/html");
         });
 
+        // SPEC-021: env vars each OAuth provider expects (from registry oauthConfig)
+        g.MapGet("/oauth/env", (ProviderRegistry r) =>
+        {
+            var rows = new List<object>();
+            foreach (var (id, p) in r.Providers)
+            {
+                var oc = p.Oauth is JsonElement je ? je
+                    : p.Oauth is null ? default
+                    : JsonSerializer.SerializeToElement(p.Oauth);
+                if (oc.ValueKind != JsonValueKind.Object) continue;
+                string? Get(string k) =>
+                    oc.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                var envs = new[] { Get("clientIdEnv"), Get("clientSecretEnv"), Get("clientSecretDefaultEnv") }
+                    .Where(x => x is not null).Select(x => x!).ToArray();
+                if (envs.Length > 0)
+                    rows.Add(new
+                    {
+                        provider = id,
+                        env = envs,
+                        configured = envs.All(e => Environment.GetEnvironmentVariable(e) is not null),
+                    });
+            }
+            return Results.Json(new { providers = rows }, JsonOpts);
+        });
+
         g.MapGet("/token-health", async (LlmRouterDbContext db) =>
         {
             var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync();

@@ -83,6 +83,8 @@ public sealed class GatewayEngine(
             var provider = registry.GetProvider(providerId)
                 ?? await NodeResolver.ResolveAsync(db, providerId, ct);
             if (provider is null) continue;
+            // SPEC-021: provider circuit breaker — skip OPEN providers entirely
+            if (!Resilience.ProviderBreaker.CanExecute(provider.Id, provider.AuthType)) continue;
             var conns = await db.ProviderConnections
                 .Where(c => c.Provider == provider.Id && c.IsActive)
                 .OrderBy(c => c.Priority).ThenBy(c => c.Name)
@@ -90,6 +92,8 @@ public sealed class GatewayEngine(
             foreach (var c in conns.Where(c => !Resilience.CooldownTracker.IsCooling(c.Id)))
             {
                 if (await Routing.QuotaTracker.ExhaustedAsync(db, c)) continue;
+                // SPEC-021: model lockout — per-model quarantine keeps conn alive
+                if (Resilience.ModelLockout.IsLocked(provider.Id, c.Id, upstreamModel)) continue;
                 targets.Add(new ResolvedTarget(provider, c, upstreamModel, combo?.Name));
             }
         }

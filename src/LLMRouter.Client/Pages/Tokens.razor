@@ -30,6 +30,27 @@
     }
 </div>
 
+@if (_envRows is { Length: > 0 })
+{
+    <div class="card card-p" style="margin-bottom:14px">
+        <h3 class="bold" style="margin:0 0 8px">@Loc.T("tokens.env", "OAuth env vars")</h3>
+        <p class="muted sm">@Loc.T("tokens.envHint", "Client credentials resolve from environment variables — set these before starting a flow.")</p>
+        <table class="tbl">
+            <thead><tr><th>@Loc.T("common.provider", "Provider")</th><th>Env</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var r in _envRows)
+                {
+                    <tr>
+                        <td>@r.GetProperty("provider").GetString()</td>
+                        <td><code class="sm">@string.Join(", ", r.GetProperty("env").EnumerateArray().Select(e => e.GetString()))</code></td>
+                        <td><span class="badge @(r.GetProperty("configured").GetBoolean() ? "ok" : "warn")">@(r.GetProperty("configured").GetBoolean() ? "set" : "missing")</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
 @if (_conns is null)
 {
     <p class="muted">…</p>
@@ -59,10 +80,20 @@ else
     private JsonElement[]? _conns;
     private List<string> _oauthProviders = ["github", "claude", "gemini", "codex", "kiro", "gitlab-duo", "xai-oauth", "grok-cli", "kimi-coding", "cline", "clinepass", "qoder", "agy", "antigravity", "kilocode", "workbuddy", "openference", "ghe-copilot"];
     private string _provider = "github";
+    private JsonElement[]? _envRows;
     private JsonElement? _flow;
     private string _flowStatus = "";
 
-    protected override async Task OnInitializedAsync() => await Load();
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        try
+        {
+            var r = await Api.GetAsync("api/oauth/env");
+            _envRows = r.TryGetProperty("providers", out var arr) ? arr.EnumerateArray().ToArray() : [];
+        }
+        catch { _envRows = []; }
+    }
 
     private async Task Load()
     {

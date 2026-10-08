@@ -36,6 +36,11 @@ public static class ExtendedTranslators
         // system: string → array so cache_control anchoring can apply
         if (o["system"] is JsonValue sv && sv.TryGetValue<string>(out var sText))
             o["system"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = sText });
+        // normalize string elements inside a system array to text blocks
+        if (o["system"] is JsonArray sysArr)
+            for (var i = 0; i < sysArr.Count; i++)
+                if (sysArr[i] is JsonValue el && el.TryGetValue<string>(out var t))
+                    sysArr[i] = new JsonObject { ["type"] = "text", ["text"] = t };
         // normalize tool_choice: {type:"function",...} → {type:"tool",name:...}
         if (o["tool_choice"] is JsonObject tc && tc["type"]?.GetValue<string>() == "function")
             o["tool_choice"] = new JsonObject { ["type"] = "tool", ["name"] = tc["function"]?["name"]?.DeepClone() };
@@ -46,6 +51,44 @@ public static class ExtendedTranslators
             && o["max_tokens"] is { } mt
             && bt.GetValue<int>() >= mt.GetValue<int>())
             o["max_tokens"] = Math.Max(bt.GetValue<int>() + 1, 1024);
+        ApplyCacheBreakpoints(o);
+    }
+
+    /// <summary>
+    /// SPEC-018: upstream prepareClaudeRequest — when the client sent no
+    /// cache_control markers, anchor up to 4 ephemeral breakpoints (last
+    /// system block, last tool, last block of each of the last two messages).
+    /// Existing client markers are preserved untouched (passthrough).
+    /// </summary>
+    private static void ApplyCacheBreakpoints(JsonObject o)
+    {
+        if (HasCacheControl(o)) return;
+        var anchors = new List<JsonNode>();
+        if (o["system"] is JsonArray sys && sys.Count > 0 && sys[^1] is { } lastSys)
+            anchors.Add(lastSys);
+        if (o["tools"] is JsonArray tools && tools.Count > 0 && tools[^1] is { } lastTool)
+            anchors.Add(lastTool);
+        if (o["messages"] is JsonArray msgs)
+            for (var i = msgs.Count - 1; i >= 0 && anchors.Count < 4; i--)
+                if (msgs[i]?["content"] is JsonArray { Count: > 0 } c && c[^1] is { } lastBlock)
+                    anchors.Add(lastBlock);
+        foreach (var a in anchors.Take(4))
+            if (a is JsonObject ao)
+                ao["cache_control"] = new JsonObject { ["type"] = "ephemeral" };
+    }
+
+    private static bool HasCacheControl(JsonNode? n)
+    {
+        switch (n)
+        {
+            case JsonObject o:
+                if (o.ContainsKey("cache_control")) return true;
+                return o.Any(kv => HasCacheControl(kv.Value));
+            case JsonArray a:
+                return a.Any(HasCacheControl);
+            default:
+                return false;
+        }
     }
 
     /// <summary>tool_use block must be immediately followed by a tool_result in the next message.</summary>
@@ -165,9 +208,14 @@ public static class ExtendedTranslators
                             ["tool_call_id"] = b?["tool_use_id"]?.DeepClone(),
                             ["content"] = ExtractToolResultText(b),
                         }).ToList();
+                        // SPEC-018 hoistToolResultImages: openai tool messages are
+                        // text-only — move image blocks into a following user msg
+                        var images = results.SelectMany(b => ExtractToolResultImages(b)).ToList();
                         var remaining = content.Where(b => b?["type"]?.GetValue<string>() != "tool_result").ToList();
                         msgs.RemoveAt(i);
                         foreach (var tm in toolMsgs) msgs.Insert(i++, tm);
+                        if (images.Count > 0)
+                            msgs.Insert(i++, new JsonObject { ["role"] = "user", ["content"] = new JsonArray(images.ToArray()) });
                         if (remaining.Count > 0)
                             msgs.Insert(i, new JsonObject { ["role"] = "user", ["content"] = new JsonArray(remaining.Select(r => r!.DeepClone()).ToArray()) });
                     }
@@ -185,6 +233,26 @@ public static class ExtendedTranslators
         return c?.ToJsonString() ?? "";
     }
 
+    /// <summary>claude image blocks inside a tool_result → openai image_url parts.</summary>
+    private static IEnumerable<JsonNode> ExtractToolResultImages(JsonNode? block)
+    {
+        if (block?["content"] is not JsonArray arr) yield break;
+        foreach (var p in arr)
+        {
+            if (p?["type"]?.GetValue<string>() != "image") continue;
+            var src = p["source"];
+            var url = src?["type"]?.GetValue<string>() == "base64"
+                ? $"data:{src["media_type"]?.GetValue<string>()};base64,{src["data"]?.GetValue<string>()}"
+                : src?["url"]?.GetValue<string>();
+            if (url is not null)
+                yield return new JsonObject
+                {
+                    ["type"] = "image_url",
+                    ["image_url"] = new JsonObject { ["url"] = url },
+                };
+        }
+    }
+
     /// <summary>
     /// Normalize openai request hygiene: drop empty messages and empty
     /// tools array, strip thinking blocks from assistant content.
@@ -197,7 +265,8 @@ public static class ExtendedTranslators
             {
                 var c = msgs[i]?["content"];
                 if (c is JsonValue v && v.TryGetValue<string>(out var s) && s.Length == 0
-                    && msgs[i]?["tool_calls"] is null)
+                    && msgs[i]?["tool_calls"] is null
+                    && msgs[i]?["role"]?.GetValue<string>() != "tool")
                     msgs.RemoveAt(i);
             }
         // thinking blocks in assistant content → strip (openai has no thinking blocks)
@@ -297,6 +366,8 @@ public static class ExtendedTranslators
             foreach (var item in arr)
             {
                 var type = item?["type"]?.GetValue<string>();
+                // bare {role,content} items (no type) are messages per upstream
+                type ??= item?["role"] is not null ? "message" : null;
                 switch (type)
                 {
                     case "message":

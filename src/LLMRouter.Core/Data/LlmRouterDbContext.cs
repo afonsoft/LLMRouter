@@ -43,7 +43,8 @@ public class LlmRouterDbContext : DbContext
         lock (EnsureCreatedLock)
         {
             try { Database.EnsureCreated(); }
-            catch (Microsoft.Data.Sqlite.SqliteException) { /* schema raced by a parallel host */ }
+            catch (Exception ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            { /* schema raced by a parallel host */ }
         }
         // Lightweight column migration for DBs created before the column existed.
         var conn = Database.GetDbConnection();

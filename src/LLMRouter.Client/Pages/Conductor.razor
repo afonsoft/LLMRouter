@@ -1,0 +1,73 @@
+@page "/dashboard/conductor"
+@page "/dashboard/orchestration"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("conductor.title", "Conductor")</h1>
+<p class="page-desc">@Loc.T("conductor.subtitle", "Multi-step workflows — chain models, fan-out, merge outputs")</p>
+
+<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">
+    <div class="card card-p">
+        <div class="flex" style="gap:8px;margin-bottom:8px">
+            <input class="input" style="width:160px" @bind="_wfName" placeholder="workflow name" />
+            <button class="btn btn-primary btn-sm" @onclick="Save">@Loc.T("common.save", "Save")</button>
+            <select class="input" @bind="_wfName">
+                <option value="">saved…</option>
+                @foreach (var w in _saved) { <option value="@w">@w</option> }
+            </select>
+        </div>
+        <textarea class="input" style="width:100%;height:200px;font-family:var(--mono);font-size:12px" @bind="_wfJson"></textarea>
+        <input class="input" style="margin-top:8px" @bind="_input" placeholder="input text" />
+        <button class="btn btn-primary btn-sm" style="margin-top:8px" @onclick="Run" disabled="@_busy">@Loc.T("conductor.run", "Run")</button>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 8px">@Loc.T("conductor.output", "Output")</h3>
+        @if (_result is not null)
+        {
+            @foreach (var st in _result.Value.GetProperty("steps").EnumerateArray())
+            {
+                <div class="card-in" style="padding:8px;background:var(--surface-2);border-radius:9px;margin-bottom:8px">
+                    <div class="flex between"><b>@st.GetProperty("name").GetString()</b><span class="muted xs">@st.GetProperty("model").GetString() · @st.GetProperty("ms").GetInt32()ms</span></div>
+                    <pre style="white-space:pre-wrap;font-size:11px;margin:6px 0 0">@st.GetProperty("output").GetString()</pre>
+                </div>
+            }
+            <b>@Loc.T("conductor.final", "Final")</b>
+            <pre class="code-block" style="font-size:12px;white-space:pre-wrap">@_result.Value.GetProperty("final").GetString()</pre>
+        }
+        else { <p class="muted">…</p> }
+    </div>
+</div>
+
+@code {
+    private string _wfName = "", _input = "";
+    private string _wfJson = "{\n  \"name\": \"review\",\n  \"steps\": [\n    {\"name\": \"draft\", \"model\": \"combo-fast\", \"prompt\": \"Summarize: {{input}}\"},\n    {\"name\": \"critique\", \"fan\": [\"m1\", \"m2\"], \"prompt\": \"Critique: {{prev}}\", \"join\": \"merge\"}\n  ]\n}";
+    private JsonElement? _result;
+    private List<string> _saved = [];
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await LoadSaved();
+
+    private async Task LoadSaved()
+    {
+        var r = await Api.GetAsync("api/conductor/workflows");
+        _saved = r.TryGetProperty("workflows", out var a)
+            ? a.EnumerateArray().Select(w => w.TryGetProperty("name", out var n) ? n.GetString()! : "").Where(x => x != "").ToList()
+            : [];
+    }
+
+    private async Task Save()
+    {
+        await Api.PutAsync($"api/conductor/workflows/{Uri.EscapeDataString(_wfName)}",
+            JsonSerializer.Deserialize<JsonElement>(_wfJson));
+        await LoadSaved();
+    }
+
+    private async Task Run()
+    {
+        _busy = true;
+        var r = await Api.Raw.PostAsJsonAsync("api/conductor/run",
+            new { workflow = JsonSerializer.Deserialize<JsonElement>(_wfJson), input = _input });
+        _result = r.IsSuccessStatusCode ? JsonSerializer.Deserialize<JsonElement>(await r.Content.ReadAsStringAsync()) : null;
+        _busy = false;
+    }
+}

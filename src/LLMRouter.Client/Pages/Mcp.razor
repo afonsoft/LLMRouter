@@ -1,0 +1,77 @@
+@page "/dashboard/mcp"
+@page "/dashboard/agent-bridge"
+@page "/dashboard/cloud-agents"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("mcp.title", "MCP")</h1>
+<p class="page-desc">@Loc.T("mcp.subtitle", "Mount this router as an MCP server and register external MCP servers")</p>
+
+<div class="card card-p" style="margin-bottom:14px">
+    <h3 class="bold" style="margin:0 0 6px">@Loc.T("mcp.endpoint", "Router as MCP server")</h3>
+    <p class="muted" style="font-size:12px">JSON-RPC 2.0 endpoint — add to your agent CLI's MCP config:</p>
+    <pre class="code-block" style="font-size:12px">{
+  "mcpServers": {
+    "llmrouter": { "url": "ORIGIN/mcp", "headers": { "Authorization": "Bearer API_KEY" } }
+  }
+}</pre>
+    <p class="muted" style="font-size:12px">tools/list exposes every combo as <code>chat__&lt;model&gt;</code>.</p>
+</div>
+
+<div class="card card-p" style="margin-bottom:14px">
+    <h3 class="bold" style="margin:0 0 8px">@Loc.T("mcp.add", "Register external server")</h3>
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <input class="input" style="width:160px" @bind="_name" placeholder="name" />
+        <select class="input" style="width:100px" @bind="_transport">
+            <option>stdio</option><option>sse</option><option>http</option>
+        </select>
+        <input class="input" style="flex:1;min-width:220px" @bind="_target" placeholder="command or url" />
+        <button class="btn btn-primary btn-sm" @onclick="Add">@Loc.T("common.add", "Add")</button>
+    </div>
+</div>
+
+@if (_servers is null) { <p class="muted">…</p> }
+else
+{
+    <table class="tbl">
+        <thead><tr><th>@Loc.T("common.name", "Name")</th><th>transport</th><th>target</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var s in _servers)
+            {
+                <tr>
+                    <td>@(s?["name"]?.GetValue<string>())</td>
+                    <td>@(s?["transport"]?.GetValue<string>())</td>
+                    <td class="muted">@(s?["target"]?.GetValue<string>())</td>
+                    <td><button class="btn btn-sm" @onclick='() => Remove(s?["name"]?.GetValue<string>() ?? "")'>@Loc.T("common.delete", "Delete")</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private JsonNode[]? _servers;
+    private string _name = "", _transport = "http", _target = "";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/mcp-servers");
+        _servers = r.TryGetProperty("servers", out var a) ? a.EnumerateArray().Select(e => JsonNode.Parse(e.GetRawText())!).ToArray() : [];
+    }
+
+    private async Task Add()
+    {
+        await Api.PutAsync($"api/mcp-servers/{Uri.EscapeDataString(_name)}",
+            new { transport = _transport, target = _target });
+        _name = _target = "";
+        await Load();
+    }
+
+    private async Task Remove(string name)
+    {
+        await Api.DeleteAsync($"api/mcp-servers/{Uri.EscapeDataString(name)}");
+        await Load();
+    }
+}

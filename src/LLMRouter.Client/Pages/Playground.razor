@@ -25,8 +25,29 @@
             <textarea class="input" rows="4" @bind="_system" placeholder="You are a helpful assistant."></textarea>
         </div>
         <div class="mt-4">
+            <label class="lbl">@Loc.T("playground.compare", "Compare model (optional)")</label>
+            <select class="input" @bind="_model2">
+                <option value="">—</option>
+                @foreach (var m in _models.Concat(_combos)) { <option value="@m">@m</option> }
+            </select>
+        </div>
+        <div class="mt-4">
+            <label class="lbl">temperature</label>
+            <input class="input" type="number" step="0.1" min="0" max="2" @bind="_temp" />
+            <label class="lbl">max tokens</label>
+            <input class="input" type="number" @bind="_maxTok" />
             <label class="lbl">@Loc.T("playground.stream", "Streaming")</label>
             <input type="checkbox" @bind="_stream" />
+        </div>
+        <div class="mt-4">
+            <label class="lbl">@Loc.T("playground.conversation", "Conversation")</label>
+            <div class="flex gap-2">
+                <button class="btn btn-sm" @onclick="Save">@Loc.T("common.save", "Save")</button>
+                <select class="input" @bind="_loadId" @bind:after="Load">
+                    <option value="">@Loc.T("playground.load", "load…")</option>
+                    @foreach (var cv in _convs) { <option value="@cv.Id">@cv.Title</option> }
+                </select>
+            </div>
         </div>
     </div>
     <div class="card card-p col">
@@ -40,7 +61,11 @@
             }
             @if (_reply is not null)
             {
-                <div class="chat-msg assistant"><div class="xs muted bold" style="margin-bottom:4px">assistant</div><div style="white-space:pre-wrap">@_reply</div></div>
+                <div class="chat-msg assistant"><div class="xs muted bold" style="margin-bottom:4px">assistant (@_model)</div><div style="white-space:pre-wrap">@_reply</div></div>
+            }
+            @if (_reply2 is not null)
+            {
+                <div class="chat-msg assistant" style="border-left:2px solid var(--accent)"><div class="xs muted bold" style="margin-bottom:4px">@_model2</div><div style="white-space:pre-wrap">@_reply2</div></div>
             }
         </div>
         <div class="flex gap-2 mt-4">
@@ -59,9 +84,51 @@
     private List<Msg> _messages = [];
     private List<string> _models = [], _combos = [];
     private string _model = "", _system = "", _input = "", _error = "";
-    private string? _reply;
+    private string? _reply, _reply2;
     private bool _stream = true, _busy;
     private string? _lastErr;
+    private string _model2 = "", _loadId = "";
+    private double _temp = 0.7;
+    private int _maxTok = 1024;
+    private List<(string Id, string Title)> _convs = [];
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) await RefreshConvs();
+    }
+
+    private async Task RefreshConvs()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/conversations");
+            _convs = r.GetProperty("conversations").EnumerateArray()
+                .Select(c => (c.GetProperty("id").GetString()!, c.GetProperty("title").GetString() ?? "conv"))
+                .ToList();
+        }
+        catch { }
+    }
+
+    private async Task Save()
+    {
+        var id = _loadId != "" ? _loadId : Guid.NewGuid().ToString("N")[..8];
+        var title = _messages.FirstOrDefault()?.Content[..Math.Min(40, _messages.FirstOrDefault()?.Content.Length ?? 0)] ?? "conv";
+        await Api.PutAsync($"api/conversations/{id}", new
+        {
+            title,
+            messages = _messages.Select(m => new { role = m.Role, content = m.Content }),
+        });
+        await RefreshConvs();
+    }
+
+    private async Task Load()
+    {
+        if (_loadId == "") return;
+        var r = await Api.GetAsync($"api/conversations/{_loadId}");
+        _messages = r.TryGetProperty("messages", out var ms)
+            ? ms.EnumerateArray().Select(m => new Msg(m.GetProperty("role").GetString()!, m.GetProperty("content").GetString()!)).ToList()
+            : [];
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,8 +158,9 @@
             msgs.AddRange(history.Select(m => (object)new { role = m.Role, content = m.Content }));
             var req = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
             {
-                Content = JsonContent.Create(new { model = _model, messages = msgs, stream = _stream }),
+                Content = JsonContent.Create(new { model = _model, messages = msgs, stream = _stream, temperature = _temp, max_tokens = _maxTok }),
             };
+            if (!string.IsNullOrEmpty(_model2)) _ = Compare(msgs);
             var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
             if (!resp.IsSuccessStatusCode) { _lastErr = await resp.Content.ReadAsStringAsync(); _reply = null; }
             else if (_stream)
@@ -130,5 +198,24 @@
         catch (Exception ex) { _lastErr = ex.Message; }
         _busy = false;
         _error = _lastErr ?? "";
+    }
+
+    private async Task Compare(List<object> msgs)
+    {
+        _reply2 = "…";
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+            {
+                Content = JsonContent.Create(new { model = _model2, messages = msgs, stream = false, temperature = _temp, max_tokens = _maxTok }),
+            };
+            var resp = await Http.SendAsync(req);
+            var el = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            _reply2 = resp.IsSuccessStatusCode
+                ? el.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()
+                : $"error: {await resp.Content.ReadAsStringAsync()}";
+        }
+        catch (Exception ex) { _reply2 = ex.Message; }
+        StateHasChanged();
     }
 }

@@ -34,8 +34,16 @@ dotnet publish src/LLMRouter.Server -c Release -r linux-x64 \
 ### Docker
 
 ```bash
+cp .env.example .env                               # ajuste as variáveis
 docker compose up -d                               # http://localhost:20128, volume /data (SQLite)
+docker compose up -d llmrouter-image               # usa a imagem publicada ghcr.io/afonsoft/llmrouter
 ```
+
+## CI/CD
+
+- **CI** (`.github/workflows/ci.yml`): build + testes unitários em todo push/PR, mais smoke do Dockerfile e validação do `docker-compose.yml`.
+- **Release** (`.github/workflows/release.yml`): tag `v*` publica binários multi-RID (linux/mac/win), GitHub Release e a imagem Docker em `ghcr.io/afonsoft/llmrouter:{versão,major.minor,latest}` (multi-arch amd64/arm64).
+- **Variáveis**: `.env.example` documenta todas (porta, `LLMROUTER_DB_PATH`, OAuth clients por provider, LLM de teste). O compose carrega `.env` via `env_file`.
 
 ```bash
 dotnet run --project src/LLMRouter.Server

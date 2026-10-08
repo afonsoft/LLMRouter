@@ -1,0 +1,67 @@
+@page "/dashboard/settings"
+@page "/dashboard/settings/general"
+@inject Api Api
+@inject Loc Loc
+@inject ThemeService Theme
+@inject AuthState Auth
+
+<h1 class="page-title">@Loc.T("settings.title", "Settings")</h1>
+<p class="page-desc">@Loc.T("settings.subtitle", "Router configuration")</p>
+
+<div class="grid grid-2 mt-6">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("settings.appearance", "Appearance")</h3>
+        <label class="lbl">@Loc.T("settings.theme", "Theme")</label>
+        <select class="input" value="@Theme.Theme" @onchange='async e => await Theme.SetAsync(e.Value?.ToString() ?? "system")'>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+        </select>
+        <div class="mt-4">
+            <label class="lbl">@Loc.T("settings.language", "Language")</label>
+            <select class="input" value="@Loc.Lang" @onchange='async e => await Loc.SetAsync(e.Value?.ToString() ?? "en")'>
+                <option value="en">English</option>
+                <option value="pt-BR">Português (BR)</option>
+                <option value="es">Español</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("settings.security", "Security")</h3>
+        <div class="flex between">
+            <span class="sm text2">@Loc.T("settings.requireLogin", "Require login for dashboard")</span>
+            <input type="checkbox" checked="@_requireLogin" @onchange="ToggleRequireLogin" />
+        </div>
+        <div class="mt-4">
+            <label class="lbl">@Loc.T("settings.changePassword", "Change admin password")</label>
+            <input class="input" type="password" @bind="_newPw" placeholder="New password" />
+            <button class="btn btn-sm mt-2" @onclick="ChangePw" disabled="@(string.IsNullOrEmpty(_newPw))">@Loc.T("common.save", "Save")</button>
+            @if (_pwMsg is not null) { <span class="sm muted" style="margin-left:8px">@_pwMsg</span> }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool _requireLogin = true;
+    private string _newPw = "";
+    private string? _pwMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _requireLogin = Auth.RequireLogin;
+    }
+
+    private async Task ToggleRequireLogin()
+    {
+        _requireLogin = !_requireLogin;
+        await Api.PutAsync("api/settings", new { requireLogin = _requireLogin });
+    }
+
+    private async Task ChangePw()
+    {
+        await Auth.RawChangePassword(_newPw);
+        _pwMsg = "✓";
+        _newPw = "";
+    }
+}

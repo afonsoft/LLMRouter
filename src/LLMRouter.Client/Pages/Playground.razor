@@ -1,0 +1,134 @@
+@page "/dashboard/playground"
+@inject Api Api
+@inject Loc Loc
+@inject HttpClient Http
+
+<h1 class="page-title">@Loc.T("playground.title", "Playground")</h1>
+<p class="page-desc">@Loc.T("playground.subtitle", "Chat through the gateway with your connected models")</p>
+
+<div class="grid mt-6" style="grid-template-columns:260px 1fr">
+    <div class="card card-p">
+        <label class="lbl">@Loc.T("models.model", "Model")</label>
+        <select class="input" @bind="_model">
+            <option value="">—</option>
+            @foreach (var m in _models)
+            {
+                <option value="@m">@m</option>
+            }
+            @foreach (var c in _combos)
+            {
+                <option value="@c">⚡ @c</option>
+            }
+        </select>
+        <div class="mt-4">
+            <label class="lbl">@Loc.T("playground.system", "System prompt")</label>
+            <textarea class="input" rows="4" @bind="_system" placeholder="You are a helpful assistant."></textarea>
+        </div>
+        <div class="mt-4">
+            <label class="lbl">@Loc.T("playground.stream", "Streaming")</label>
+            <input type="checkbox" @bind="_stream" />
+        </div>
+    </div>
+    <div class="card card-p col">
+        <div style="flex:1;overflow-y:auto;min-height:320px;max-height:55vh">
+            @foreach (var m in _messages)
+            {
+                <div class="chat-msg @m.Role">
+                    <div class="xs muted bold" style="margin-bottom:4px">@m.Role</div>
+                    <div style="white-space:pre-wrap">@m.Content</div>
+                </div>
+            }
+            @if (_reply is not null)
+            {
+                <div class="chat-msg assistant"><div class="xs muted bold" style="margin-bottom:4px">assistant</div><div style="white-space:pre-wrap">@_reply</div></div>
+            }
+        </div>
+        <div class="flex gap-2 mt-4">
+            <input class="input" style="flex:1" placeholder="@Loc.T("playground.placeholder", "Type a message…")"
+                   @bind="_input" @bind:event="oninput" @onkeydown='e => { if (e.Key == "Enter") _ = Send(); }' />
+            <button class="btn btn-primary" @onclick="Send" disabled="@(_busy || string.IsNullOrWhiteSpace(_model))">
+                <span class="material-symbols-outlined" style="font-size:17px">send</span>
+            </button>
+        </div>
+        @if (_error is not null) { <p class="sm mt-2" style="color:var(--error)">@_error</p> }
+    </div>
+</div>
+
+@code {
+    private record Msg(string Role, string Content);
+    private List<Msg> _messages = [];
+    private List<string> _models = [], _combos = [];
+    private string _model = "", _system = "", _input = "", _error = "";
+    private string? _reply;
+    private bool _stream = true, _busy;
+    private string? _lastErr;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/models");
+            foreach (var m in r.GetProperty("models").EnumerateArray())
+                _models.Add(m.GetProperty("id").GetString()!);
+            var c = await Api.GetAsync("api/combos");
+            foreach (var cb in c.GetProperty("combos").EnumerateArray())
+                _combos.Add(cb.GetProperty("name").GetString()!);
+            _model = _models.FirstOrDefault() ?? _combos.FirstOrDefault() ?? "";
+        }
+        catch { }
+    }
+
+    private async Task Send()
+    {
+        if (string.IsNullOrWhiteSpace(_input) || _busy) return;
+        _messages.Add(new("user", _input));
+        var history = _messages.ToList();
+        _input = ""; _reply = ""; _lastErr = null; _busy = true;
+        try
+        {
+            var msgs = new List<object>();
+            if (!string.IsNullOrWhiteSpace(_system)) msgs.Add(new { role = "system", content = _system });
+            msgs.AddRange(history.Select(m => (object)new { role = m.Role, content = m.Content }));
+            var req = new HttpRequestMessage(HttpMethod.Post, "v1/chat/completions")
+            {
+                Content = JsonContent.Create(new { model = _model, messages = msgs, stream = _stream }),
+            };
+            var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            if (!resp.IsSuccessStatusCode) { _lastErr = await resp.Content.ReadAsStringAsync(); _reply = null; }
+            else if (_stream)
+            {
+                var reader = new System.IO.StreamReader(await resp.Content.ReadAsStreamAsync());
+                string? line; var sb = new System.Text.StringBuilder();
+                while ((line = await reader.ReadLineAsync()) is not null)
+                {
+                    if (!line.StartsWith("data:")) continue;
+                    var data = line[5..].Trim();
+                    if (data == "[DONE]") break;
+                    try
+                    {
+                        var el = JsonDocument.Parse(data).RootElement;
+                        var delta = el.GetProperty("choices")[0].GetProperty("delta");
+                        if (delta.TryGetProperty("content", out var t))
+                        {
+                            sb.Append(t.GetString());
+                            _reply = sb.ToString();
+                            StateHasChanged();
+                        }
+                    }
+                    catch { }
+                }
+                if (sb.Length > 0) { _messages.Add(new("assistant", sb.ToString())); _reply = null; }
+            }
+            else
+            {
+                var el = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                var text = el.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+                _messages.Add(new("assistant", text));
+                _reply = null;
+            }
+        }
+        catch (Exception ex) { _lastErr = ex.Message; }
+        _busy = false;
+        _error = _lastErr ?? "";
+    }
+}

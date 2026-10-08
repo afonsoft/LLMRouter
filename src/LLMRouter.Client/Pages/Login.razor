@@ -1,0 +1,61 @@
+@page "/login"
+@layout Layout.AuthLayout
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject Loc Loc
+
+<div class="auth-logo">L</div>
+<h1 style="font-size:20px;font-weight:700;margin:0 0 4px">LLMRouter</h1>
+<p class="muted sm" style="margin:0 0 24px">@Loc.T("login.subtitle", "Sign in to your router")</p>
+
+@if (!Auth.SetupComplete)
+{
+    <p class="sm text2" style="margin-bottom:14px">@Loc.T("login.firstRun", "First run — set your admin password.")</p>
+}
+<EditForm Model="_model" OnValidSubmit="DoLogin">
+    <div style="text-align:left;margin-bottom:14px">
+        <label class="lbl">@Loc.T("login.password", "Password")</label>
+        <input class="input" type="password" @bind="_model.Password" autofocus />
+    </div>
+    @if (!Auth.SetupComplete)
+    {
+        <div style="text-align:left;margin-bottom:14px">
+            <label class="lbl">@Loc.T("login.confirm", "Confirm password")</label>
+            <input class="input" type="password" @bind="_model.Confirm" />
+        </div>
+    }
+    @if (_error is not null)
+    {
+        <p class="sm" style="color:var(--error);margin-bottom:10px">@_error</p>
+    }
+    <button class="btn btn-primary" style="width:100%;justify-content:center" type="submit" disabled="@_busy">
+        @(_busy ? "…" : Loc.T(Auth.SetupComplete ? "login.signIn" : "login.createAccount", Auth.SetupComplete ? "Sign in" : "Create account"))
+    </button>
+</EditForm>
+
+@code {
+    private LoginModel _model = new();
+    private string? _error;
+    private bool _busy;
+
+    private sealed class LoginModel { public string Password { get; set; } = ""; public string Confirm { get; set; } = ""; }
+
+    private async Task DoLogin()
+    {
+        _error = null;
+        if (!Auth.SetupComplete)
+        {
+            if (_model.Password.Length < 4) { _error = "Password too short"; return; }
+            if (_model.Password != _model.Confirm) { _error = "Passwords do not match"; return; }
+            _busy = true;
+            await Auth.LoginAsync(_model.Password); // first login marks setup
+            await Auth.RawChangePassword(_model.Password);
+        }
+        else
+        {
+            _busy = true;
+            if (!await Auth.LoginAsync(_model.Password)) { _error = "Invalid password"; _busy = false; return; }
+        }
+        Nav.NavigateTo("/home", true);
+    }
+}

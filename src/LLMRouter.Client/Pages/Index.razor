@@ -1,0 +1,88 @@
+@page "/"
+@page "/home"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("home.title", "Welcome to LLMRouter")</h1>
+<p class="page-desc">@Loc.T("home.subtitle", "Unified AI gateway — one endpoint, every provider")</p>
+
+<div class="grid grid-4 mt-6">
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(99,102,241,.14);color:var(--accent)"><span class="material-symbols-outlined">dns</span></div>
+        <div><div class="stat-value">@_providers</div><div class="stat-label">@Loc.T("home.activeProviders", "Active providers")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(229,77,94,.14);color:var(--primary)"><span class="material-symbols-outlined">layers</span></div>
+        <div><div class="stat-value">@_combos</div><div class="stat-label">@Loc.T("home.combos", "Combos")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(22,163,74,.14);color:var(--success)"><span class="material-symbols-outlined">bolt</span></div>
+        <div><div class="stat-value">@_requests</div><div class="stat-label">@Loc.T("home.requestsToday", "Requests today")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(217,119,6,.14);color:var(--warning)"><span class="material-symbols-outlined">token</span></div>
+        <div><div class="stat-value">@_tokens</div><div class="stat-label">@Loc.T("home.tokensToday", "Tokens today")</div></div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-6">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("home.quickStart", "Quick start")</h3>
+        <div class="col gap-3">
+            <div class="flex gap-3"><span class="badge info">1</span><span class="sm">@Loc.T("home.step1", "Add a provider connection")</span></div>
+            <div class="flex gap-3"><span class="badge info">2</span><span class="sm">@Loc.T("home.step2", "Create an API key")</span></div>
+            <div class="flex gap-3"><span class="badge info">3</span><span class="sm">@Loc.T("home.step3", "Point your app at the gateway")</span></div>
+        </div>
+        <div class="flex gap-2 mt-4">
+            <a class="btn btn-primary btn-sm" href="/dashboard/providers">@Loc.T("home.addProvider", "Add provider")</a>
+            <a class="btn btn-sm" href="/dashboard/endpoint">@Loc.T("home.viewEndpoints", "View endpoints")</a>
+        </div>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("home.recentActivity", "Recent requests")</h3>
+        @if (_recent.Count == 0)
+        {
+            <p class="muted sm">@Loc.T("home.noActivity", "No requests yet — send your first request to the gateway.")</p>
+        }
+        else
+        {
+            <table class="table">
+                <tbody>
+                    @foreach (var r in _recent)
+                    {
+                        <tr>
+                            <td class="mono sm">@r.Provider/@r.Model</td>
+                            <td class="muted sm">@r.Timestamp</td>
+                            <td><span class="badge @(r.Status == "200" ? "ok" : "err")">@r.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private int _providers, _combos, _requests;
+    private string _tokens = "0";
+    private List<(string Provider, string Model, string Timestamp, string Status)> _recent = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var conns = await Api.GetAsync("api/provider-connections");
+            _providers = conns.GetProperty("connections").EnumerateArray().Count(c => c.GetProperty("isActive").GetBoolean());
+            var combos = await Api.GetAsync("api/combos");
+            _combos = combos.GetProperty("combos").EnumerateArray().Count();
+            var usage = await Api.GetAsync("api/usage?range=today");
+            _requests = usage.GetProperty("totalRequests").GetInt32();
+            _tokens = usage.GetProperty("totalTokens").GetInt32().ToString("N0");
+            var logs = await Api.GetAsync("api/logs?limit=6");
+            foreach (var l in logs.GetProperty("logs").EnumerateArray())
+                _recent.Add((l.GetProperty("provider").GetString() ?? "", l.GetProperty("model").GetString() ?? "",
+                    l.GetProperty("timestamp").GetString() ?? "", l.GetProperty("status").GetString() ?? ""));
+        }
+        catch { }
+    }
+}

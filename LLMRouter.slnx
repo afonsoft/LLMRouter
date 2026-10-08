@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LLMRouter.Client/LLMRouter.Client.csproj" />
+    <Project Path="src/LLMRouter.Core/LLMRouter.Core.csproj" />
+    <Project Path="src/LLMRouter.Server/LLMRouter.Server.csproj" />
+    <Project Path="src/LLMRouter.Shared/LLMRouter.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LLMRouter.Tests/LLMRouter.Tests.csproj" />
+  </Folder>
+</Solution>

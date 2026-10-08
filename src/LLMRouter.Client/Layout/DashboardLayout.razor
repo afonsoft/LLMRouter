@@ -1,0 +1,20 @@
+@inherits LayoutComponentBase
+@inject AuthState Auth
+@inject NavigationManager Nav
+@inject Loc Loc
+
+@if (Auth.RequireLogin && !Auth.Authenticated)
+{
+    <div class="app-loading"><div class="app-loading-spinner"></div></div>
+}
+else
+{
+    <div class="layout">
+        <Sidebar />
+        <div class="main">
+            <Header />
+            <main class="page">@Body</main>
+        </div>
+    </div>
+    <CommandPalette />
+}

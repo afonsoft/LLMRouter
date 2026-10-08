@@ -1,0 +1,122 @@
+@inject Loc Loc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="sidebar-mobile-overlay @(_mobileOpen ? "show" : "")" @onclick="() => _mobileOpen = false"></div>
+<aside class="sidebar @(_collapsed ? "collapsed" : "") @(_mobileOpen ? "mobile-open" : "")">
+    <div class="sidebar-head">
+        <div class="sidebar-logo">L</div>
+        <span class="sidebar-title">LLMRouter</span>
+    </div>
+    <div class="sidebar-search">
+        <span class="material-symbols-outlined">search</span>
+        <input placeholder="Search…" @bind="_query" @bind:event="oninput" />
+    </div>
+    <nav class="sidebar-nav">
+        @foreach (var sec in Filtered())
+        {
+            <div class="sidebar-section-title" @onclick="() => Toggle(sec.Id)">
+                <span>@(Loc.T($"sidebar.{sec.TitleKey}", sec.TitleFallback))</span>
+                <span class="material-symbols-outlined" style="font-size:15px">
+                    @(Expanded(sec.Id) ? "expand_less" : "expand_more")
+                </span>
+            </div>
+            @if (Expanded(sec.Id))
+            {
+                @if (sec.Items is not null)
+                {
+                    foreach (var it in FilterItems(sec.Items))
+                    {
+                        <NavLink class="sidebar-item" href="@it.Href" Match="@(it.Id == "home" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
+                            <span class="material-symbols-outlined">@it.Icon</span>
+                            <span class="sidebar-label">@Label(it)</span>
+                        </NavLink>
+                    }
+                }
+                @if (sec.Groups is not null)
+                {
+                    foreach (var grp in sec.Groups)
+                    {
+                        @if (grp.TitleKey is not null || grp.TitleFallback is not null)
+                        {
+                            <div class="sidebar-group-title">@(Loc.T($"sidebar.{grp.TitleKey}", grp.TitleFallback))</div>
+                        }
+                        foreach (var it in FilterItems(grp.Items))
+                        {
+                            <NavLink class="sidebar-item" href="@it.Href">
+                                <span class="material-symbols-outlined">@it.Icon</span>
+                                <span class="sidebar-label">@Label(it)</span>
+                            </NavLink>
+                        }
+                    }
+                }
+            }
+        }
+    </nav>
+    <div class="sidebar-foot">
+        <button class="collapse-btn" @onclick="ToggleCollapse">
+            <span class="material-symbols-outlined" style="font-size:17px">@(_collapsed ? "chevron_right" : "chevron_left")</span>
+            <span class="collapse-label">Collapse</span>
+        </button>
+    </div>
+</aside>
+
+@code {
+    private bool _collapsed;
+    private bool _mobileOpen;
+    private string _query = "";
+    private HashSet<string> _expanded = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var saved = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-collapsed");
+        _collapsed = saved == "true";
+        var exp = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-expanded-sections");
+        _expanded = exp is not null
+            ? new HashSet<string>(exp.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            : new HashSet<string>(SidebarData.Sections.Select(s => s.Id));
+        Nav.LocationChanged += OnNav;
+        Loc.Changed += StateHasChanged;
+    }
+
+    private void OnNav(object? s, LocationChangedEventArgs e) { _mobileOpen = false; StateHasChanged(); }
+    public void Dispose() { Nav.LocationChanged -= OnNav; Loc.Changed -= StateHasChanged; }
+
+    private bool Expanded(string id) => _expanded.Contains(id);
+
+    private async Task Toggle(string id)
+    {
+        if (!_expanded.Remove(id)) _expanded.Add(id);
+        await JS.InvokeVoidAsync("llmrouter.set", "sidebar-expanded-sections", string.Join(',', _expanded));
+    }
+
+    private async Task ToggleCollapse()
+    {
+        _collapsed = !_collapsed;
+        await JS.InvokeVoidAsync("llmrouter.set", "sidebar-collapsed", _collapsed ? "true" : "false");
+    }
+
+    private string Label(SidebarData.NavItem it) =>
+        Loc.T($"sidebar.{it.Key}", it.Label ?? it.Key);
+
+    private IEnumerable<SidebarData.NavItem> FilterItems(SidebarData.NavItem[] items) =>
+        string.IsNullOrWhiteSpace(_query)
+            ? items
+            : items.Where(i => Label(i).Contains(_query, StringComparison.OrdinalIgnoreCase)
+                || i.Href.Contains(_query, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<SidebarData.NavSection> Filtered()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return SidebarData.Sections;
+        return SidebarData.Sections.Select(s =>
+            s with
+            {
+                Items = s.Items is null ? null : FilterItems(s.Items).ToArray(),
+                Groups = s.Groups?.Select(g =>
+                    g with { Items = FilterItems(g.Items).ToArray() })
+                    .Where(g => g.Items.Length > 0).ToArray(),
+            })
+            .Where(s => (s.Items?.Length ?? 0) > 0 || (s.Groups?.Length ?? 0) > 0);
+    }
+}

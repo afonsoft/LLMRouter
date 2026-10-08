@@ -1,0 +1,95 @@
+@inject NavigationManager Nav
+@inject ThemeService Theme
+@inject AuthState Auth
+@inject Loc Loc
+@inject IJSRuntime JS
+@implements IDisposable
+
+<header class="header">
+    <div class="header-icon"><span class="material-symbols-outlined">@CurrentIcon()</span></div>
+    <div>
+        <div class="header-title">@CurrentTitle()</div>
+        <div class="header-desc">@CurrentDesc()</div>
+    </div>
+    <div class="header-spacer"></div>
+    <button class="icon-btn" style="width:auto;padding:0 10px;gap:6px" @onclick="OpenCmdK" title="Search">
+        <span class="material-symbols-outlined" style="font-size:17px">search</span>
+        <span class="kbd">⌘K</span>
+    </button>
+    <div style="position:relative">
+        <button class="icon-btn" @onclick="() => _langOpen = !_langOpen" title="Language">
+            <span class="material-symbols-outlined" style="font-size:18px">language</span>
+        </button>
+        @if (_langOpen)
+        {
+            <div class="menu">
+                @foreach (var l in Loc.Languages)
+                {
+                    <button class="menu-item @(Loc.Lang == l ? "active" : "")" @onclick="async () => { await Loc.SetAsync(l); _langOpen = false; }">
+                        @LangName(l)
+                    </button>
+                }
+            </div>
+        }
+    </div>
+    <button class="icon-btn" @onclick="CycleTheme" title="Theme">
+        <span class="material-symbols-outlined" style="font-size:18px">@ThemeIcon()</span>
+    </button>
+    @if (Auth.RequireLogin)
+    {
+        <button class="icon-btn" @onclick="Logout" title="Logout">
+            <span class="material-symbols-outlined" style="font-size:18px">logout</span>
+        </button>
+    }
+</header>
+
+@code {
+    private bool _langOpen;
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += (_, _) => StateHasChanged();
+        Loc.Changed += StateHasChanged;
+        Theme.Changed += StateHasChanged;
+    }
+    public void Dispose() { Loc.Changed -= StateHasChanged; Theme.Changed -= StateHasChanged; }
+
+    private SidebarData.NavItem? Find()
+    {
+        var path = "/" + Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/');
+        SidebarData.NavItem? hit = null;
+        void Walk(IEnumerable<SidebarData.NavItem> items)
+        {
+            foreach (var i in items)
+            {
+                if (i.Href == path || (i.Href != "/" && path.StartsWith(i.Href + "/"))) hit = i;
+                if (i.Children is not null) Walk(i.Children);
+            }
+        }
+        foreach (var s in SidebarData.Sections)
+        {
+            if (s.Items is not null) Walk(s.Items);
+            if (s.Groups is not null) foreach (var g in s.Groups) Walk(g.Items);
+        }
+        return hit;
+    }
+
+    private string CurrentIcon() => Find()?.Icon ?? "home";
+    private string CurrentTitle()
+    {
+        var it = Find();
+        return it is null ? "LLMRouter" : Loc.T($"sidebar.{it.Key}", it.Label ?? it.Key);
+    }
+    private string CurrentDesc()
+    {
+        var it = Find();
+        return it?.Subtitle is { } sk ? Loc.T($"sidebar.{sk}", it.SubtitleFallback ?? "") : "";
+    }
+
+    private string ThemeIcon() => Theme.Theme switch { "dark" => "dark_mode", "light" => "light_mode", _ => "contrast" };
+    private async Task CycleTheme() => await Theme.SetAsync(
+        Theme.Theme == "light" ? "dark" : Theme.Theme == "dark" ? "system" : "light");
+    private string LangName(string l) => l switch { "en" => "English", "pt-BR" => "Português (BR)", "es" => "Español", _ => l };
+    private async Task Logout() { await Auth.LogoutAsync(); Nav.NavigateTo("/login", true); }
+    private void OpenCmdK() => _ = JS.InvokeVoidAsync("eval", "window.__cmdk && window.__cmdk.invokeMethodAsync('Toggle')");
+}

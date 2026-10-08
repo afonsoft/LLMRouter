@@ -1,0 +1,55 @@
+@page "/dashboard/endpoint"
+@inject Api Api
+@inject Loc Loc
+@inject IJSRuntime JS
+
+<h1 class="page-title">@Loc.T("endpoint.title", "Endpoint")</h1>
+<p class="page-desc">@Loc.T("endpoint.subtitle", "Point any OpenAI/Claude/Gemini-compatible app at these URLs")</p>
+
+<div class="card card-p mt-6">
+    <div class="col gap-4">
+        @foreach (var e in _endpoints)
+        {
+            <div>
+                <label class="lbl">@e.Name</label>
+                <div class="endpoint-box">
+                    <code class="mono" style="flex:1">@e.Url</code>
+                    <button class="icon-btn" style="width:30px;height:30px" @onclick="() => Copy(e.Url)">
+                        <span class="material-symbols-outlined" style="font-size:15px">content_copy</span>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card card-p mt-4">
+    <h3 class="bold" style="margin:0 0 10px">@Loc.T("endpoint.example", "Example")</h3>
+    <pre class="code">curl -X POST @_baseUrl/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"Hello"}]}'</pre>
+</div>
+
+@code {
+    private record Ep(string Name, string Url);
+    private List<Ep> _endpoints = [];
+    private string _baseUrl = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var e = await Api.GetAsync("api/endpoint");
+        _baseUrl = e.GetProperty("baseUrl").GetString() ?? "";
+        _endpoints =
+        [
+            new("Base URL", _baseUrl + "/v1"),
+            new("OpenAI — chat completions", e.GetProperty("openai").GetString()!),
+            new("Claude — messages", e.GetProperty("claude").GetString()!),
+            new("Gemini — generateContent", e.GetProperty("gemini").GetString()!),
+            new("Responses API", e.GetProperty("responses").GetString()!),
+            new("Models", e.GetProperty("models").GetString()!),
+        ];
+    }
+
+    private async Task Copy(string t) => await JS.InvokeVoidAsync("llmrouter.copy", t);
+}

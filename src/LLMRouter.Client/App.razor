@@ -1,0 +1,48 @@
+@inject LLMRouter.Client.Services.AuthState Auth
+@inject LLMRouter.Client.Services.Loc Loc
+@inject NavigationManager Nav
+
+@if (!_ready)
+{
+    <div class="app-loading"><div class="app-loading-spinner"></div></div>
+}
+else
+{
+    <Router AppAssembly="typeof(App).Assembly">
+        <Found Context="routeData">
+            @if (NeedsAuth(routeData) && !Auth.Authenticated)
+            {
+                <LoginRedirect />
+            }
+            else
+            {
+                <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.DashboardLayout)" />
+            }
+        </Found>
+        <NotFound>
+            <LayoutView Layout="typeof(Layout.DashboardLayout)">
+                <PlaceholderPage Title="404" Icon="error" />
+            </LayoutView>
+        </NotFound>
+    </Router>
+}
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Loc.LoadAsync();
+        await Auth.InitializeAsync();
+        _ready = true;
+    }
+
+    private bool NeedsAuth(RouteData routeData)
+    {
+        var path = "/" + (routeData.PageType.GetCustomAttributes(typeof(Microsoft.AspNetCore.Components.RouteAttribute), true)
+            .FirstOrDefault() is Microsoft.AspNetCore.Components.RouteAttribute ra
+                ? ra.Template.TrimStart('/') : "");
+        if (path == "/login") return false;
+        return Auth.RequireLogin;
+    }
+}

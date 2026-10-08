@@ -6,6 +6,19 @@ using LLMRouter.Server.Endpoints;
 using LLMRouter.Server.Mitm;
 using Microsoft.EntityFrameworkCore;
 
+// SPEC-016: CLI verbs — `llmrouter serve` (default), `reset-password`, `version`.
+if (args is ["version" or "--version", ..])
+{
+    Console.WriteLine(typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.1.0");
+    return;
+}
+if (args is ["reset-password", var newPw, ..])
+{
+    LLMRouter.Server.Cli.ResetPassword(newPw);
+    return;
+}
+args = args.Where(a => a != "serve").ToArray();
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddProvider(LLMRouter.Server.Services.ConsoleLogBuffer.Instance);
 
@@ -80,6 +93,7 @@ app.MapProtocolEndpoints();
 app.MapDocsEndpoints();
 app.MapInspectorEndpoints();
 app.MapExtrasEndpoints();
+app.MapVersionEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

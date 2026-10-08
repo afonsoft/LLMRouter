@@ -18,6 +18,26 @@ LLMRouter é um proxy/roteador de LLM self-hosted: você conecta providers (Open
 ## Executando
 
 ```bash
+dotnet run --project src/LLMRouter.Server          # dev → http://localhost:5159
+```
+
+### Binário / CLI
+
+```bash
+dotnet publish src/LLMRouter.Server -c Release -r linux-x64 \
+  --self-contained -p:PublishSingleFile=true -o dist
+./dist/LLMRouter.Server serve                      # serve o app (porta via ASPNETCORE_URLS/PORT)
+./dist/LLMRouter.Server reset-password <nova-senha> # reseta a senha do admin
+./dist/LLMRouter.Server version
+```
+
+### Docker
+
+```bash
+docker compose up -d                               # http://localhost:20128, volume /data (SQLite)
+```
+
+```bash
 dotnet run --project src/LLMRouter.Server
 # dashboard em http://localhost:5000
 ```

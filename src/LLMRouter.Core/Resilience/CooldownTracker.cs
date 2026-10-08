@@ -44,6 +44,12 @@ public static class CooldownTracker
         BaseCooldown.TotalMilliseconds * Math.Pow(2, failures - FailureThreshold),
         MaxCooldown.TotalMilliseconds));
 
+    /// <summary>Time until the connection's cooldown expires (zero when not cooling).</summary>
+    public static TimeSpan Remaining(string connectionId) =>
+        States.TryGetValue(connectionId, out var s) && s.Until > DateTimeOffset.UtcNow
+            ? s.Until - DateTimeOffset.UtcNow
+            : TimeSpan.Zero;
+
     public static bool IsCooling(string connectionId) =>
         States.TryGetValue(connectionId, out var s) && s.Until > DateTimeOffset.UtcNow;
 

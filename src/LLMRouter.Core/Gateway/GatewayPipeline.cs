@@ -60,9 +60,8 @@ public sealed class GatewayEngine(
         if (combo is not null)
         {
             var list = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
-            var rr = string.Equals(combo.Kind, "round-robin", StringComparison.OrdinalIgnoreCase);
-            models = ComboPlanner.GetRotatedModels(list, combo.Name,
-                rr ? "round-robin" : "fallback", combo.StickyLimit);
+            models = await ComboStrategies.OrderAsync(combo.Kind, combo.Name, list,
+                db, registry, requestBody, combo.StickyLimit, ct);
         }
         else
         {

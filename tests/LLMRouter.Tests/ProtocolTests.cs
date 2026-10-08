@@ -147,10 +147,9 @@ public class DistributionTests
     public void ResetPassword_writes_pbkdf2_hash()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"llmr-{Guid.NewGuid():N}.db");
-        Environment.SetEnvironmentVariable("LLMROUTER_DB_PATH", dbPath);
         try
         {
-            LLMRouter.Server.Cli.ResetPassword("new-secret-123");
+            LLMRouter.Server.Cli.ResetPassword("new-secret-123", dbPath);
             var opts = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<LLMRouter.Core.Data.LlmRouterDbContext>()
                 .UseSqlite($"Data Source={dbPath}").Options;
             using var db = new LLMRouter.Core.Data.LlmRouterDbContext(opts);
@@ -168,7 +167,6 @@ public class DistributionTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable("LLMROUTER_DB_PATH", null);
             if (File.Exists(dbPath)) File.Delete(dbPath);
         }
     }

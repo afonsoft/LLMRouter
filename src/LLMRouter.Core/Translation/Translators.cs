@@ -10,35 +10,63 @@ namespace LLMRouter.Core.Translation;
 /// </summary>
 public static class Translators
 {
-    private static readonly JsonSerializerOptions Opts = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Opts = new(JsonSerializerDefaults.Web)
+    {
+        // match upstream JS JSON.stringify output (quotes as \" not \u0022)
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     /// <summary>Mutable state carried across SSE events of one response.</summary>
     public sealed class SseState
     {
         public int InputTokens;
         public bool Started;
+        /// <summary>openai→claude: index of the currently open claude content block.</summary>
+        public int ClaudeBlockIndex;
+        /// <summary>openai→claude: openai tool_calls index → claude block index.</summary>
+        public Dictionary<int, int> ToolBlockMap = new();
+        /// <summary>claude→openai: whether a tool_use block is in flight.</summary>
+        public bool ToolBlockOpen;
+        public int ToolIndex;
+        public string? ToolId;
+        public string? ToolName;
     }
 
     /// <summary>Translate an inbound chat request body to the outbound provider format.</summary>
     public static JsonNode Translate(JsonElement body, string inbound, string outbound, string model, bool stream)
     {
         var doc = JsonNode.Parse(body.GetRawText())!.AsObject();
+        // Responses-API inbound → first normalize to chat.completions shape
+        if (inbound == "responsesApi" && outbound != "responsesApi")
+            doc = ExtendedTranslators.ResponsesToChatRequest(doc);
         doc.Remove("model");
         doc["model"] = model;
         JsonNode result = (inbound, outbound) switch
         {
-            ("openai", "claude") or ("responsesApi", "claude") => OpenAiToClaudeRequest(doc),
-            ("openai", "gemini") or ("responsesApi", "gemini") => OpenAiToGeminiRequest(doc),
-            ("claude", "openai") or ("claude", "responsesApi") => ClaudeToOpenAiRequest(doc),
+            (_, "claude") when inbound is "openai" or "responsesApi" => OpenAiToClaudeRequest(doc),
+            (_, "gemini") when inbound is "openai" or "responsesApi" => OpenAiToGeminiRequest(doc),
+            ("claude", _) when outbound is "openai" or "responsesApi" => ClaudeToOpenAiRequest(doc),
             ("claude", "gemini") => ClaudeToOpenAiThenGemini(doc),
-            ("gemini", "openai") or ("gemini", "responsesApi") => GeminiToOpenAiRequest(doc),
+            ("gemini", _) when outbound is "openai" or "responsesApi" => GeminiToOpenAiRequest(doc),
             ("gemini", "claude") => GeminiToClaudeRequest(doc),
-            (_, "responsesApi") => doc,   // responses inbound/outbound pass through
             _ => doc,
         };
+        // any non-responses inbound routed to a responsesApi upstream goes
+        // through the chat-completions shape first, then converts
+        if (outbound == "responsesApi" && inbound != "responsesApi" && result is JsonObject rj)
+            result = ExtendedTranslators.ChatToResponsesRequest(rj);
         if (result is JsonObject o)
         {
             o["model"] = model;
+            // outbound hygiene (upstream rules)
+            if (outbound == "claude") ExtendedTranslators.ClaudePrepare(o);
+            if (outbound is "openai" or "responsesApi") ExtendedTranslators.OpenAiPrepare(o);
+            // max_tokens ceiling per format
+            if (o["max_tokens"] is { } mt && mt.GetValue<int>() is var req)
+            {
+                var adj = ExtendedTranslators.AdjustMaxTokens(req, model, outbound);
+                if (adj != req) o["max_tokens"] = adj;
+            }
             if (stream) ApplyStreamFlag(o, outbound);
         }
         return result;
@@ -48,13 +76,19 @@ public static class Translators
     public static JsonNode TranslateResponse(JsonElement upstreamBody, string outbound, string inbound, string model)
     {
         var node = JsonNode.Parse(upstreamBody.GetRawText());
-        return (outbound, inbound) switch
+        JsonNode result = (outbound, inbound) switch
         {
-            ("claude", "openai") or ("claude", "responsesApi") => ClaudeToOpenAiResponse(node, model),
-            ("gemini", "openai") or ("gemini", "responsesApi") => GeminiToOpenAiResponse(node, model),
-            ("openai", "claude") or ("responsesApi", "claude") => OpenAiToClaudeResponse(node, model),
+            ("claude", "openai") => ClaudeToOpenAiResponse(node, model),
+            ("claude", "responsesApi") => ExtendedTranslators.ChatToResponsesResponse(ClaudeToOpenAiResponse(node, model), model),
+            ("gemini", "openai") => GeminiToOpenAiResponse(node, model),
+            ("gemini", "responsesApi") => ExtendedTranslators.ChatToResponsesResponse(GeminiToOpenAiResponse(node, model), model),
+            ("openai", "claude") => OpenAiToClaudeResponse(node, model),
+            ("responsesApi", "claude") => OpenAiToClaudeResponse(ExtendedTranslators.ResponsesToChatResponse(node, model), model),
+            ("responsesApi", "openai") => ExtendedTranslators.ResponsesToChatResponse(node, model),
+            ("openai", "responsesApi") => ExtendedTranslators.ChatToResponsesResponse(node, model),
             _ => node!,
         };
+        return result;
     }
 
     /// <summary>
@@ -76,6 +110,9 @@ public static class Translators
 
         foreach (var r in (outbound, inbound) switch
         {
+            ("responsesApi", "openai") => ResponsesSseToOpenAi(chunk, model, state),
+            ("responsesApi", "claude") => OpenAiSseToClaude2(chunk, model, state),
+            ("responsesApi", "gemini") => OpenAiSseToGemini2(chunk, model, state),
             ("claude", _) => ClaudeSseToOpenAi(chunk, model, state),
             ("gemini", _) => GeminiSseToOpenAi(chunk, model, state),
             (_, "claude") => OpenAiSseToClaude(chunk, model, state),
@@ -105,6 +142,30 @@ public static class Translators
                 ["role"] = role == "assistant" ? "assistant" : "user",
                 ["content"] = ToClaudeContent(m?["content"]),
             };
+            // openai tool_calls → claude tool_use blocks
+            if (m?["tool_calls"] is JsonArray tcs)
+            {
+                var arr = msg["content"]!.AsArray();
+                foreach (var tc in tcs)
+                    arr.Add(new JsonObject
+                    {
+                        ["type"] = "tool_use",
+                        ["id"] = tc?["id"]?.DeepClone(),
+                        ["name"] = tc?["function"]?["name"]?.DeepClone(),
+                        ["input"] = TryParse(tc?["function"]?["arguments"]?.GetValue<string>()),
+                    });
+            }
+            // openai role:tool → claude user with tool_result blocks
+            if (role == "tool")
+            {
+                msg["role"] = "user";
+                msg["content"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "tool_result",
+                    ["tool_use_id"] = m?["tool_call_id"]?.DeepClone(),
+                    ["content"] = m?["content"]?.DeepClone() ?? "",
+                });
+            }
             messages.Add(msg);
         }
         if (system.Count > 0) o["system"] = system;
@@ -115,7 +176,40 @@ public static class Translators
         foreach (var k in new[] { "temperature", "top_p", "stream" })
             if (req[k] is { } v) o[k] = v.DeepClone();
         if (req["stop"] is { } stop) o["stop_sequences"] = stop.DeepClone();
+        // openai tools[].function → claude tools with input_schema
+        if (req["tools"] is JsonArray { Count: > 0 } oTools)
+        {
+            var claudeTools = new JsonArray();
+            foreach (var t in oTools)
+            {
+                if (t?["type"]?.GetValue<string>() == "function" || t?["function"] is not null)
+                    claudeTools.Add(new JsonObject
+                    {
+                        ["name"] = t?["function"]?["name"]?.DeepClone(),
+                        ["description"] = t?["function"]?["description"]?.DeepClone(),
+                        ["input_schema"] = t?["function"]?["parameters"]?.DeepClone()
+                            ?? new JsonObject { ["type"] = "object" },
+                    });
+                else
+                    claudeTools.Add(t!.DeepClone());
+            }
+            o["tools"] = claudeTools;
+        }
+        if (req["tool_choice"] is { } choice)
+        {
+            o["tool_choice"] = choice is JsonValue cv && cv.TryGetValue<string>(out var s) && s == "auto" ?
+                new JsonObject { ["type"] = "auto" } :
+                choice is JsonObject co && co["function"]?["name"] is { } fn ?
+                new JsonObject { ["type"] = "tool", ["name"] = fn.DeepClone() } :
+                choice.DeepClone();
+        }
         return o;
+    }
+
+    private static JsonNode TryParse(string? json)
+    {
+        if (json is null) return new JsonObject();
+        try { return JsonNode.Parse(json) ?? new JsonObject(); } catch { return new JsonObject(); }
     }
 
     private static JsonObject ClaudeToOpenAiRequest(JsonObject req)
@@ -131,16 +225,83 @@ public static class Translators
         }
         foreach (var m in req["messages"]?.AsArray() ?? [])
         {
+            var role = m?["role"]?.GetValue<string>() ?? "user";
+            var content = m?["content"];
+            if (content is JsonArray blocks &&
+                blocks.Any(b => b?["type"]?.GetValue<string>() is "tool_use" or "tool_result"))
+            {
+                // structured tool blocks → openai tool_calls / role:tool messages
+                var textParts = blocks.Where(b => b?["type"]?.GetValue<string>() == "text").ToList();
+                var toolUses = blocks.Where(b => b?["type"]?.GetValue<string>() == "tool_use").ToList();
+                var toolResults = blocks.Where(b => b?["type"]?.GetValue<string>() == "tool_result").ToList();
+                if (toolUses.Count > 0)
+                {
+                    var msg = new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = textParts.Count > 0
+                            ? string.Join("\n", textParts.Select(t => t?["text"]?.GetValue<string>()))
+                            : (JsonNode?)null,
+                        ["tool_calls"] = new JsonArray(toolUses.Select(t => (JsonNode)new JsonObject
+                        {
+                            ["id"] = t?["id"]?.DeepClone(),
+                            ["type"] = "function",
+                            ["function"] = new JsonObject
+                            {
+                                ["name"] = t?["name"]?.DeepClone(),
+                                ["arguments"] = t?["input"]?.ToJsonString() ?? "{}",
+                            },
+                        }).ToArray()),
+                    };
+                    messages.Add(msg);
+                }
+                foreach (var tr in toolResults)
+                    messages.Add(new JsonObject
+                    {
+                        ["role"] = "tool",
+                        ["tool_call_id"] = tr?["tool_use_id"]?.DeepClone(),
+                        ["content"] = tr?["content"] is JsonArray tc
+                            ? string.Join("\n", tc.Select(p => p?["text"]?.GetValue<string>()))
+                            : tr?["content"]?.DeepClone(),
+                    });
+                if (toolUses.Count == 0 && toolResults.Count == 0)
+                    messages.Add(new JsonObject { ["role"] = role, ["content"] = ToOpenAiContent(content) });
+                continue;
+            }
             messages.Add(new JsonObject
             {
-                ["role"] = m?["role"]?.GetValue<string>() ?? "user",
-                ["content"] = ToOpenAiContent(m?["content"]),
+                ["role"] = role,
+                ["content"] = ToOpenAiContent(content),
             });
         }
         o["messages"] = messages;
         foreach (var k in new[] { "max_tokens", "temperature", "top_p", "stream" })
             if (req[k] is { } v) o[k] = v.DeepClone();
         if (req["stop_sequences"] is { } ss) o["stop"] = ss.DeepClone();
+        // claude tools → openai tools[].function
+        if (req["tools"] is JsonArray { Count: > 0 } cTools)
+            o["tools"] = new JsonArray(cTools.Select(t => (JsonNode)new JsonObject
+            {
+                ["type"] = "function",
+                ["function"] = new JsonObject
+                {
+                    ["name"] = t?["name"]?.DeepClone(),
+                    ["description"] = t?["description"]?.DeepClone(),
+                    ["parameters"] = t?["input_schema"]?.DeepClone(),
+                },
+            }).ToArray());
+        if (req["tool_choice"] is JsonObject tc2)
+            o["tool_choice"] = tc2["type"]?.GetValue<string>() switch
+            {
+                "auto" => "auto",
+                "none" => "none",
+                "tool" => (JsonNode)new JsonObject
+                {
+                    ["type"] = "function",
+                    ["function"] = new JsonObject { ["name"] = tc2["name"]?.DeepClone() },
+                },
+                _ => "auto",
+            };
         return o;
     }
 
@@ -321,11 +482,31 @@ public static class Translators
         var type = ev["type"]?.GetValue<string>();
         switch (type)
         {
+            case "content_block_start":
+                var cb = ev["content_block"];
+                if (cb?["type"]?.GetValue<string>() == "tool_use")
+                {
+                    state.ToolBlockOpen = true;
+                    state.ToolId = cb["id"]?.GetValue<string>();
+                    state.ToolName = cb["name"]?.GetValue<string>();
+                    yield return (null, OpenAiToolCallChunk(model, state.ToolIndex, state.ToolId, state.ToolName, ""));
+                }
+                break;
+            case "content_block_stop":
+                if (state.ToolBlockOpen) { state.ToolBlockOpen = false; state.ToolIndex++; }
+                break;
             case "content_block_delta":
                 var delta = ev["delta"];
                 var text = delta?["text"]?.GetValue<string>();
-                if (text is null) yield break;
-                yield return (null, OpenAiChunk(model, text, null));
+                if (text is not null)
+                {
+                    yield return (null, OpenAiChunk(model, text, null));
+                    break;
+                }
+                // tool_use input streamed as partial JSON
+                var partial = delta?["partial_json"]?.GetValue<string>();
+                if (delta?["type"]?.GetValue<string>() == "input_json_delta" && partial is not null && state.ToolBlockOpen)
+                    yield return (null, OpenAiToolCallChunk(model, state.ToolIndex, null, null, partial));
                 break;
             case "message_delta":
             case "message_stop":
@@ -396,9 +577,48 @@ public static class Translators
                 index = 0,
                 delta = new { type = "text_delta", text },
             }));
+        // openai tool_calls deltas → claude tool_use content blocks
+        foreach (var tc in delta?["tool_calls"]?.AsArray() ?? [])
+        {
+            var tcIndex = tc?["index"]?.GetValue<int>() ?? 0;
+            if (tc?["id"] is { } callId)  // first delta for this call → open a tool_use block
+            {
+                if (state.ToolBlockMap.Count == 0)
+                {
+                    // first tool call → close the initial text block (opened at message_start)
+                    yield return ("content_block_stop", JsonSerializer.Serialize(new { type = "content_block_stop", index = 0 }));
+                }
+                var blockIdx = ++state.ClaudeBlockIndex;
+                state.ToolBlockMap[tcIndex] = blockIdx;
+                yield return ("content_block_start", JsonSerializer.Serialize(new
+                {
+                    type = "content_block_start",
+                    index = blockIdx,
+                    content_block = new
+                    {
+                        type = "tool_use",
+                        id = callId.GetValue<string>(),
+                        name = tc?["function"]?["name"]?.GetValue<string>(),
+                        input = new { },
+                    },
+                }));
+            }
+            var args = tc?["function"]?["arguments"]?.GetValue<string>();
+            if (args is { Length: > 0 } && state.ToolBlockMap.TryGetValue(tcIndex, out var bi))
+                yield return ("content_block_delta", JsonSerializer.Serialize(new
+                {
+                    type = "content_block_delta",
+                    index = bi,
+                    delta = new { type = "input_json_delta", partial_json = args },
+                }));
+        }
         if (finish is not null)
         {
-            yield return ("content_block_stop", JsonSerializer.Serialize(new { type = "content_block_stop", index = 0 }));
+            // close any open tool blocks, then the text block
+            foreach (var bi in state.ToolBlockMap.Values)
+                yield return ("content_block_stop", JsonSerializer.Serialize(new { type = "content_block_stop", index = bi }));
+            if (state.ToolBlockMap.Count > 0)
+                yield return ("content_block_stop", JsonSerializer.Serialize(new { type = "content_block_stop", index = 0 }));
             var usage = ev["usage"];
             yield return ("message_delta", JsonSerializer.Serialize(new
             {
@@ -412,6 +632,111 @@ public static class Translators
             }));
             yield return ("message_stop", JsonSerializer.Serialize(new { type = "message_stop" }));
         }
+    }
+
+    /// <summary>Responses-API SSE event → openai-shaped chunk JsonObject (or null).</summary>
+    private static JsonObject? ResponsesEventToOpenAiChunk(JsonObject ev, string model)
+    {
+        var type = ev["type"]?.GetValue<string>();
+        return type switch
+        {
+            "response.output_text.delta" or "response.refusal.delta" => new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["delta"] = new JsonObject { ["content"] = ev["delta"]?.DeepClone() },
+                    ["finish_reason"] = (JsonNode?)null,
+                }),
+            },
+            "response.function_call_arguments.delta" => new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["delta"] = new JsonObject
+                    {
+                        ["tool_calls"] = new JsonArray(new JsonObject
+                        {
+                            ["index"] = ev["output_index"]?.DeepClone(),
+                            ["function"] = new JsonObject { ["arguments"] = ev["delta"]?.DeepClone() },
+                        }),
+                    },
+                    ["finish_reason"] = (JsonNode?)null,
+                }),
+            },
+            "response.output_item.added" when ev["item"]?["type"]?.GetValue<string>() == "function_call" => new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["delta"] = new JsonObject
+                    {
+                        ["tool_calls"] = new JsonArray(new JsonObject
+                        {
+                            ["index"] = ev["output_index"]?.DeepClone(),
+                            ["id"] = ev["item"]?["call_id"]?.DeepClone() ?? ev["item"]?["id"]?.DeepClone(),
+                            ["type"] = "function",
+                            ["function"] = new JsonObject
+                            {
+                                ["name"] = ev["item"]?["name"]?.DeepClone(),
+                                ["arguments"] = "",
+                            },
+                        }),
+                    },
+                    ["finish_reason"] = (JsonNode?)null,
+                }),
+            },
+            "response.completed" or "response.done" or "response.incomplete" => new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["delta"] = new JsonObject(),
+                    ["finish_reason"] = "stop",
+                }),
+                ["usage"] = ev["response"]?["usage"] is { } u
+                    ? new JsonObject
+                    {
+                        ["prompt_tokens"] = u["input_tokens"]?.DeepClone(),
+                        ["completion_tokens"] = u["output_tokens"]?.DeepClone(),
+                        ["total_tokens"] = u["total_tokens"]?.DeepClone(),
+                    }
+                    : null,
+            },
+            _ => null,
+        };
+    }
+
+    private static IEnumerable<(string?, string)> ResponsesSseToOpenAi(JsonObject ev, string model, SseState state)
+    {
+        var chunk = ResponsesEventToOpenAiChunk(ev, model);
+        if (chunk is null) yield break;
+        chunk["id"] = $"chatcmpl-{Guid.NewGuid():N}";
+        chunk["object"] = "chat.completion.chunk";
+        chunk["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        chunk["model"] = model;
+        yield return (null, chunk.ToJsonString(Opts));
+        if (chunk["choices"]?.AsArray().FirstOrDefault()?["finish_reason"] is { })
+            yield return (null, "[DONE]");
+    }
+
+    /// <summary>Responses-API SSE → claude SSE, via an openai-chunk intermediate.</summary>
+    private static IEnumerable<(string?, string)> OpenAiSseToClaude2(JsonObject ev, string model, SseState state)
+    {
+        var chunk = ResponsesEventToOpenAiChunk(ev, model);
+        if (chunk is null) yield break;
+        foreach (var r in OpenAiSseToClaude(chunk, model, state))
+            yield return r;
+    }
+
+    /// <summary>Responses-API SSE → gemini SSE, via an openai-chunk intermediate.</summary>
+    private static IEnumerable<(string?, string)> OpenAiSseToGemini2(JsonObject ev, string model, SseState state)
+    {
+        var chunk = ResponsesEventToOpenAiChunk(ev, model);
+        if (chunk is null) yield break;
+        foreach (var r in OpenAiSseToGemini(chunk, model, state))
+            yield return r;
     }
 
     private static IEnumerable<(string?, string)> OpenAiSseToGemini(JsonObject ev, string model, SseState state)
@@ -567,7 +892,35 @@ public static class Translators
                 ["completion_tokens"] = outTok ?? 0,
                 ["total_tokens"] = (inTok ?? 0) + (outTok ?? 0),
             };
-        return chunk.ToJsonString();
+        return chunk.ToJsonString(Opts);
+    }
+
+    /// <summary>openai chunk carrying a tool_calls delta (index-tracked).</summary>
+    private static string OpenAiToolCallChunk(string model, int index, string? id, string? name, string? argsDelta)
+    {
+        var fn = new JsonObject();
+        if (name is not null) fn["name"] = name;
+        if (argsDelta is not null) fn["arguments"] = argsDelta;
+        var tc = new JsonObject
+        {
+            ["index"] = index,
+            ["type"] = "function",
+            ["function"] = fn,
+        };
+        if (id is not null) tc["id"] = id;
+        return new JsonObject
+        {
+            ["id"] = $"chatcmpl-{Guid.NewGuid():N}",
+            ["object"] = "chat.completion.chunk",
+            ["created"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["model"] = model,
+            ["choices"] = new JsonArray(new JsonObject
+            {
+                ["index"] = 0,
+                ["delta"] = new JsonObject { ["tool_calls"] = new JsonArray(tc) },
+                ["finish_reason"] = (JsonNode?)null,
+            }),
+        }.ToJsonString(Opts);
     }
 
     private static string MapClaudeStop(string? stop) => stop switch

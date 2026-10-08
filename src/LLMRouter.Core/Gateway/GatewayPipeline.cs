@@ -104,15 +104,21 @@ public sealed class GatewayEngine(
         };
     }
 
+    /// <summary>Effective base URL for a connection (data.baseUrl override or provider default).</summary>
+    public static string ConnectionBaseUrl(ProviderConnection c, ProviderEntry provider)
+    {
+        var baseUrl = c.Data is { Length: > 0 } d
+            ? (JsonDocument.Parse(d).RootElement.TryGetProperty("baseUrl", out var b) && b.ValueKind == JsonValueKind.String
+                ? b.GetString()! : provider.BaseUrl)
+            : provider.BaseUrl;
+        baseUrl ??= "https://api.openai.com";
+        return baseUrl.TrimEnd('/');
+    }
+
     /// <summary>Upstream URL + auth headers from connection secrets.</summary>
     public (string Url, Dictionary<string, string> Headers) BuildUrlAndAuth(ResolvedTarget t)
     {
-        var baseUrl = t.Connection.Data is { Length: > 0 } d
-            ? (JsonDocument.Parse(d).RootElement.TryGetProperty("baseUrl", out var b) && b.ValueKind == JsonValueKind.String
-                ? b.GetString()! : t.Provider.BaseUrl)
-            : t.Provider.BaseUrl;
-        baseUrl ??= "https://api.openai.com";
-        baseUrl = baseUrl.TrimEnd('/');
+        var baseUrl = ConnectionBaseUrl(t.Connection, t.Provider);
 
         var url = t.Provider.Format switch
         {

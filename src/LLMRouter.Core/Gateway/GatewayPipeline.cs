@@ -89,7 +89,10 @@ public sealed class GatewayEngine(
                 .OrderBy(c => c.Priority).ThenBy(c => c.Name)
                 .ToListAsync(ct);
             foreach (var c in conns.Where(c => !Resilience.CooldownTracker.IsCooling(c.Id)))
+            {
+                if (await Routing.QuotaTracker.ExhaustedAsync(db, c)) continue;
                 targets.Add(new ResolvedTarget(provider, c, upstreamModel, combo?.Name));
+            }
         }
         return targets;
     }

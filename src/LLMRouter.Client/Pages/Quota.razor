@@ -1,0 +1,78 @@
+@page "/dashboard/quota"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("quota.title", "Provider quota")</h1>
+<p class="page-desc">@Loc.T("quota.subtitle", "Token caps per connection — exhausted connections are skipped by the cascade")</p>
+
+@if (_quota is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    <div class="card" style="overflow-x:auto">
+        <table class="table">
+            <thead><tr><th>Provider</th><th>Connection</th><th>Daily</th><th>Monthly</th><th>Status</th><th>Caps</th></tr></thead>
+            <tbody>
+                @foreach (var q in _quota)
+                {
+                    var daily = q.GetProperty("daily"); var monthly = q.GetProperty("monthly");
+                    var cid = q.GetProperty("connectionId").GetString()!;
+                    var exhausted = daily.GetProperty("exhausted").GetBoolean() || monthly.GetProperty("exhausted").GetBoolean();
+                    <tr>
+                        <td class="mono sm">@q.GetProperty("provider").GetString()</td>
+                        <td>@q.GetProperty("name").GetString()</td>
+                        <td class="mono sm">@daily.GetProperty("used").GetInt64() / @(daily.GetProperty("limit").ValueKind == JsonValueKind.Null ? "∞" : daily.GetProperty("limit").GetInt64().ToString())</td>
+                        <td class="mono sm">@monthly.GetProperty("used").GetInt64() / @(monthly.GetProperty("limit").ValueKind == JsonValueKind.Null ? "∞" : monthly.GetProperty("limit").GetInt64().ToString())</td>
+                        <td><span class="badge @(exhausted ? "err" : "ok")">@(exhausted ? "exhausted" : "ok")</span></td>
+                        <td>
+                            <div class="flex" style="gap:6px">
+                                <input class="input" style="width:90px" type="number" placeholder="daily" value="@GetCap(cid, "quotaDaily")" @onchange='e => _caps[(cid, "quotaDaily")] = e.Value?.ToString()' />
+                                <input class="input" style="width:90px" type="number" placeholder="monthly" value="@GetCap(cid, "quotaMonthly")" @onchange='e => _caps[(cid, "quotaMonthly")] = e.Value?.ToString()' />
+                                <button class="btn btn-sm" @onclick="() => SaveCaps(cid)">@Loc.T("common.save", "Save")</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (_msg is not null) { <p class="sm muted mt-2">@_msg</p> }
+}
+
+@code {
+    private List<JsonElement>? _quota;
+    private string? _msg;
+    private readonly Dictionary<(string, string), string?> _caps = new();
+    private Dictionary<string, JsonElement> _connData = new();
+
+    private string? GetCap(string cid, string key) =>
+        _caps.TryGetValue((cid, key), out var v) ? v
+            : _connData.TryGetValue(cid, out var d) && d.TryGetProperty(key, out var x) && x.ValueKind == JsonValueKind.Number
+                ? x.GetInt64().ToString() : "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/quota");
+        _quota = r.GetProperty("quota").EnumerateArray().Select(x => x.Clone()).ToList();
+        var conns = await Api.GetAsync("api/provider-connections");
+        foreach (var c in conns.GetProperty("connections").EnumerateArray())
+            _connData[c.GetProperty("id").GetString()!] = JsonDocument.Parse(c.GetProperty("data").GetString()!).RootElement.Clone();
+    }
+
+    private async Task SaveCaps(string cid)
+    {
+        var d = _connData[cid].EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone());
+        foreach (var key in new[] { "quotaDaily", "quotaMonthly" })
+        {
+            var v = GetCap(cid, key);
+            if (long.TryParse(v, out var n) && n > 0) d[key] = JsonSerializer.SerializeToElement(n);
+            else d.Remove(key);
+        }
+        await Api.PutAsync($"api/provider-connections/{cid}", new { data = d });
+        _connData[cid] = JsonSerializer.SerializeToElement(d);
+        _msg = "✓";
+        await OnInitializedAsync();
+    }
+}

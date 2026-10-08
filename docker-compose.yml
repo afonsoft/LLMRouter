@@ -1,12 +1,36 @@
+# LLMRouter — docker compose
+# Uso:
+#   cp .env.example .env   # ajuste as variáveis
+#   docker compose up -d                    # build local
+#   docker compose up -d llmrouter-image    # imagem publicada no GHCR
 services:
   llmrouter:
     build: .
     ports:
-      - "20128:20128"
+      - "${LLMROUTER_PORT:-20128}:20128"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_URLS: http://+:20128
+      LLMROUTER_DB_PATH: /data/llmrouter.db
     volumes:
       - llmrouter-data:/data
-    environment:
-      LLMROUTER_DB_PATH: /data/llmrouter.db
     restart: unless-stopped
+
+  # Mesma app, mas usando a imagem publicada (ghcr.io/afonsoft/llmrouter)
+  llmrouter-image:
+    image: ghcr.io/afonsoft/llmrouter:latest
+    profiles: ["published"]
+    ports:
+      - "${LLMROUTER_PORT:-20128}:20128"
+    env_file:
+      - .env
+    environment:
+      ASPNETCORE_URLS: http://+:20128
+      LLMROUTER_DB_PATH: /data/llmrouter.db
+    volumes:
+      - llmrouter-data:/data
+    restart: unless-stopped
+
 volumes:
   llmrouter-data:

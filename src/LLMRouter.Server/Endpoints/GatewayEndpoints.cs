@@ -372,6 +372,12 @@ public static class GatewayEndpoints
                 {
                     Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
                     var errBody = await resp.Content.ReadAsStringAsync();
+                    // SPEC-021: provider breaker (408/5xx) + model lockout (404/model-429)
+                    Core.Resilience.ProviderBreaker.ReportStatus(target.Provider.Id,
+                        (int)resp.StatusCode, target.Provider.AuthType);
+                    if (Core.Resilience.ModelLockout.IsModelScoped((int)resp.StatusCode, errBody))
+                        Core.Resilience.ModelLockout.Lock(target.Provider.Id,
+                            target.Connection.Id, target.UpstreamModel);
                     if (ShouldCascade(resp.StatusCode) && target != targets[^1])
                     {
                         lastError = new HttpRequestException($"upstream {(int)resp.StatusCode}: {errBody[..Math.Min(200, errBody.Length)]}");
@@ -393,6 +399,9 @@ public static class GatewayEndpoints
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
                     var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
+                    Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);
+                    Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
+                        target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -405,6 +414,9 @@ public static class GatewayEndpoints
                     var (pt, ct) = ExtractUsage(translated, inbound);
                     ctx.Response.ContentType = "application/json";
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
+                    Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);
+                    Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
+                        target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,

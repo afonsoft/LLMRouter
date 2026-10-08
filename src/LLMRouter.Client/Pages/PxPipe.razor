@@ -1,0 +1,72 @@
+@page "/dashboard/pxpipe"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("pxpipe.title", "pxpipe")</h1>
+<p class="page-desc">@Loc.T("pxpipe.subtitle", "Media pipeline — provider connections per service kind")</p>
+
+@if (_rows is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    @foreach (var kind in _kinds)
+    {
+        var conns = _rows.Where(r => r.Kinds.Contains(kind)).ToList();
+        <div class="card card-p" style="margin-bottom:12px">
+            <div class="flex" style="justify-content:space-between;align-items:center">
+                <h3 class="bold" style="margin:0">@kind</h3>
+                <span class="badge @(conns.Count > 0 ? "ok" : "warn")">@conns.Count @Loc.T("pxpipe.connections", "connections")</span>
+            </div>
+            @if (conns.Count > 0)
+            {
+                <table class="tbl" style="margin-top:8px">
+                    <thead><tr><th>@Loc.T("common.name", "Name")</th><th>@Loc.T("common.provider", "Provider")</th><th>@Loc.T("tokens.status", "Status")</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in conns)
+                        {
+                            <tr>
+                                <td>@c.Name</td>
+                                <td>@c.Provider</td>
+                                <td><span class="badge @(c.Active ? "ok" : "err")">@(c.Active ? "active" : "inactive")</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <p class="muted sm" style="margin-top:8px">@Loc.T("pxpipe.empty", "No connections declare this media kind — set data.mediaKinds on the connection.")</p>
+            }
+        </div>
+    }
+}
+
+@code {
+    private sealed record Row(string Id, string? Name, string Provider, bool Active, HashSet<string> Kinds);
+    private readonly string[] _kinds = ["embedding", "image", "video", "tts", "stt", "search", "fetch", "systemone"];
+    private List<Row>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var el = await Api.GetAsync("/api/provider-connections");
+        _rows = el.GetProperty("connections").EnumerateArray().Select(c =>
+        {
+            var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (c.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object)
+            {
+                if (d.TryGetProperty("mediaKinds", out var mk) && mk.ValueKind == JsonValueKind.Array)
+                    foreach (var k in mk.EnumerateArray()) kinds.Add(k.GetString() ?? "");
+                if (d.TryGetProperty("mediaKind", out var mk1) && mk1.ValueKind == JsonValueKind.String)
+                    kinds.Add(mk1.GetString() ?? "");
+            }
+            return new Row(
+                c.GetProperty("id").GetString() ?? "",
+                c.TryGetProperty("name", out var n) ? n.GetString() : null,
+                c.GetProperty("provider").GetString() ?? "",
+                c.TryGetProperty("isActive", out var a) && a.GetBoolean(),
+                kinds);
+        }).ToList();
+    }
+}

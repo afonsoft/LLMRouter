@@ -191,6 +191,7 @@ public static class ManagementEndpoints
             };
             db.ProviderConnections.Add(c);
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "connection.create", $"{c.Provider} ({c.Name})");
             return Results.Json(new { connection = c }, JsonOpts);
         });
 
@@ -206,6 +207,7 @@ public static class ManagementEndpoints
             if (b.TryGetProperty("data", out var d)) c.Data = d.GetRawText();
             c.UpdatedAt = Now();
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "connection.update", $"{c.Provider} ({c.Id})");
             return Results.Json(new { connection = c }, JsonOpts);
         });
 
@@ -215,6 +217,7 @@ public static class ManagementEndpoints
             if (c is null) return Results.NotFound();
             db.ProviderConnections.Remove(c);
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "connection.delete", $"{c.Provider} ({c.Id})");
             return Results.Json(new { success = true });
         });
 
@@ -287,6 +290,7 @@ public static class ManagementEndpoints
             };
             db.ApiKeys.Add(k);
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "apikey.create", k.Name ?? k.Id);
             return Results.Json(new { key = k }, JsonOpts);
         });
 
@@ -344,6 +348,7 @@ public static class ManagementEndpoints
             };
             db.Combos.Add(c);
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "combo.create", c.Name);
             return Results.Json(new { combo = c }, JsonOpts);
         });
 
@@ -361,6 +366,7 @@ public static class ManagementEndpoints
             ComboPlanner.ResetRotation(c.Name);
             c.UpdatedAt = Now();
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "combo.update", c.Name);
             return Results.Json(new { combo = c }, JsonOpts);
         });
 
@@ -370,6 +376,7 @@ public static class ManagementEndpoints
             if (c is null) return Results.NotFound();
             db.Combos.Remove(c);
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "combo.delete", c.Name);
             return Results.Json(new { success = true });
         });
 
@@ -720,6 +727,17 @@ public static class ManagementEndpoints
         g.MapGet("/resilience/cooldowns", () =>
             Results.Json(new { cooldowns = Core.Resilience.CooldownTracker.Snapshot() }, JsonOpts));
 
+        // SPEC-021: provider circuit breakers + model lockouts
+        g.MapGet("/resilience/breakers", () =>
+            Results.Json(new { breakers = Core.Resilience.ProviderBreaker.Snapshot() }, JsonOpts));
+        g.MapDelete("/resilience/breakers/{id}", (string id) =>
+        {
+            Core.Resilience.ProviderBreaker.Clear(id);
+            return Results.Json(new { ok = true });
+        });
+        g.MapGet("/resilience/lockouts", () =>
+            Results.Json(new { lockouts = Core.Resilience.ModelLockout.Snapshot() }, JsonOpts));
+
         g.MapDelete("/resilience/cooldowns/{id}", (string id) =>
         {
             Core.Resilience.CooldownTracker.Clear(id);
@@ -810,6 +828,7 @@ public static class ManagementEndpoints
             s.Data = JsonSerializer.Serialize(d);
             await db.SaveChangesAsync();
             ApplyResilienceSettings(d);
+            await Core.Extras.Extras.AuditAsync(db, "settings.update", string.Join(",", d.Keys));
             return Results.Json(new { success = true });
         });
 

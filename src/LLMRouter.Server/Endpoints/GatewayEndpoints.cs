@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Gateway;
 using LLMRouter.Core.Registry;
@@ -321,6 +322,19 @@ public static class GatewayEndpoints
             if (rewritten is { } rw) body = rw;
         }
 
+        // SPEC-020: fusion (parallel fan-out + judge) and pipeline (sequential
+        // chain) execute at the endpoint level, non-stream only
+        if (comboEntity?.Kind == "fusion" && !stream)
+        {
+            await FusionAsync(ctx, engine, httpFactory, db, comboEntity, body, inbound, model, apiKey, sw);
+            return;
+        }
+        if (comboEntity?.Kind == "pipeline" && !stream)
+        {
+            await PipelineAsync(ctx, engine, httpFactory, db, comboEntity, body, inbound, model, apiKey, sw);
+            return;
+        }
+
         var targets = await engine.ResolveAsync(model, body);
         if (comboEntity?.Kind == "vision-adapter")
         {
@@ -379,6 +393,7 @@ public static class GatewayEndpoints
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
                     var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
+                    RecordStrategiesSuccess(target, body);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail);
@@ -390,6 +405,7 @@ public static class GatewayEndpoints
                     var (pt, ct) = ExtractUsage(translated, inbound);
                     ctx.Response.ContentType = "application/json";
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
+                    RecordStrategiesSuccess(target, body);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -409,6 +425,159 @@ public static class GatewayEndpoints
             lastError?.Message ?? "All upstream targets failed.");
         await engine.LogUsageAsync(model, model, null, apiKey, inbound, 0, 0, "502",
             lastError?.Message, sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>SPEC-020: remember the serving model for lkgp / cache-optimized.</summary>
+    private static void RecordStrategiesSuccess(Core.Gateway.ResolvedTarget target, JsonElement body)
+    {
+        var modelRef = $"{target.Provider.Id}/{target.UpstreamModel}";
+        Core.Routing.ComboStrategies.RecordSuccess(target.ComboName, modelRef);
+        var hash = Core.Routing.ComboStrategies.PromptHash(body);
+        if (hash.Length > 0) Core.Routing.ComboStrategies.RecordCacheHit(target.ComboName, hash, modelRef);
+    }
+
+    /// <summary>Non-stream upstream call; returns translated response text.</summary>
+    private static async Task<(bool Ok, string? Text, JsonElement Raw)> CallTargetJsonAsync(
+        HttpContext ctx, Core.Gateway.GatewayEngine engine, IHttpClientFactory httpFactory,
+        LlmRouterDbContext db, Core.Gateway.ResolvedTarget target, string inbound, JsonElement body)
+    {
+        var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
+            ?? httpFactory.CreateClient("upstream");
+        var call = engine.BuildCall(target, inbound, body, false);
+        var req = new HttpRequestMessage(HttpMethod.Post, call.Url);
+        foreach (var (k, v) in call.Headers) req.Headers.TryAddWithoutValidation(k, v);
+        req.Content = new StringContent(call.Body, Encoding.UTF8, "application/json");
+        using var resp = await client.SendAsync(req, ctx.RequestAborted);
+        if (!resp.IsSuccessStatusCode) return (false, null, default);
+        var upstream = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ctx.RequestAborted);
+        var asOpenAi = Translators.TranslateResponse(upstream, call.OutboundFormat, "openai", "m");
+        var text = asOpenAi["choices"] is JsonArray ch && ch.Count > 0
+            && ch[0]?["message"]?["content"] is JsonValue jv && jv.TryGetValue<string>(out var st2)
+            ? st2 : null;
+        return (true, text, upstream);
+    }
+
+    private static JsonElement ChatResponseJson(string model, string content) =>
+        JsonSerializer.SerializeToElement(new
+        {
+            id = "chatcmpl-" + Guid.NewGuid().ToString("N")[..24],
+            @object = "chat.completion",
+            created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            model,
+            choices = new[]
+            {
+                new { index = 0, message = new { role = "assistant", content }, finish_reason = "stop" },
+            },
+            usage = new { prompt_tokens = 0, completion_tokens = 0, total_tokens = 0 },
+        });
+
+    private static async Task WriteSynthesizedResponse(HttpContext ctx, GatewayEngine engine,
+        string inbound, string model, string apiKey, string content, long ms)
+    {
+        var final = Translators.TranslateResponse(ChatResponseJson(model, content), "openai", inbound, model);
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsync(final.ToJsonString(JsonOpts));
+        await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "200", null, ms);
+    }
+
+    /// <summary>
+    /// SPEC-020 fusion: fan out to panel members in parallel, then a judge model
+    /// synthesizes one answer. Judge = member prefixed "judge:", else first member.
+    /// </summary>
+    private static async Task FusionAsync(HttpContext ctx, GatewayEngine engine,
+        IHttpClientFactory httpFactory, LlmRouterDbContext db, Core.Data.Combo combo,
+        JsonElement body, string inbound, string model, string apiKey, Stopwatch sw)
+    {
+        var members = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+        var judge = members.FirstOrDefault(x => x.StartsWith("judge:", StringComparison.Ordinal))?[6..];
+        var panel = members.Where(x => !x.StartsWith("judge:", StringComparison.Ordinal)).ToList();
+        var judgeModel = judge ?? panel.FirstOrDefault();
+
+        var calls = panel.Select(async m2 =>
+        {
+            var ts = await engine.ResolveAsync(m2, body, ctx.RequestAborted);
+            if (ts.Count == 0) return (Ok: false, Text: (string?)null, Model: m2);
+            var r = await CallTargetJsonAsync(ctx, engine, httpFactory, db, ts[0], inbound, body);
+            return (r.Ok, r.Text, Model: m2);
+        }).ToList();
+        var results = (await Task.WhenAll(calls)).Where(r => r.Ok).ToList();
+        if (results.Count == 0 || judgeModel is null)
+        {
+            ctx.Response.StatusCode = 502;
+            await WriteError(ctx, inbound, "upstream_unavailable", "Fusion panel: all members failed.");
+            await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds);
+            return;
+        }
+        var joined = string.Join("\n\n---\n\n",
+            results.Select(r => $"[{r.Model}]\n{r.Text}"));
+        var judgeBody = JsonSerializer.SerializeToElement(new
+        {
+            model = judgeModel,
+            messages = new[]
+            {
+                new
+                {
+                    role = "user",
+                    content = $"You are a judge model. Synthesize the following {results.Count} candidate answers into the single best answer.\n\n{joined}",
+                },
+            },
+        });
+        var jt = await engine.ResolveAsync(judgeModel, judgeBody, ctx.RequestAborted);
+        var synthesis = jt.Count > 0
+            ? (await CallTargetJsonAsync(ctx, engine, httpFactory, db, jt[0], "openai", judgeBody)).Text
+            : null;
+        await WriteSynthesizedResponse(ctx, engine, inbound, model, apiKey,
+            synthesis ?? results[0].Text ?? "", sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// SPEC-020 pipeline: members run sequentially — each model's output is the
+    /// next one's input (mapped to the conductor chain semantics upstream).
+    /// </summary>
+    private static async Task PipelineAsync(HttpContext ctx, GatewayEngine engine,
+        IHttpClientFactory httpFactory, LlmRouterDbContext db, Core.Data.Combo combo,
+        JsonElement body, string inbound, string model, string apiKey, Stopwatch sw)
+    {
+        var members = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+        if (members.Count == 0)
+        {
+            ctx.Response.StatusCode = 400;
+            await WriteError(ctx, inbound, "invalid_request", "Pipeline combo has no members.");
+            return;
+        }
+        // initial input: last user message text in openai shape
+        var openaiBody = Translators.Translate(body, inbound, "openai", model, false);
+        var msgs = openaiBody["messages"]?.AsArray();
+        var current = msgs?.LastOrDefault(m => m?["role"]?.GetValue<string>() == "user")?["content"];
+        var currentText = current is JsonNode cv && cv is JsonValue v && v.TryGetValue<string>(out var s)
+            ? s : current?.ToJsonString() ?? "";
+        foreach (var member in members)
+        {
+            var stepBody = JsonSerializer.SerializeToElement(new
+            {
+                model = member,
+                messages = new[] { new { role = "user", content = currentText } },
+            });
+            var ts = await engine.ResolveAsync(member, stepBody, ctx.RequestAborted);
+            if (ts.Count == 0)
+            {
+                ctx.Response.StatusCode = 502;
+                await WriteError(ctx, inbound, "upstream_unavailable",
+                    $"Pipeline stage '{member}' has no available connection.");
+                return;
+            }
+            var r = await CallTargetJsonAsync(ctx, engine, httpFactory, db, ts[0], "openai", stepBody);
+            if (!r.Ok || r.Text is null)
+            {
+                ctx.Response.StatusCode = 502;
+                await WriteError(ctx, inbound, "upstream_unavailable",
+                    $"Pipeline stage '{member}' failed.");
+                await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds);
+                return;
+            }
+            currentText = r.Text;
+        }
+        await WriteSynthesizedResponse(ctx, engine, inbound, model, apiKey, currentText, sw.ElapsedMilliseconds);
     }
 
     /// <summary>

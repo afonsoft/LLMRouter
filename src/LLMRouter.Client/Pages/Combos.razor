@@ -113,6 +113,21 @@ else
                     <select class="input" @bind="_editing.Kind">
                         <option value="fallback">fallback (ordered)</option>
                         <option value="round-robin">round-robin</option>
+                        <option value="weighted">weighted (model~N)</option>
+                        <option value="random">random</option>
+                        <option value="strict-random">strict-random</option>
+                        <option value="least-used">least-used</option>
+                        <option value="cost-optimized">cost-optimized</option>
+                        <option value="p2c">p2c (power of two choices)</option>
+                        <option value="quota-weighted">quota-weighted</option>
+                        <option value="headroom">headroom</option>
+                        <option value="reset-aware">reset-aware</option>
+                        <option value="context-optimized">context-optimized</option>
+                        <option value="cache-optimized">cache-optimized</option>
+                        <option value="lkgp">lkgp (last known good)</option>
+                        <option value="auto">auto</option>
+                        <option value="fusion">fusion (fan-out + judge)</option>
+                        <option value="pipeline">pipeline (chained)</option>
                         <option value="vision-adapter">vision-adapter (imageToText → llm)</option>
                     </select>
                 </div>
@@ -129,6 +144,18 @@ else
                     @if (_editing.Kind == "vision-adapter")
                     {
                         <p class="dim sm mt-2">vision-adapter: first model describes the image, remaining models answer.</p>
+                    }
+                    @if (_editing.Kind == "weighted")
+                    {
+                        <p class="dim sm mt-2">weighted: append <code>~N</code> to a model ref to weight it (e.g. <code>openai/gpt-4o~3</code>).</p>
+                    }
+                    @if (_editing.Kind == "fusion")
+                    {
+                        <p class="dim sm mt-2">fusion: all members answer in parallel; prefix a member with <code>judge:</code> to make it synthesize the final answer (default judge = first member). Non-stream only.</p>
+                    }
+                    @if (_editing.Kind == "pipeline")
+                    {
+                        <p class="dim sm mt-2">pipeline: each model's output feeds the next one's input. Non-stream only.</p>
                     }
                 </div>
             </div>

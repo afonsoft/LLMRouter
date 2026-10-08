@@ -408,3 +408,24 @@ pre.code {
     border-radius: var(--radius-control); padding: 14px 16px;
     font-size: 12.5px; overflow-x: auto; line-height: 1.55;
 }
+
+/* ---- provider catalog grid (SPEC-002) ---- */
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.pcard {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  text-align: left; cursor: pointer; transition: border-color .15s, transform .15s;
+  font-family: inherit;
+}
+.pcard:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.pcard-icon {
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--text);
+}
+.pcard-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pcard-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcard-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link { color: var(--accent); text-decoration: none; }
+.link:hover { text-decoration: underline; }
+.tab.on { color: var(--primary); border-bottom-color: var(--primary); }

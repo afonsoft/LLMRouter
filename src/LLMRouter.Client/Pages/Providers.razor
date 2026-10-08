@@ -1,153 +1,186 @@
 @page "/dashboard/providers"
 @inject Api Api
 @inject Loc Loc
-@inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <div class="flex between">
     <div>
         <h1 class="page-title">@Loc.T("providers.title", "Providers")</h1>
-        <p class="page-desc">@Loc.T("providers.subtitle", "Provider catalog and your connections")</p>
+        <p class="page-desc">@Loc.T("providers.subtitle", "Provider catalog — pick a provider to manage connections")</p>
     </div>
-    <button class="btn btn-primary" @onclick="() => _adding = true">
+    <button class="btn btn-primary" @onclick="() => _nodeModal = true">
         <span class="material-symbols-outlined" style="font-size:17px">add</span>
-        @Loc.T("providers.add", "Add connection")
+        @Loc.T("providers.customNode", "Custom endpoint")
     </button>
 </div>
 
-<div class="card mt-6 scroll-x">
-    <table class="table">
-        <thead><tr><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("providers.name", "Name")</th><th>@Loc.T("providers.auth", "Auth")</th><th>@Loc.T("providers.priority", "Priority")</th><th>@Loc.T("providers.status", "Status")</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var c in _conns)
-            {
-                <tr>
-                    <td class="mono sm">@c.Provider</td>
-                    <td>@c.Name</td>
-                    <td class="muted sm">@c.AuthType</td>
-                    <td>@c.Priority</td>
-                    <td><span class="badge @(c.IsActive ? "ok" : "err")">@(c.IsActive ? "active" : "off")</span></td>
-                    <td class="flex gap-2">
-                        <button class="btn btn-sm" @onclick="() => Test(c)">Test</button>
-                        <button class="btn btn-sm" @onclick="() => ToggleActive(c)">@(c.IsActive ? "Disable" : "Enable")</button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id)">Delete</button>
-                    </td>
-                </tr>
-            }
-            @if (_conns.Count == 0)
-            {
-                <tr><td colspan="6"><div class="empty"><span class="material-symbols-outlined">dns</span>@Loc.T("providers.empty", "No connections yet")</div></td></tr>
-            }
-        </tbody>
-    </table>
+<div class="mt-4 flex gap-2" style="max-width:440px">
+    <input class="input" placeholder="@Loc.T("providers.search", "Search providers…")" @bind="_q" @bind:event="oninput" />
 </div>
 
-@if (_testResult is not null)
+<div class="tabs mt-4">
+    <button class="tab @(_cat is null ? "on" : "")" @onclick="() => _cat = null">
+        @Loc.T("providers.all", "All") <span class="muted">@All().Count()</span>
+    </button>
+    @foreach (var c in Categories())
+    {
+        <button class="tab @(_cat == c ? "on" : "")" @onclick="() => _cat = c">
+            @c <span class="muted">@All().Count(p => p.Category == c)</span>
+        </button>
+    }
+</div>
+
+<div class="pgrid mt-4">
+    @foreach (var p in Filtered())
+    {
+        <button class="pcard" @onclick='() => Nav.NavigateTo($"/dashboard/providers/{p.Id}")'>
+            <span class="pcard-icon" style="@(p.Color is not null ? $"color:{p.Color}" : "")">
+                <span class="material-symbols-outlined" style="font-size:22px">@(p.Icon ?? "cloud")</span>
+            </span>
+            <span class="pcard-body">
+                <span class="pcard-name">@(p.Name ?? p.Id)</span>
+                <span class="pcard-id mono xs muted">@p.Id</span>
+            </span>
+            @if (p.Connected)
+            {
+                <span class="badge ok">@p.ConnectionCount</span>
+            }
+            else if (p.Backend)
+            {
+                <span class="badge">API</span>
+            }
+        </button>
+    }
+    @if (!Filtered().Any())
+    {
+        <div class="empty"><span class="material-symbols-outlined">cloud_off</span>@Loc.T("providers.none", "No providers match")</div>
+    }
+</div>
+
+@if (_nodes.Count > 0)
 {
-    <div class="card card-p mt-4">
-        <h3 class="bold">@Loc.T("providers.testResult", "Connection test")</h3>
-        <pre class="code">@_testResult</pre>
+    <h2 class="page-title mt-6" style="font-size:15px">@Loc.T("providers.nodes", "Custom endpoints")</h2>
+    <div class="card scroll-x mt-4">
+        <table class="table">
+            <thead><tr><th>@Loc.T("providers.name", "Name")</th><th>ID</th><th>@Loc.T("providers.kind", "Kind")</th><th>Base URL</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var n in _nodes)
+                {
+                    <tr>
+                        <td>@n.Name</td>
+                        <td class="mono xs"><a class="link" href="/dashboard/providers/@n.Id">@n.Id</a></td>
+                        <td class="muted sm">@n.Type</td>
+                        <td class="mono sm muted">@n.BaseUrl</td>
+                        <td><button class="btn btn-sm btn-danger" @onclick="() => DeleteNode(n.Id)">@Loc.T("common.delete", "Delete")</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 }
 
-@if (_adding)
+@if (_nodeModal)
 {
-    <div class="modal-back" @onclick="() => _adding = false">
+    <div class="modal-back" @onclick="() => _nodeModal = false">
         <div class="modal" @onclick:stopPropagation>
-            <div class="modal-head"><span class="modal-title">@Loc.T("providers.add", "Add connection")</span>
-                <button class="icon-btn" @onclick="() => _adding = false"><span class="material-symbols-outlined" style="font-size:17px">close</span></button>
+            <div class="modal-head"><span class="modal-title">@Loc.T("providers.customNode", "Custom endpoint")</span>
+                <button class="icon-btn" @onclick="() => _nodeModal = false"><span class="material-symbols-outlined" style="font-size:17px">close</span></button>
             </div>
             <div class="modal-body">
-                <label class="lbl">@Loc.T("providers.provider", "Provider")</label>
-                <select class="input" @bind="_newProvider" @bind:after="OnProviderChanged">
-                    <option value="">—</option>
-                    @foreach (var p in _catalog)
-                    {
-                        <option value="@p">@p</option>
-                    }
+                <label class="lbl">@Loc.T("providers.kind", "Kind")</label>
+                <select class="input" @bind="_nodeKind">
+                    <option value="openai-compatible-chat">openai-compatible (chat completions)</option>
+                    <option value="openai-compatible-responses">openai-compatible (responses api)</option>
+                    <option value="anthropic-compatible">anthropic-compatible</option>
+                    <option value="claude-code">claude-code</option>
                 </select>
                 <div class="mt-4">
                     <label class="lbl">@Loc.T("providers.name", "Name")</label>
-                    <input class="input" @bind="_newName" />
+                    <input class="input" @bind="_nodeName" />
                 </div>
                 <div class="mt-4">
-                    <label class="lbl">API key</label>
-                    <input class="input mono" type="password" @bind="_newKey" />
+                    <label class="lbl">Base URL</label>
+                    <input class="input mono" @bind="_nodeBaseUrl" placeholder="http://localhost:8080" />
                 </div>
                 <div class="mt-4">
-                    <label class="lbl">@Loc.T("providers.baseUrl", "Base URL (optional override)")</label>
-                    <input class="input mono" @bind="_newBaseUrl" placeholder="https://api.openai.com" />
+                    <label class="lbl">@Loc.T("providers.modelsList", "Models (comma-separated, optional)")</label>
+                    <input class="input mono" @bind="_nodeModels" placeholder="llama3.2, qwen3" />
                 </div>
             </div>
             <div class="modal-foot">
-                <button class="btn" @onclick="() => _adding = false">@Loc.T("common.cancel", "Cancel")</button>
-                <button class="btn btn-primary" @onclick="Create" disabled="@(string.IsNullOrEmpty(_newProvider))">@Loc.T("common.create", "Create")</button>
+                <button class="btn" @onclick="() => _nodeModal = false">@Loc.T("common.cancel", "Cancel")</button>
+                <button class="btn btn-primary" @onclick="CreateNode" disabled="@(string.IsNullOrEmpty(_nodeBaseUrl))">@Loc.T("common.create", "Create")</button>
             </div>
         </div>
     </div>
 }
 
 @code {
-    private record Conn(string Id, string Provider, string? AuthType, string Name, int Priority, bool IsActive, string? Data);
-    private List<Conn> _conns = [];
-    private List<string> _catalog = [];
-    private bool _adding;
-    private string _newProvider = "", _newName = "", _newKey = "", _newBaseUrl = "";
-    private string? _testResult;
+    private record P(string Id, string? Name, string? Icon, string? Color, string Category, bool Backend, bool Connected, int ConnectionCount);
+    private record Node(string Id, string? Name, string? Type, string? BaseUrl);
+    private List<P> _providers = [];
+    private List<Node> _nodes = [];
+    private string _q = "";
+    private string? _cat;
+    private bool _nodeModal;
+    private string _nodeKind = "openai-compatible-chat", _nodeName = "", _nodeBaseUrl = "", _nodeModels = "";
 
     protected override async Task OnInitializedAsync()
     {
-        await Load();
-        var cat = await Api.GetAsync("api/providers");
-        foreach (var grp in cat.GetProperty("categories").EnumerateArray())
-            foreach (var p in grp.GetProperty("providers").EnumerateArray())
-                _catalog.Add(p.GetProperty("id").GetString()!);
-        _catalog.Sort();
-    }
-
-    private async Task Load()
-    {
-        var r = await Api.GetAsync("api/provider-connections");
-        _conns = r.GetProperty("connections").EnumerateArray().Select(c => new Conn(
-            c.GetProperty("id").GetString()!, c.GetProperty("provider").GetString()!,
-            c.TryGetProperty("authType", out var at) ? at.GetString() : null,
-            c.GetProperty("name").GetString() ?? "",
-            c.TryGetProperty("priority", out var pr) ? pr.GetInt32() : 0,
-            c.GetProperty("isActive").GetBoolean(),
-            c.TryGetProperty("data", out var d) ? d.GetString() : null)).ToList();
-    }
-
-    private void OnProviderChanged() { if (string.IsNullOrEmpty(_newName)) _newName = _newProvider; }
-
-    private async Task Create()
-    {
-        var data = new Dictionary<string, string>();
-        if (!string.IsNullOrEmpty(_newKey)) data["apiKey"] = _newKey;
-        if (!string.IsNullOrEmpty(_newBaseUrl)) data["baseUrl"] = _newBaseUrl;
-        await Api.PostAsync("api/provider-connections", new
+        await LoadNodes();
+        var r = await Api.GetAsync("api/providers");
+        foreach (var grp in r.GetProperty("categories").EnumerateArray())
         {
-            provider = _newProvider,
-            name = _newName,
-            authType = "apikey",
-            data,
-        });
-        _adding = false;
-        _newProvider = _newName = _newKey = _newBaseUrl = "";
-        await Load();
+            var kind = grp.GetProperty("kind").GetString() ?? "";
+            foreach (var p in grp.GetProperty("providers").EnumerateArray())
+            {
+                _providers.Add(new P(
+                    p.GetProperty("id").GetString()!,
+                    p.TryGetProperty("name", out var n) ? n.GetString() : null,
+                    p.TryGetProperty("icon", out var i) ? i.GetString() : null,
+                    p.TryGetProperty("color", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null,
+                    kind,
+                    p.GetProperty("backend").GetBoolean(),
+                    p.GetProperty("connected").GetBoolean(),
+                    p.GetProperty("connectionCount").GetInt32()));
+            }
+        }
     }
 
-    private async Task ToggleActive(Conn c)
+    private async Task LoadNodes()
     {
-        await Api.PutAsync($"api/provider-connections/{c.Id}", new { isActive = !c.IsActive });
-        await Load();
+        var r = await Api.GetAsync("api/provider-nodes");
+        _nodes = r.GetProperty("nodes").EnumerateArray().Select(n =>
+        {
+            string? bu = null;
+            if (n.TryGetProperty("data", out var d) && d.GetString() is { Length: > 0 } ds)
+                try { bu = JsonDocument.Parse(ds).RootElement.TryGetProperty("baseUrl", out var b) ? b.GetString() : null; } catch { }
+            return new Node(n.GetProperty("id").GetString()!,
+                n.TryGetProperty("name", out var nm) ? nm.GetString() : null,
+                n.TryGetProperty("type", out var t) ? t.GetString() : null, bu);
+        }).ToList();
     }
 
-    private async Task Delete(string id) { await Api.DeleteAsync($"api/provider-connections/{id}"); await Load(); }
-
-    private async Task Test(Conn c)
+    private async Task CreateNode()
     {
-        _testResult = "Testing…";
-        var r = await Api.PostAsync($"api/provider-connections/{c.Id}/test", new { });
-        var s = JsonSerializer.Serialize(r, new JsonSerializerOptions { WriteIndented = true });
-        _testResult = s[..Math.Min(4000, s.Length)];
+        var models = _nodeModels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(m => (object)new { id = m }).ToList();
+        var data = new Dictionary<string, object> { ["baseUrl"] = _nodeBaseUrl };
+        if (models.Count > 0) data["models"] = models;
+        await Api.PostAsync("api/provider-nodes", new { kind = _nodeKind, name = _nodeName, data });
+        _nodeModal = false;
+        _nodeName = _nodeBaseUrl = _nodeModels = "";
+        await LoadNodes();
     }
+
+    private async Task DeleteNode(string id) { await Api.DeleteAsync($"api/provider-nodes/{id}"); await LoadNodes(); }
+
+    private IEnumerable<P> All() => _providers;
+    private IEnumerable<string> Categories() => _providers.Select(p => p.Category).Distinct().OrderBy(c => c);
+    private IEnumerable<P> Filtered() => _providers
+        .Where(p => _cat is null || p.Category == _cat)
+        .Where(p => string.IsNullOrWhiteSpace(_q)
+            || p.Id.Contains(_q, StringComparison.OrdinalIgnoreCase)
+            || (p.Name ?? "").Contains(_q, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(p => p.Connected).ThenBy(p => p.Name ?? p.Id, StringComparer.OrdinalIgnoreCase);
 }

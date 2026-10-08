@@ -12,7 +12,7 @@ Status: ✅ done · 🟡 partial · ⬜ planned (spec)
 | Gateway `/v1/models` | `api/v1/models` | 001 | 🟡 |
 | Usage logging | `usageHistory` etc | 001 | 🟡 |
 | Pages: home/endpoint/providers/models/combos/usage/logs/playground/settings | — | 001 | 🟡 |
-| Provider connections full CRUD+test+nodes | `/dashboard/providers` | 002 | ⬜ |
+| Provider connections full CRUD+test+nodes | `/dashboard/providers` | 002 | 🟡 |
 | Translators complete + all inbound formats | `open-sse/translator` | 003 | ⬜ |
 | Embeddings/images/audio/search/responses endpoints | `api/v1/*` | 003 | ⬜ |
 | Combos advanced + studio + aliases | `/dashboard/combos*` | 004 | ⬜ |

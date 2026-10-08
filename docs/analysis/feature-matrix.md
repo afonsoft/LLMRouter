@@ -13,8 +13,8 @@ Status: ✅ done · 🟡 partial · ⬜ planned (spec)
 | Usage logging | `usageHistory` etc | 001 | 🟡 |
 | Pages: home/endpoint/providers/models/combos/usage/logs/playground/settings | — | 001 | 🟡 |
 | Provider connections full CRUD+test+nodes | `/dashboard/providers` | 002 | 🟡 |
-| Translators complete + all inbound formats | `open-sse/translator` | 003 | ⬜ |
-| Embeddings/images/audio/search/responses endpoints | `api/v1/*` | 003 | ⬜ |
+| Translators complete + all inbound formats | `open-sse/translator` | 003 | 🟡 |
+| Embeddings/images/audio/search/responses endpoints | `api/v1/*` | 003 | 🟡 |
 | Combos advanced + studio + aliases | `/dashboard/combos*` | 004 | ⬜ |
 | Usage charts/costs/pricing/provider-stats | `/dashboard/{usage,analytics,costs}` | 005 | ⬜ |
 | Logs/console/timeline/health/resilience/export | `/dashboard/{logs,health}` | 006 | ⬜ |

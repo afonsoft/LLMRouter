@@ -25,16 +25,195 @@ public static class GatewayEndpoints
             var g = app.MapGroup(prefix);
             g.MapMethods("/chat/completions", ["POST"], (HttpContext c) => Chat(c, "openai"));
             g.MapMethods("/messages", ["POST"], (HttpContext c) => Chat(c, "claude"));
+            g.MapMethods("/messages/count_tokens", ["POST"], CountTokens);
             g.MapMethods("/responses", ["POST"], (HttpContext c) => Chat(c, "responsesApi"));
+            g.MapMethods("/responses/compact", ["POST"], (HttpContext c) => Chat(c, "responsesApi"));
             g.MapGet("/models", Models);
+            g.MapGet("/models/info", ModelInfo);
             g.MapGet("/models/{*path}", Models);
+            // non-chat passthrough: same resolution + cascade, no translation
+            foreach (var p in new[] { "/embeddings", "/images/generations", "/audio/speech",
+                "/audio/transcriptions", "/audio/voices", "/search", "/web/fetch",
+                "/moderations", "/files", "/batches" })
+                g.MapMethods(p, ["POST", "GET"], (HttpContext c) => Passthrough(c));
             g.MapMethods("/{*path}", ["OPTIONS"], () => Results.Ok());
         }
         // Gemini inbound
         app.MapMethods("/v1beta/models/{model}:generateContent", ["POST"], (HttpContext c) => Chat(c, "gemini"));
         app.MapMethods("/v1beta/models/{model}:streamGenerateContent", ["POST"], (HttpContext c) => Chat(c, "gemini"));
+        app.MapMethods("/v1beta/models/{model}:countTokens", ["POST"], CountTokens);
         app.MapGet("/v1beta/models", Models);
         app.MapGet("/v1beta/models/{*path}", Models);
+    }
+
+    /// <summary>Model list with per-connection detail (upstream /v1/models/{id} + /info).</summary>
+    private static async Task ModelInfo(HttpContext ctx, LlmRouterDbContext db, ProviderRegistry registry)
+    {
+        if (!await Authorized(ctx, db)) { ctx.Response.StatusCode = 401; return; }
+        var id = ctx.Request.Query["id"].FirstOrDefault() ?? "";
+        var slash = id.IndexOf('/');
+        var providerId = slash > 0 ? id[..slash] : id;
+        var modelId = slash > 0 ? id[(slash + 1)..] : null;
+        var p = registry.GetProvider(providerId);
+        var conns = await db.ProviderConnections
+            .Where(c => c.Provider == providerId && c.IsActive).ToListAsync();
+        var result = new
+        {
+            id,
+            provider = p is null ? null : new
+            {
+                p.Id, p.Alias, p.Format, p.AuthType,
+                models = p.Models?.Select(m => m.Id) ?? [],
+            },
+            model = modelId,
+            connections = conns.Select(c => new { c.Id, c.Name, c.Priority }),
+        };
+        await ctx.Response.WriteAsJsonAsync(result);
+    }
+
+    /// <summary>
+    /// Approximate token counting (upstream does a chars/4 heuristic for claude
+    /// when no provider tokenizer is configured). Returns claude-shaped
+    /// {input_tokens} for /messages/count_tokens, gemini-shaped for :countTokens.
+    /// </summary>
+    private static async Task CountTokens(HttpContext ctx, LlmRouterDbContext db)
+    {
+        if (!await Authorized(ctx, db)) { ctx.Response.StatusCode = 401; return; }
+        JsonElement body;
+        try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
+        catch { ctx.Response.StatusCode = 400; return; }
+        var raw = body.GetRawText();
+        var chars = 0;
+        // sum only the content-bearing strings, not JSON overhead
+        try
+        {
+            foreach (var el in EnumerateStrings(body)) chars += el.Length;
+        }
+        catch { chars = raw.Length; }
+        var tokens = Math.Max(1, (int)Math.Ceiling(chars / 4.0));
+        var isGemini = ctx.Request.Path.Value?.Contains(":countTokens") == true;
+        await ctx.Response.WriteAsync(isGemini
+            ? JsonSerializer.Serialize(new { totalTokens = tokens })
+            : JsonSerializer.Serialize(new { input_tokens = tokens }));
+        ctx.Response.ContentType = "application/json";
+    }
+
+    private static IEnumerable<string> EnumerateStrings(JsonElement el)
+    {
+        switch (el.ValueKind)
+        {
+            case JsonValueKind.String:
+                yield return el.GetString() ?? "";
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in el.EnumerateArray())
+                    foreach (var s in EnumerateStrings(item)) yield return s;
+                break;
+            case JsonValueKind.Object:
+                foreach (var prop in el.EnumerateObject())
+                    if (prop.Name is "text" or "content" or "input" or "instructions")
+                        foreach (var s in EnumerateStrings(prop.Value)) yield return s;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Non-chat endpoints (embeddings, images, audio, search, web/fetch):
+    /// resolve a provider connection for the requested model, forward the body
+    /// verbatim to the provider's endpoint for that service, stream the
+    /// response back (may be binary/multipart). No format translation.
+    /// </summary>
+    private static async Task Passthrough(HttpContext ctx)
+    {
+        var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
+        var engine = ctx.RequestServices.GetRequiredService<GatewayEngine>();
+        var httpFactory = ctx.RequestServices.GetRequiredService<IHttpClientFactory>();
+        var sw = Stopwatch.StartNew();
+
+        var (apiKey, authed) = await AuthenticatedKey(ctx, db);
+        if (!authed)
+        {
+            ctx.Response.StatusCode = 401;
+            await WriteError(ctx, "openai", "invalid_api_key", "Invalid or missing API key.");
+            return;
+        }
+
+        string model = "";
+        JsonElement body = default;
+        byte[]? rawBody = null;
+        if (ctx.Request.Method == "POST")
+        {
+            rawBody = await GetRawBody(ctx);
+            try
+            {
+                body = JsonDocument.Parse(rawBody).RootElement;
+                if (body.TryGetProperty("model", out var m)) model = m.GetString() ?? "";
+            }
+            catch { /* multipart etc — model may be in form fields */ }
+        }
+        model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
+
+        var targets = await engine.ResolveAsync(model, body);
+        if (targets.Count == 0)
+        {
+            ctx.Response.StatusCode = 400;
+            await WriteError(ctx, "openai", "model_not_found",
+                $"No active provider connection can serve '{model}'.");
+            return;
+        }
+
+        var client = httpFactory.CreateClient("upstream");
+        var path = ctx.Request.Path.Value ?? "";
+        var suffix = path[(path.IndexOf("/v1", StringComparison.Ordinal) + 3)..];
+        foreach (var target in targets)
+        {
+            try
+            {
+                var baseUrl = GatewayEngine.ConnectionBaseUrl(target.Connection, target.Provider);
+                var url = baseUrl + suffix + (ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : "");
+                var req = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), url);
+                var secret = GatewayEngine.ConnectionSecret(target.Connection);
+                if (secret is not null)
+                {
+                    var header = target.Provider.AuthHeader ?? "authorization";
+                    var value = target.Provider.AuthPrefix is { Length: > 0 } p
+                        ? $"{p}{secret}"
+                        : header.Equals("authorization", StringComparison.OrdinalIgnoreCase)
+                            ? $"Bearer {secret}" : secret;
+                    req.Headers.TryAddWithoutValidation(header, value);
+                }
+                if (target.Provider.Headers is { } extra)
+                    foreach (var kv in extra) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                if (rawBody is not null)
+                {
+                    req.Content = new ByteArrayContent(rawBody);
+                    req.Content.Headers.ContentType =
+                        new System.Net.Http.Headers.MediaTypeHeaderValue(
+                            ctx.Request.ContentType ?? "application/json");
+                }
+                using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
+                if (!resp.IsSuccessStatusCode && ShouldCascade(resp.StatusCode) && target != targets[^1])
+                    continue;
+                ctx.Response.StatusCode = (int)resp.StatusCode;
+                ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
+                await resp.Content.CopyToAsync(ctx.Response.Body);
+                if (!resp.IsSuccessStatusCode)
+                    await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
+                        target.Connection.Id, apiKey, path, 0, 0,
+                        ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds);
+                return;
+            }
+            catch (Exception) when (target != targets[^1]) { }
+        }
+        ctx.Response.StatusCode = 502;
+        await WriteError(ctx, "openai", "upstream_unavailable", "All upstream targets failed.");
+    }
+
+    private static async Task<byte[]?> GetRawBody(HttpContext ctx)
+    {
+        using var ms = new MemoryStream();
+        await ctx.Request.Body.CopyToAsync(ms);
+        return ms.ToArray();
     }
 
     private static async Task Models(HttpContext ctx, LlmRouterDbContext db, ProviderRegistry registry)

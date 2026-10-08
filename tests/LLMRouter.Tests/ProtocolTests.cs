@@ -84,3 +84,37 @@ public class DocsTests
         m.GetProperty("icons").GetArrayLength().ShouldBeGreaterThan(0);
     }
 }
+
+public class MitmTests
+{
+    [Fact]
+    public void TrafficCapture_ring_buffer_holds_and_finds()
+    {
+        LLMRouter.Core.Mitm.TrafficCapture.Clear();
+        LLMRouter.Core.Mitm.TrafficCapture.Add(new("f1", DateTime.UtcNow, "GET", "h", "/p", 200, 10, 0, 5, "h1", null, "h2", "b"));
+        LLMRouter.Core.Mitm.TrafficCapture.List().ShouldContain(f => f.Id == "f1");
+        LLMRouter.Core.Mitm.TrafficCapture.Find("f1")!.Status.ShouldBe(200);
+        LLMRouter.Core.Mitm.TrafficCapture.Clear();
+        LLMRouter.Core.Mitm.TrafficCapture.List().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Ca_generation_produces_parseable_x509()
+    {
+        var ca = LLMRouter.Server.Mitm.ForwardProxy.GetOrCreateCa();
+        ca.Subject.ShouldContain("LLMRouter");
+        ca.HasPrivateKey.ShouldBeTrue();
+        var bytes = ca.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Cert);
+        new System.Security.Cryptography.X509Certificates.X509Certificate2(bytes).Subject.ShouldBe(ca.Subject);
+    }
+
+    [Fact]
+    public void IsProxyRequest_detects_absolute_uri()
+    {
+        var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        ctx.Request.Path = "/v1/models";
+        LLMRouter.Server.Mitm.ForwardProxy.IsProxyRequest(ctx.Request).ShouldBeFalse();
+        ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpRequestFeature>()!.RawTarget = "https://api.example.com/v1/x";
+        LLMRouter.Server.Mitm.ForwardProxy.IsProxyRequest(ctx.Request).ShouldBeTrue();
+    }
+}

@@ -3,6 +3,7 @@ using LLMRouter.Core.Registry;
 using LLMRouter.Core.Routing;
 using LLMRouter.Core.Gateway;
 using LLMRouter.Server.Endpoints;
+using LLMRouter.Server.Mitm;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -65,6 +66,7 @@ using (var scope = app.Services.CreateScope())
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseBlazorFrameworkFiles();
+app.Use(ForwardProxy.Invoke);
 app.UseStaticFiles();
 app.UseStatusCodePagesWithReExecute("/error/{0}");
 
@@ -76,6 +78,7 @@ app.MapToolsEndpoints();
 app.MapOAuthEndpoints();
 app.MapProtocolEndpoints();
 app.MapDocsEndpoints();
+app.MapInspectorEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

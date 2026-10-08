@@ -1,0 +1,108 @@
+@page "/dashboard/tools/traffic-inspector"
+@page "/dashboard/mitm"
+@page "/dashboard/pxpipe"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("inspector.title", "Traffic inspector")</h1>
+<p class="page-desc">@Loc.T("inspector.subtitle", "Forward-proxy flows — send absolute-URI requests through this server to capture them")</p>
+
+<div class="card card-p" style="margin-bottom:12px">
+    <div class="flex" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="flex" style="gap:6px;align-items:center">
+            <input type="checkbox" checked="@_enabled" @onchange="Toggle" /> @Loc.T("inspector.capture", "Capture")
+        </label>
+        <button class="btn btn-sm" @onclick="Clear">@Loc.T("inspector.clear", "Clear")</button>
+        <a class="btn btn-sm" href="/api/mitm/ca" download>@Loc.T("inspector.ca", "Download CA cert")</a>
+        <input class="input" style="width:180px" @bind="_host" placeholder="filter host" @bind:event="oninput" @bind:after="Load" />
+        <code class="muted" style="font-size:11px">curl -x http://&lt;router&gt;:5159 https://api.example.com/v1/x</code>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">
+    <div>
+        <table class="tbl">
+            <thead><tr><th></th><th>@Loc.T("common.method", "Method")</th><th>Host</th><th>Path</th><th>ms</th></tr></thead>
+            <tbody>
+                @if (_flows is not null)
+                {
+                    @foreach (var f in _flows)
+                    {
+                        <tr style="cursor:pointer" @onclick='() => Detail(f.GetProperty("id").GetString()!)'>
+                            <td><span class="badge @(f.GetProperty("status").GetInt32() < 400 ? "ok" : "err")">@f.GetProperty("status").GetInt32()</span></td>
+                            <td>@f.GetProperty("method").GetString()</td>
+                            <td>@f.GetProperty("host").GetString()</td>
+                            <td class="muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">@f.GetProperty("path").GetString()</td>
+                            <td>@f.GetProperty("ms").GetInt32()</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    <div>
+        @if (_detail is not null)
+        {
+            <div class="card card-p">
+                <h3 class="bold" style="margin:0 0 8px">@_detail.Value.GetProperty("method").GetString() @_detail.Value.GetProperty("path").GetString() → @_detail.Value.GetProperty("status").GetInt32()</h3>
+                <b class="xs muted">REQUEST HEADERS</b>
+                <pre class="code-block" style="font-size:11px">@_detail.Value.GetProperty("reqHeaders").GetString()</pre>
+                <b class="xs muted">RESPONSE HEADERS</b>
+                <pre class="code-block" style="font-size:11px">@_detail.Value.GetProperty("respHeaders").GetString()</pre>
+                <b class="xs muted">RESPONSE BODY</b>
+                <pre class="code-block" style="font-size:11px;max-height:200px;overflow:auto">@_detail.Value.GetProperty("respBody").GetString()</pre>
+                <div class="flex" style="gap:8px;margin-top:8px">
+                    <input class="input" style="flex:1" @bind="_relayTarget" placeholder="relay target base url (optional)" />
+                    <button class="btn btn-sm" @onclick="Relay">@Loc.T("inspector.relay", "Relay")</button>
+                </div>
+                @if (_relay is not null)
+                {
+                    <pre class="code-block" style="font-size:11px;margin-top:8px;max-height:160px;overflow:auto">@_relay</pre>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private JsonElement[]? _flows;
+    private JsonElement? _detail;
+    private bool _enabled;
+    private string _host = "", _relayTarget = "";
+    private string? _relay;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/inspector/flows" + (_host == "" ? "" : $"?host={Uri.EscapeDataString(_host)}"));
+        _enabled = r.TryGetProperty("enabled", out var e) && e.GetBoolean();
+        _flows = r.TryGetProperty("flows", out var a) ? a.EnumerateArray().ToArray() : [];
+    }
+
+    private async Task Toggle()
+    {
+        await Api.PostAsync("api/inspector/capture", new { enabled = !_enabled });
+        _enabled = !_enabled;
+    }
+
+    private async Task Clear()
+    {
+        await Api.PostAsync("api/inspector/capture", new { clear = true });
+        await Load();
+    }
+
+    private async Task Detail(string id)
+    {
+        _detail = await Api.GetAsync($"api/inspector/flows/{id}");
+        _relay = null;
+    }
+
+    private async Task Relay()
+    {
+        if (_detail is null) return;
+        var r = await Api.Raw.PostAsJsonAsync("api/inspector/relay",
+            new { flowId = _detail.Value.GetProperty("id").GetString(), target = _relayTarget == "" ? null : _relayTarget });
+        _relay = await r.Content.ReadAsStringAsync();
+    }
+}

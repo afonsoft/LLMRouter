@@ -20,7 +20,7 @@ Status: ✅ done · 🟡 partial · ⬜ planned (spec)
 | Logs/console/timeline/health/resilience/export | `/dashboard/{logs,health}` | 006 | 🟡 |
 | All settings sections | `/dashboard/settings/*` | 007 | 🟡 |
 | Quota/token-saver/proxy-pools | 9router pages | 008 | 🟡 |
-| CLI tools/translator/skills pages | `/dashboard/{cli-tools,translator,skills}` | 009 | ⬜ |
+| CLI tools/translator/skills pages | `/dashboard/{cli-tools,translator,skills}` | 009 | 🟡 |
 | Media providers (tts/stt/image/video/etc) | `/dashboard/media-providers` | 010 | ⬜ |
 | OAuth flows + token health | `src/lib/oauth`, modals | 011 | ⬜ |
 | MCP/A2A/conductor/orchestration | `/dashboard/{mcp,a2a,conductor}` | 012 | ⬜ |

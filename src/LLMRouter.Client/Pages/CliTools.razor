@@ -1,0 +1,49 @@
+@page "/dashboard/cli-tools"
+@page "/dashboard/cli-code"
+@page "/dashboard/cli-agents"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("cliTools.title", "CLI tools")</h1>
+<p class="page-desc">@Loc.T("cliTools.subtitle", "Point any coding CLI at this router — copy the env block for your tool")</p>
+
+@if (_tools is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px">
+        @foreach (var t in _tools)
+        {
+            var detected = t.GetProperty("detected").GetBoolean();
+            var id = t.GetProperty("id").GetString()!;
+            <div class="card card-p">
+                <div class="flex between" style="margin-bottom:8px">
+                    <h3 class="bold" style="margin:0">@t.GetProperty("name").GetString()</h3>
+                    <span class="badge @(detected ? "ok" : "muted")">@(detected ? Loc.T("cliTools.detected", "detected") : Loc.T("cliTools.notDetected", "not found"))</span>
+                </div>
+                <p class="muted" style="font-size:12px;margin:0 0 8px">@t.GetProperty("installHint").GetString()</p>
+                <pre class="code-block" style="font-size:11px;max-height:140px;overflow:auto">@EnvBlock(t)</pre>
+                <button class="btn btn-sm" style="margin-top:8px" @onclick='() => Copy(EnvBlock(t))'>@Loc.T("common.copy", "Copy")</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private JsonElement[]? _tools;
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/cli-tools");
+        if (r.TryGetProperty("tools", out var arr)) _tools = arr.EnumerateArray().ToArray();
+        else _tools = [];
+    }
+
+    private static string EnvBlock(JsonElement t) =>
+        string.Join('\n', t.GetProperty("env").EnumerateObject().Select(kv => $"export {kv.Name}=\"{kv.Value.GetString()}\""));
+
+    private async Task Copy(string s) => await Js.InvokeVoidAsync("navigator.clipboard.writeText", s);
+}

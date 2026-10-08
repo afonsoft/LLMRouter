@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using LLMRouter.Core.Orchestration;
 using Shouldly;
 
@@ -137,5 +138,38 @@ public class ExtrasTests
     {
         LLMRouter.Core.Extras.Extras.DiscoveryTargets.ShouldContain(t => t.Name == "ollama" && t.Port == 11434);
         LLMRouter.Core.Extras.Extras.DiscoveryTargets.Length.ShouldBeGreaterThanOrEqualTo(4);
+    }
+}
+
+public class DistributionTests
+{
+    [Fact]
+    public void ResetPassword_writes_pbkdf2_hash()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"llmr-{Guid.NewGuid():N}.db");
+        Environment.SetEnvironmentVariable("LLMROUTER_DB_PATH", dbPath);
+        try
+        {
+            LLMRouter.Server.Cli.ResetPassword("new-secret-123");
+            var opts = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<LLMRouter.Core.Data.LlmRouterDbContext>()
+                .UseSqlite($"Data Source={dbPath}").Options;
+            using var db = new LLMRouter.Core.Data.LlmRouterDbContext(opts);
+            var s = db.Settings.First();
+            var d = System.Text.Json.JsonDocument.Parse(s.Data).RootElement;
+            var hash = d.GetProperty("adminPasswordHash").GetString()!;
+            hash.ShouldStartWith("pbkdf2$100000$");
+            // verify the PBKDF2 hash validates the new password (same algorithm as AuthEndpoints)
+            var parts = hash.Split('$');
+            var salt = Convert.FromBase64String(parts[2]);
+            var expected = Convert.FromBase64String(parts[3]);
+            var actual = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+                "new-secret-123", salt, 100_000, System.Security.Cryptography.HashAlgorithmName.SHA256, expected.Length);
+            actual.ShouldBe(expected);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("LLMROUTER_DB_PATH", null);
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
     }
 }

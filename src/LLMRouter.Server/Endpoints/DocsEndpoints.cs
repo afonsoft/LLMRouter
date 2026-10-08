@@ -81,3 +81,27 @@ public static class DocsEndpoints
         });
     }
 }
+
+
+public static class VersionEndpoints
+{
+    /// <summary>SPEC-016: running version + latest GitHub release tag (best-effort).</summary>
+    public static void MapVersionEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/version", async (IHttpClientFactory hf) =>
+        {
+            var current = typeof(VersionEndpoints).Assembly.GetName().Version?.ToString() ?? "0.1.0";
+            string? latest = null;
+            try
+            {
+                var c = hf.CreateClient("gh");
+                c.DefaultRequestHeaders.UserAgent.ParseAdd("llmrouter");
+                var r = await c.GetFromJsonAsync<System.Text.Json.JsonElement>(
+                    "https://api.github.com/repos/afonsoft/LLMRouter/releases/latest");
+                latest = r.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
+            }
+            catch { }
+            return Results.Json(new { version = current, latest, updateAvailable = latest is not null && latest.TrimStart('v') != current });
+        }).AllowAnonymous();
+    }
+}

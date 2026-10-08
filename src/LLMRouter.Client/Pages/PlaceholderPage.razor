@@ -1,0 +1,17 @@
+@page "/dashboard/{*catchAll}"
+@inject Loc Loc
+
+<div class="card">
+    <div class="empty">
+        <span class="material-symbols-outlined">@Icon</span>
+        <div class="bold" style="font-size:16px;color:var(--text)">@Title</div>
+        <p class="mt-2">@Loc.T("placeholder.message", "This section is planned in a later spec — see .specs/ in the repository.")</p>
+        <p class="xs mono muted mt-2">@CatchAll</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? CatchAll { get; set; }
+    [Parameter] public string Title { get; set; } = "Coming soon";
+    [Parameter] public string Icon { get; set; } = "construction";
+}

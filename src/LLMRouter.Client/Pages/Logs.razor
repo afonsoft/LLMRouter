@@ -1,0 +1,62 @@
+@page "/dashboard/logs"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("logs.title", "Request logs")</h1>
+        <p class="page-desc">@Loc.T("logs.subtitle", "Every request through the gateway")</p>
+    </div>
+    <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span>@Loc.T("logs.refresh", "Refresh")</button>
+</div>
+
+<div class="card mt-6 scroll-x">
+    <table class="table">
+        <thead><tr><th>@Loc.T("logs.time", "Time")</th><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("logs.status", "Status")</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var l in _logs)
+            {
+                <tr>
+                    <td class="muted sm mono">@l.Timestamp</td>
+                    <td class="mono sm">@l.Provider</td>
+                    <td class="mono sm">@l.Model</td>
+                    <td><span class="badge @(l.Status == "200" ? "ok" : "err")">@l.Status</span></td>
+                    <td><button class="btn btn-sm" @onclick="() => _detail = _detail == l ? null : l">@(_detail == l ? "Hide" : "Detail")</button></td>
+                </tr>
+                @if (_detail == l && l.Data is not null)
+                {
+                    <tr><td colspan="5"><pre class="code">@l.Data</pre></td></tr>
+                }
+            }
+            @if (_logs.Count == 0)
+            {
+                <tr><td colspan="5"><div class="empty"><span class="material-symbols-outlined">receipt_long</span>@Loc.T("logs.empty", "No requests logged")</div></td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private record L(string Timestamp, string Provider, string Model, string Status, string? Data);
+    private List<L> _logs = [];
+    private L? _detail;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/logs?limit=100");
+        _logs = r.GetProperty("logs").EnumerateArray().Select(l => new L(
+            l.GetProperty("timestamp").GetString() ?? "",
+            l.GetProperty("provider").GetString() ?? "",
+            l.GetProperty("model").GetString() ?? "",
+            l.GetProperty("status").GetString() ?? "",
+            l.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.String ? Pretty(d.GetString()!) : null)).ToList();
+    }
+
+    private static string Pretty(string s)
+    {
+        try { return JsonSerializer.Serialize(JsonDocument.Parse(s).RootElement, new JsonSerializerOptions { WriteIndented = true }); }
+        catch { return s; }
+    }
+}

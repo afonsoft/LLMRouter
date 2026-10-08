@@ -1,0 +1,123 @@
+@page "/dashboard/combos"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("combos.title", "Combos")</h1>
+        <p class="page-desc">@Loc.T("combos.subtitle", "Ordered model cascades with automatic fallback")</p>
+    </div>
+    <button class="btn btn-primary" @onclick='() => _editing = new() { Kind = "fallback" }'>
+        <span class="material-symbols-outlined" style="font-size:17px">add</span>
+        @Loc.T("combos.new", "New combo")
+    </button>
+</div>
+
+<div class="grid grid-2 mt-6">
+    @foreach (var c in _combos)
+    {
+        <div class="card card-p">
+            <div class="flex between">
+                <div>
+                    <div class="bold" style="font-size:15px">@c.Name</div>
+                    <span class="badge info mt-2">@c.Kind</span>
+                </div>
+                <div class="flex gap-2">
+                    <button class="btn btn-sm" @onclick="() => _editing = c">Edit</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id)">Delete</button>
+                </div>
+            </div>
+            <div class="col gap-2 mt-4">
+                @foreach (var (m, i) in c.ModelsList.Select((x, i) => (x, i)))
+                {
+                    <div class="flex gap-2">
+                        <span class="badge">@(i + 1)</span>
+                        <span class="mono sm">@m</span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    @if (_combos.Count == 0)
+    {
+        <div class="card"><div class="empty"><span class="material-symbols-outlined">layers</span>@Loc.T("combos.empty", "No combos yet")</div></div>
+    }
+</div>
+
+@if (_editing is not null)
+{
+    <div class="modal-back" @onclick="() => _editing = null">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-head"><span class="modal-title">@(_editing.Id is null ? Loc.T("combos.new", "New combo") : Loc.T("combos.edit", "Edit combo"))</span>
+                <button class="icon-btn" @onclick="() => _editing = null"><span class="material-symbols-outlined" style="font-size:17px">close</span></button>
+            </div>
+            <div class="modal-body">
+                <label class="lbl">@Loc.T("combos.name", "Name")</label>
+                <input class="input mono" @bind="_editing.Name" placeholder="my-combo" />
+                <div class="mt-4">
+                    <label class="lbl">@Loc.T("combos.kind", "Strategy")</label>
+                    <select class="input" @bind="_editing.Kind">
+                        <option value="fallback">fallback (ordered)</option>
+                        <option value="round-robin">round-robin</option>
+                    </select>
+                </div>
+                <div class="mt-4">
+                    <label class="lbl">@Loc.T("combos.models", "Models (provider/model, one per line, in order)")</label>
+                    <textarea class="input mono" rows="6" @bind="_modelsText" placeholder="openai/gpt-4o&#10;anthropic/claude-sonnet-4"></textarea>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn" @onclick="() => _editing = null">@Loc.T("common.cancel", "Cancel")</button>
+                <button class="btn btn-primary" @onclick="Save" disabled="@(string.IsNullOrWhiteSpace(_editing.Name))">@Loc.T("common.save", "Save")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private sealed class ComboVm
+    {
+        public string? Id; public string Name = ""; public string Kind = "fallback";
+        public List<string> ModelsList = [];
+    }
+    private List<ComboVm> _combos = [];
+    private ComboVm? _editing;
+    private string _modelsText = "";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/combos");
+        _combos = r.GetProperty("combos").EnumerateArray().Select(c => new ComboVm
+        {
+            Id = c.GetProperty("id").GetString(),
+            Name = c.GetProperty("name").GetString() ?? "",
+            Kind = c.TryGetProperty("kind", out var k) ? k.GetString() ?? "fallback" : "fallback",
+            ModelsList = c.TryGetProperty("models", out var m)
+                ? JsonSerializer.Deserialize<List<string>>(m.GetRawText()) ?? [] : [],
+        }).ToList();
+    }
+
+    protected override void OnParametersSet() { }
+
+    private void EditOpened() { _modelsText = string.Join("\n", _editing?.ModelsList ?? []); }
+
+    private async Task Save()
+    {
+        var models = _modelsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (_editing!.Id is null)
+            await Api.PostAsync("api/combos", new { name = _editing.Name, kind = _editing.Kind, models });
+        else
+            await Api.PutAsync($"api/combos/{_editing.Id}", new { name = _editing.Name, kind = _editing.Kind, models });
+        _editing = null;
+        await Load();
+    }
+
+    private async Task Delete(string id) { await Api.DeleteAsync($"api/combos/{id}"); await Load(); }
+
+    protected override bool ShouldRender() => true;
+
+    private ComboVm? _prev;
+    protected override void OnAfterRender(bool first) { if (_editing != _prev) { _prev = _editing; EditOpened(); } }
+}

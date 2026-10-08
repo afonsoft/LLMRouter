@@ -1,0 +1,56 @@
+@page "/dashboard/models"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("models.title", "Models & Combos")</h1>
+<p class="page-desc">@Loc.T("models.subtitle", "All models reachable through your connections")</p>
+
+<div class="mt-4" style="max-width:340px">
+    <input class="input" placeholder="@Loc.T("models.search", "Search models…")" @bind="_q" @bind:event="oninput" />
+</div>
+
+<div class="card mt-4 scroll-x">
+    <table class="table">
+        <thead><tr><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.context", "Context")</th><th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("providers.name", "Connection")</th></tr></thead>
+        <tbody>
+            @foreach (var m in Filtered())
+            {
+                <tr>
+                    <td class="mono sm">@m.Model</td>
+                    <td><span class="badge info">@m.Provider</span></td>
+                    <td class="muted sm">@(m.ContextLength?.ToString("N0") ?? "—")</td>
+                    <td class="xs muted">@m.Caps</td>
+                    <td class="muted sm">@m.Connection</td>
+                </tr>
+            }
+            @if (!_models.Any())
+            {
+                <tr><td colspan="5"><div class="empty"><span class="material-symbols-outlined">view_list</span>@Loc.T("models.empty", "No models — add a provider connection first")</div></td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private record M(string Model, string Provider, int? ContextLength, string Caps, string Connection);
+    private List<M> _models = [];
+    private string _q = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/models");
+        foreach (var m in r.GetProperty("models").EnumerateArray())
+        {
+            var caps = m.TryGetProperty("capabilities", out var c) && c.ValueKind == JsonValueKind.Array
+                ? string.Join(", ", c.EnumerateArray().Select(x => x.GetString())) : "";
+            _models.Add(new(m.GetProperty("model").GetString()!, m.GetProperty("provider").GetString()!,
+                m.TryGetProperty("contextLength", out var cl) && cl.ValueKind == JsonValueKind.Number ? cl.GetInt32() : null,
+                caps, m.GetProperty("connection").GetString() ?? ""));
+        }
+    }
+
+    private IEnumerable<M> Filtered() => string.IsNullOrWhiteSpace(_q)
+        ? _models
+        : _models.Where(m => m.Model.Contains(_q, StringComparison.OrdinalIgnoreCase)
+            || m.Provider.Contains(_q, StringComparison.OrdinalIgnoreCase));
+}

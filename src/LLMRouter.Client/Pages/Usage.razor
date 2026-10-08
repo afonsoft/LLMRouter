@@ -1,0 +1,84 @@
+@page "/dashboard/usage"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("usage.title", "Usage")</h1>
+        <p class="page-desc">@Loc.T("usage.subtitle", "Requests and tokens through the gateway")</p>
+    </div>
+    <select class="input" style="width:150px" @bind="_range" @bind:after="Load">
+        <option value="today">@Loc.T("usage.today", "Today")</option>
+        <option value="week">@Loc.T("usage.week", "Last 7 days")</option>
+        <option value="month">@Loc.T("usage.month", "Last 30 days")</option>
+        <option value="all">@Loc.T("usage.all", "All time")</option>
+    </select>
+</div>
+
+<div class="grid grid-4 mt-6">
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(22,163,74,.14);color:var(--success)"><span class="material-symbols-outlined">bolt</span></div>
+        <div><div class="stat-value">@_requests.ToString("N0")</div><div class="stat-label">@Loc.T("usage.requests", "Requests")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(217,119,6,.14);color:var(--warning)"><span class="material-symbols-outlined">token</span></div>
+        <div><div class="stat-value">@_tokens.ToString("N0")</div><div class="stat-label">@Loc.T("usage.tokens", "Tokens")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(99,102,241,.14);color:var(--accent)"><span class="material-symbols-outlined">input</span></div>
+        <div><div class="stat-value">@_prompt.ToString("N0")</div><div class="stat-label">@Loc.T("usage.promptTokens", "Prompt tokens")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(229,77,94,.14);color:var(--primary)"><span class="material-symbols-outlined">output</span></div>
+        <div><div class="stat-value">@_completion.ToString("N0")</div><div class="stat-label">@Loc.T("usage.completionTokens", "Completion tokens")</div></div>
+    </div>
+</div>
+
+<div class="grid grid-2 mt-6">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("usage.byProvider", "By provider")</h3>
+        <table class="table">
+            <thead><tr><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("usage.requests", "Requests")</th><th>@Loc.T("usage.tokens", "Tokens")</th></tr></thead>
+            <tbody>
+                @foreach (var p in _byProvider)
+                {
+                    <tr><td class="mono sm">@p.Provider</td><td>@p.Requests</td><td>@p.Tokens.ToString("N0")</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("usage.byModel", "By model")</h3>
+        <table class="table">
+            <thead><tr><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("usage.requests", "Requests")</th><th>@Loc.T("usage.tokens", "Tokens")</th></tr></thead>
+            <tbody>
+                @foreach (var m in _byModel)
+                {
+                    <tr><td class="mono sm">@m.Model</td><td>@m.Requests</td><td>@m.Tokens.ToString("N0")</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private string _range = "today";
+    private long _requests, _tokens, _prompt, _completion;
+    private List<(string Provider, int Requests, long Tokens)> _byProvider = [];
+    private List<(string Model, int Requests, long Tokens)> _byModel = [];
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync($"api/usage?range={_range}");
+        _requests = r.GetProperty("totalRequests").GetInt64();
+        _tokens = r.GetProperty("totalTokens").GetInt64();
+        _prompt = r.GetProperty("promptTokens").GetInt64();
+        _completion = r.GetProperty("completionTokens").GetInt64();
+        _byProvider = r.GetProperty("byProvider").EnumerateArray()
+            .Select(x => (x.GetProperty("provider").GetString()!, x.GetProperty("requests").GetInt32(), x.GetProperty("tokens").GetInt64())).ToList();
+        _byModel = r.GetProperty("byModel").EnumerateArray()
+            .Select(x => (x.GetProperty("model").GetString()!, x.GetProperty("requests").GetInt32(), x.GetProperty("tokens").GetInt64())).ToList();
+    }
+}

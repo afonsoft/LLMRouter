@@ -1,0 +1,76 @@
+@page "/dashboard/api-manager"
+@inject Api Api
+@inject Loc Loc
+@inject IJSRuntime JS
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("keys.title", "API keys")</h1>
+        <p class="page-desc">@Loc.T("keys.subtitle", "Keys for gateway authentication (Bearer / x-api-key)")</p>
+    </div>
+    <button class="btn btn-primary" @onclick="Create">
+        <span class="material-symbols-outlined" style="font-size:17px">add</span>
+        @Loc.T("keys.new", "New key")
+    </button>
+</div>
+
+<div class="card mt-6 scroll-x">
+    <table class="table">
+        <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.key", "Key")</th><th>@Loc.T("keys.status", "Status")</th><th>@Loc.T("keys.created", "Created")</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var k in _keys)
+            {
+                <tr>
+                    <td>@k.Name</td>
+                    <td class="mono sm">
+                        @( _reveal == k.Id ? k.Key : k.Key[..Math.Min(10, k.Key.Length)] + "…" )
+                        <button class="icon-btn" style="width:26px;height:26px;margin-left:6px" @onclick="() => _reveal = _reveal == k.Id ? null : k.Id">
+                            <span class="material-symbols-outlined" style="font-size:14px">@(_reveal == k.Id ? "visibility_off" : "visibility")</span>
+                        </button>
+                        <button class="icon-btn" style="width:26px;height:26px" @onclick="() => Copy(k.Key)">
+                            <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
+                        </button>
+                    </td>
+                    <td><span class="badge @(k.IsActive ? "ok" : "err")">@(k.IsActive ? "active" : "off")</span></td>
+                    <td class="muted sm">@k.CreatedAt</td>
+                    <td class="flex gap-2">
+                        <button class="btn btn-sm" @onclick="() => Toggle(k)">@(k.IsActive ? "Disable" : "Enable")</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(k.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+            @if (_keys.Count == 0)
+            {
+                <tr><td colspan="5"><div class="empty"><span class="material-symbols-outlined">vpn_key</span>@Loc.T("keys.empty", "No API keys — create one to start using the gateway")</div></td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private record K(string Id, string Key, string Name, bool IsActive, string CreatedAt);
+    private List<K> _keys = [];
+    private string? _reveal;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/keys");
+        _keys = r.GetProperty("keys").EnumerateArray().Select(k => new K(
+            k.GetProperty("id").GetString()!, k.GetProperty("key").GetString()!,
+            k.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+            k.GetProperty("isActive").GetBoolean(),
+            k.TryGetProperty("createdAt", out var c) ? c.GetString() ?? "" : "")).ToList();
+    }
+
+    private async Task Create()
+    {
+        await Api.PostAsync("api/keys", new { name = $"key-{DateTime.UtcNow:yyyyMMdd-HHmm}" });
+        await Load();
+    }
+
+    private async Task Toggle(K k) { await Api.PutAsync($"api/keys/{k.Id}", new { isActive = !k.IsActive }); await Load(); }
+    private async Task Delete(string id) { await Api.DeleteAsync($"api/keys/{id}"); await Load(); }
+    private async Task Copy(string t) => await JS.InvokeVoidAsync("llmrouter.copy", t);
+}

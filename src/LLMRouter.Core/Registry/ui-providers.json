@@ -1,0 +1,5425 @@
+{
+ "APIKEY_PROVIDERS": {
+  "onomeo": {
+   "id": "onomeo",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "onomeo",
+   "name": "onomeo",
+   "icon": "router",
+   "color": "#C2410C",
+   "textIcon": "ONO",
+   "passthroughModels": true,
+   "website": "https://onomeo.com",
+   "hasFree": true,
+   "freeNote": "Sign in (email code, Google or GitHub, no card). About 30 free models are metered by calls: 30 calls per 5 hours per account and 12 requests/min per key, within a site-wide pool shared by all accounts. Claude, GPT and other large models are paid from a USD balance at per-model prices; during the beta an account can spend at most $0.50/day on them. Optional top-up from $5 (balance never expires, no auto-renewal) raises the free-model limit to 90 calls per 5 hours for 35 days.",
+   "apiHint": "Create an API key on the onomeo dashboard, then use https://onomeo.com/v1 as the OpenAI-compatible base URL. Models are served by third-party upstreams, some of which may train on prompts; each model page on onomeo.com states this. onomeo is in public beta: not every feature is guaranteed to work, and feedback is welcome at https://onomeo.com/feedback."
+  },
+  "unifically": {
+   "id": "unifically",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "unifically",
+   "name": "Unifically",
+   "icon": "hub",
+   "color": "#10B981",
+   "textIcon": "UNI",
+   "passthroughModels": true,
+   "website": "https://unifically.com",
+   "hasFree": false,
+   "apiHint": "Create a Unifically API key at https://unifically.com/api-keys, then use https://api.unifically.com/v1 as the OpenAI-compatible base URL. Pay per use, no subscription. Chat models only through this entry; the media models in the same catalog use a separate async task API."
+  },
+  "oneminai": {
+   "id": "oneminai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "1min",
+   "name": "1min.AI",
+   "icon": "hub",
+   "color": "#6366F1",
+   "textIcon": "1M",
+   "website": "https://1min.ai",
+   "authHint": "Create an API key at https://docs.1min.ai/docs/api/create-api-key, then paste it here.",
+   "apiHint": "1min.ai uses a proprietary chat API (single prompt string + SSE) instead of OpenAI chat/completions. OmniRoute flattens OpenAI messages into a labeled prompt and translates the SSE stream.",
+   "passthroughModels": true
+  },
+  "cheaperinference": {
+   "id": "cheaperinference",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cinf",
+   "name": "Cheaper Inference",
+   "icon": "savings",
+   "color": "#31f889",
+   "textIcon": "CI",
+   "website": "https://cheaperinference.com/?utm_source=omniroute",
+   "apiHint": "Create an API key at https://cheaperinference.com/?utm_source=omniroute (needs the `inference` scope), then paste the ir_live_… token here.",
+   "passthroughModels": true
+  },
+  "freebuff": {
+   "id": "freebuff",
+   "alias": "freebuff",
+   "name": "Freebuff",
+   "icon": "terminal",
+   "color": "#10B981",
+   "textIcon": "FB",
+   "website": "https://freebuff.com",
+   "hasFree": true,
+   "serviceKinds": [
+    "llm"
+   ],
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "official-client-only",
+   "authHint": "Enter your Freebuff / Codebuff auth token from the CLI login.",
+   "freeNote": "Free Freebuff models (official client only); paid API: freebuff.com/account/api.",
+   "passthroughModels": true
+  },
+  "charm-hyper": {
+   "id": "charm-hyper",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "charm-hyper",
+   "name": "Charm Hyper",
+   "icon": "router",
+   "color": "#7C3AED",
+   "textIcon": "CH",
+   "passthroughModels": true,
+   "website": "https://hyper.charm.land",
+   "hasFree": true,
+   "freeNote": "100 free monthly Hypercredits on signup",
+   "apiHint": "Create an API key at https://hyper.charm.land, then paste it here as a Bearer token."
+  },
+  "agentrouter": {
+   "id": "agentrouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "agentrouter",
+   "name": "AgentRouter",
+   "icon": "router",
+   "color": "#10B981",
+   "textIcon": "AR",
+   "passthroughModels": true,
+   "website": "https://agentrouter.org",
+   "hasFree": true,
+   "freeNote": "$200 free credits on signup - multi-model routing gateway",
+   "apiHint": "Get $200 free credits at https://agentrouter.org/register — no credit card required."
+  },
+  "unorouter": {
+   "id": "unorouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "unorouter",
+   "name": "UnoRouter",
+   "icon": "unorouter",
+   "color": "#8B5CF6",
+   "textIcon": "UR",
+   "passthroughModels": true,
+   "hasFree": true,
+   "freeNote": "Models with the :free suffix do not debit balance; limit is 1 request/minute per free model per user.",
+   "website": "https://unorouter.ai",
+   "apiHint": "Create an API key at https://unorouter.ai, then paste it here as a Bearer token."
+  },
+  "command-code": {
+   "id": "command-code",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cmd",
+   "name": "Command Code",
+   "icon": "terminal",
+   "color": "#111827",
+   "textIcon": "CC",
+   "website": "https://commandcode.ai/",
+   "authHint": "Use a Command Code API key. Requests are sent to Command Code's /provider/v1/chat/completions endpoint.",
+   "apiHint": "Create or copy an API key from Command Code, then paste it here as a Bearer token."
+  },
+  "openrouter": {
+   "id": "openrouter",
+   "alias": "openrouter",
+   "name": "OpenRouter",
+   "icon": "router",
+   "color": "#F97316",
+   "textIcon": "OR",
+   "passthroughModels": true,
+   "website": "https://openrouter.ai",
+   "hasFree": true,
+   "freeNote": "Free models at $0/token with :free suffix - 20 RPM / 200 RPD",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "opper": {
+   "id": "opper",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "opper",
+   "name": "Opper",
+   "icon": "router",
+   "color": "#6366F1",
+   "textIcon": "OP",
+   "passthroughModels": true,
+   "website": "https://opper.ai",
+   "apiHint": "Create an API key at https://platform.opper.ai, then paste it here as a Bearer token. OpenAI-compatible endpoint at https://api.opper.ai/v3/compat, with a live /v3/compat/models catalog. Model ids use provider/model format, e.g. anthropic/claude-sonnet-4-6 or openai/gpt-5."
+  },
+  "requesty": {
+   "id": "requesty",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "requesty",
+   "name": "Requesty",
+   "icon": "router",
+   "color": "#6366F1",
+   "textIcon": "RQ",
+   "passthroughModels": true,
+   "website": "https://requesty.ai",
+   "hasFree": true,
+   "freeNote": "Free tier ~200 requests/day - multi-model routing gateway (300+ models)",
+   "apiHint": "Create an API key at https://app.requesty.ai, then paste it here as a Bearer token. OpenAI-compatible endpoint at https://router.requesty.ai/v1, with a live /v1/models catalog."
+  },
+  "zylo-api": {
+   "id": "zylo-api",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zylo",
+   "name": "Zylo API",
+   "icon": "hub",
+   "color": "#2563EB",
+   "textIcon": "ZY",
+   "passthroughModels": true,
+   "website": "https://zyloai.net",
+   "hasFree": true,
+   "freeNote": "Basic plan: 10 RPM, 7,200 requests/day and 200,000 tokens/day; limited to Basic text models.",
+   "apiHint": "Create a free Zylo API key at https://zyloai.net, then use https://api.zyloai.net/v1 as the OpenAI-compatible base URL."
+  },
+  "fastrouter": {
+   "id": "fastrouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "fastrouter",
+   "name": "FastRouter",
+   "icon": "speed",
+   "color": "#F97316",
+   "textIcon": "FR",
+   "passthroughModels": true,
+   "website": "https://fastrouter.ai",
+   "hasFree": true,
+   "freeNote": "Models with the :free suffix allow 10 requests/day per organization and model; availability may change.",
+   "apiHint": "Create a FastRouter API key, then use https://api.fastrouter.ai/api/v1 as the OpenAI-compatible base URL."
+  },
+  "anyapi": {
+   "id": "anyapi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "anyapi",
+   "name": "AnyAPI AI",
+   "icon": "hub",
+   "color": "#0EA5E9",
+   "textIcon": "AA",
+   "passthroughModels": true,
+   "website": "https://anyapi.ai",
+   "hasFree": true,
+   "freeNote": "Free plan: 100,000 ANY Tokens/day and 100 RPM for eligible Free/Basic models; no credit card required.",
+   "apiHint": "Create and verify an AnyAPI account, then use https://api.anyapi.ai/v1 as the OpenAI-compatible base URL."
+  },
+  "electronhub": {
+   "id": "electronhub",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "electronhub",
+   "name": "Electron Hub",
+   "icon": "hub",
+   "color": "#22C55E",
+   "textIcon": "EH",
+   "passthroughModels": true,
+   "website": "https://www.electronhub.ai",
+   "hasFree": true,
+   "freeNote": "Free plan: 5 RPM, $0.25 weekly credits and 10 Neutrinos/day for :free models; family budgets also apply.",
+   "apiHint": "Create a free API key at https://app.electronhub.ai, then use https://api.electronhub.ai/v1 as the OpenAI-compatible base URL."
+  },
+  "llmgateway": {
+   "id": "llmgateway",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "llmgateway",
+   "name": "LLM Gateway",
+   "icon": "router",
+   "color": "#6366F1",
+   "textIcon": "LG",
+   "passthroughModels": true,
+   "website": "https://llmgateway.io",
+   "hasFree": true,
+   "freeNote": "Hosted Free plan: free-priced models are limited to 5 requests per 10 minutes when the account has no credits.",
+   "apiHint": "Create an LLM Gateway API key, then use https://api.llmgateway.io/v1 as the OpenAI-compatible base URL."
+  },
+  "lyceum": {
+   "id": "lyceum",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "lyceum",
+   "name": "Lyceum",
+   "icon": "router",
+   "color": "#4F46E5",
+   "textIcon": "LY",
+   "passthroughModels": true,
+   "website": "https://lyceum.technology",
+   "hasFree": true,
+   "freeNote": "Includes monthly free credits toward serverless inference usage.",
+   "apiHint": "Create a Lyceum API key (lk_…), then use https://api.lyceum.technology/openai/v1 as the OpenAI-compatible base URL."
+  },
+  "llm-kiwi": {
+   "id": "llm-kiwi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "llmkiwi",
+   "name": "LLM.Kiwi",
+   "icon": "hub",
+   "color": "#84CC16",
+   "textIcon": "LK",
+   "passthroughModels": true,
+   "website": "https://llm.kiwi",
+   "hasFree": true,
+   "freeNote": "Free plan exposes auto and hrLLM; the published 40 requests/hour limit applies to hrLLM.",
+   "apiHint": "Create a free LLM.Kiwi key, then use https://api.llm.kiwi/v1 as the OpenAI-compatible base URL."
+  },
+  "literouter": {
+   "id": "literouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "literouter",
+   "name": "LiteRouter",
+   "icon": "router",
+   "color": "#2563EB",
+   "textIcon": "LR",
+   "passthroughModels": true,
+   "website": "https://literouter.com",
+   "hasFree": true,
+   "freeNote": "Free model variants use the :free suffix; daily credit limits vary by model and free input is capped at 5,000 tokens.",
+   "apiHint": "Create a LiteRouter API key, then use https://api.literouter.com/v1 as the OpenAI-compatible base URL."
+  },
+  "greenpt": {
+   "id": "greenpt",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "greenpt",
+   "name": "GreenPT",
+   "icon": "eco",
+   "color": "#15803D",
+   "textIcon": "GPT",
+   "passthroughModels": true,
+   "website": "https://greenpt.com",
+   "hasFree": false,
+   "freeNote": "API subscription is free to create; inference is billed per token. No free inference allowance is published.",
+   "apiHint": "Create a GreenPT API key, then use https://api.greenpt.ai/v1 as the OpenAI-compatible base URL. Review jurisdiction, privacy and regional data-transfer requirements before use."
+  },
+  "eurouter": {
+   "id": "eurouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "eurouter",
+   "name": "EURouter",
+   "icon": "router",
+   "color": "#1D4ED8",
+   "textIcon": "EUR",
+   "passthroughModels": true,
+   "website": "https://eurouter.ai",
+   "hasFree": false,
+   "apiHint": "Create an EURouter API key, then use https://api.eurouter.ai/v1 as the OpenAI-compatible base URL. Models are served by third-party upstreams listed per model in the EURouter catalog; check each upstream jurisdiction, privacy and data-transfer terms before use."
+  },
+  "y-api": {
+   "id": "y-api",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "y-api",
+   "name": "Y-API",
+   "icon": "router",
+   "color": "#0891B2",
+   "textIcon": "YA",
+   "passthroughModels": true,
+   "website": "https://y-api.bestvirtualgoods.com",
+   "hasFree": true,
+   "freeNote": "4 of its 20 catalog models (deepseek/deepseek-v4-flash, minimax/minimax-m2.7, tencent/hy3, xiaomi/mimo-v2.5) are priced at 0 credit in the publisher's 2026-10-04 snapshot; the rest bill against prepaid credit, and signup grants a small credit whose amount is Y-API's to set. Y-API can withdraw a free model at any time — re-check https://y-api.bestvirtualgoods.com/pricing.json.",
+   "apiHint": "Create an API key at https://y-api.bestvirtualgoods.com, then use https://api.y-api.bestvirtualgoods.com/v1 as the OpenAI-compatible base URL. Models are served by this gateway from the third-party upstream vendors named per model in its catalog; check each upstream jurisdiction, privacy and data-transfer terms before use."
+  },
+  "mnn-ai": {
+   "id": "mnn-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mnn-ai",
+   "name": "MNN AI",
+   "icon": "hub",
+   "color": "#0F766E",
+   "textIcon": "MNN",
+   "passthroughModels": true,
+   "website": "https://mnnai.ru",
+   "hasFree": true,
+   "freeNote": "Free plan: $1 monthly credits, 10 RPM and access only to models marked Free.",
+   "apiHint": "Create an MNN AI API key, then use the primary https://api.mnnai.ru/v1 OpenAI-compatible endpoint. Review jurisdiction, privacy and regional data-transfer requirements before use."
+  },
+  "meganova-ai": {
+   "id": "meganova-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "meganova-ai",
+   "name": "MegaNova AI",
+   "icon": "router",
+   "color": "#7C3AED",
+   "textIcon": "MN",
+   "passthroughModels": true,
+   "website": "https://meganova.ai",
+   "hasFree": true,
+   "freeNote": "Free signup without a card. Published Tier 1 per-model quotas total 550 requests/day; they are not a shared global pool, and paid overage can apply if enabled.",
+   "apiHint": "Create a MegaNova API key, then use https://api.meganova.ai/v1 as the OpenAI-compatible base URL."
+  },
+  "mixlayer": {
+   "id": "mixlayer",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mixlayer",
+   "name": "Mixlayer",
+   "icon": "router",
+   "color": "#0EA5E9",
+   "textIcon": "MX",
+   "passthroughModels": true,
+   "website": "https://www.mixlayer.com",
+   "hasFree": true,
+   "freeNote": "The qwen/qwen3.5-4b-free model is free for prototyping and rate-limited; no fixed public RPM or daily quota is confirmed.",
+   "apiHint": "Create a Mixlayer API key, then use https://models.mixlayer.ai/v1 as the OpenAI-compatible base URL."
+  },
+  "speka": {
+   "id": "speka",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "speka",
+   "name": "Speka AI",
+   "icon": "router",
+   "color": "#DB2777",
+   "textIcon": "SP",
+   "passthroughModels": true,
+   "website": "https://speka.me",
+   "hasFree": true,
+   "freeNote": "Free plan: $1 monthly usage, 10 RPM, one API key and access to open models and the playground; no card required.",
+   "apiHint": "Create a Speka API key, then use https://speka.me/v1 as the OpenAI-compatible base URL. Confirm current model availability and overage settings before use."
+  },
+  "tokenreply": {
+   "id": "tokenreply",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tokenreply",
+   "name": "TokenReply",
+   "icon": "router",
+   "color": "#3B82F6",
+   "textIcon": "TR",
+   "passthroughModels": true,
+   "website": "https://www.tokenreply.com",
+   "hasFree": true,
+   "freeNote": "Free-tagged models have model- and campaign-specific daily limits; no fixed global free quota is published.",
+   "apiHint": "Create a TokenReply token, then use https://api.tokenreply.com/v1 as the OpenAI-compatible base URL and confirm the selected model's current limit."
+  },
+  "yolo-auto": {
+   "id": "yolo-auto",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "yolo-auto",
+   "name": "Yolo-Auto",
+   "icon": "auto_awesome",
+   "color": "#F59E0B",
+   "textIcon": "YA",
+   "passthroughModels": true,
+   "website": "https://yolo-auto.com",
+   "hasFree": true,
+   "freeNote": "Free API access is request-limited and intended for testing; no numeric daily quota is published and free access is not promised indefinitely.",
+   "apiHint": "Create a yolo_ API key, then use https://yolo-auto.com/v1 as the OpenAI-compatible base URL."
+  },
+  "dxnt": {
+   "id": "dxnt",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dxnt",
+   "name": "DXNT / DX Token",
+   "icon": "hub",
+   "color": "#111827",
+   "textIcon": "DX",
+   "passthroughModels": true,
+   "website": "https://www.dxnt.com",
+   "hasFree": true,
+   "freeNote": "Free accounts are documented at 100 calls/day; the quota may increase through invitations and can vary by account.",
+   "apiHint": "Create a DXNT API key, then use https://www.dxnt.com/v1 as the OpenAI-compatible base URL."
+  },
+  "cloudcode-one": {
+   "id": "cloudcode-one",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cloudcode-one",
+   "name": "CloudCode.ONE",
+   "icon": "router",
+   "color": "#6366F1",
+   "textIcon": "CC",
+   "passthroughModels": true,
+   "website": "https://cloudcode.one",
+   "hasFree": true,
+   "freeNote": "Published free models include glm-4.7-flash and glm-4.6v-flash; no numeric quota is published, and key creation may require credit or a coupon.",
+   "apiHint": "Create a CloudCode.ONE key, then use https://api.cloudcode.one/v1 as the OpenAI-compatible base URL. Key issuance may require credit or a coupon."
+  },
+  "ofoxai": {
+   "id": "ofoxai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ofoxai",
+   "name": "OfoxAI",
+   "icon": "router",
+   "color": "#0F766E",
+   "textIcon": "OF",
+   "passthroughModels": true,
+   "website": "https://ofox.ai",
+   "hasFree": true,
+   "freeNote": "The current catalog advertises 10+ free models without a public numeric quota; review upstream provenance, retention and training terms before production use.",
+   "apiHint": "Create an OfoxAI Bearer key, then use https://api.ofox.ai/v1 as the OpenAI-compatible base URL. This integration covers the OpenAI surface only."
+  },
+  "zerolimitai": {
+   "id": "zerolimitai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zerolimitai",
+   "name": "ZeroLimitAI",
+   "icon": "router",
+   "color": "#475569",
+   "textIcon": "ZL",
+   "passthroughModels": true,
+   "website": "https://www.zerolimitai.com",
+   "hasFree": true,
+   "freeNote": "Temporary free trial is advertised, but official pages conflict between 3 and 7 days; a 100-calls/day claim is not treated as permanent.",
+   "apiHint": "Create a ZeroLimitAI Bearer token, then use https://www.zerolimitai.com/api/v1 as the OpenAI-compatible base URL."
+  },
+  "chatanywhere": {
+   "id": "chatanywhere",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "chatanywhere",
+   "name": "ChatAnywhere",
+   "icon": "router",
+   "color": "#2563EB",
+   "textIcon": "CA",
+   "passthroughModels": true,
+   "website": "https://chatanywhere.tech",
+   "hasFree": true,
+   "freeNote": "Personal, educational or research use only: public documentation cites 10,000 points/day and 200 requests/day per IP/key; do not use for commercial traffic.",
+   "apiHint": "Create a ChatAnywhere key linked to GitHub, then use https://api.chatanywhere.org/v1 outside China. Review the non-commercial terms before enabling it."
+  },
+  "helyxai": {
+   "id": "helyxai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "helyxai",
+   "name": "Helyx AI",
+   "icon": "hub",
+   "color": "#7C3AED",
+   "textIcon": "HX",
+   "passthroughModels": true,
+   "website": "https://helyxai.space",
+   "hasFree": true,
+   "freeNote": "Operational Free plan documents 100,000 tokens/day; the site's separate 2M+ marketing claim conflicts and is not treated as a quota guarantee.",
+   "apiHint": "Create a Helyx AI Bearer key, then use https://helyxai.space/v1 as the OpenAI-compatible base URL. Review terms and data retention first."
+  },
+  "auriko": {
+   "id": "auriko",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "auriko",
+   "name": "Auriko",
+   "icon": "hub",
+   "color": "#0891B2",
+   "textIcon": "AU",
+   "passthroughModels": true,
+   "website": "https://www.auriko.ai",
+   "hasFree": true,
+   "freeNote": "Free plan publishes 1,000 Platform RPM and 10,000 BYOK RPM. Platform inference still passes through provider cost; this is not a free-token pool or unlimited free inference.",
+   "apiHint": "Create an Auriko key with the ak_ prefix, then use https://api.auriko.ai/v1 as the OpenAI-compatible base URL. BYOK and platform credits have different cost semantics."
+  },
+  "poixe-ai": {
+   "id": "poixe-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "poixe-ai",
+   "name": "Poixe AI",
+   "icon": "router",
+   "color": "#EA580C",
+   "textIcon": "PX",
+   "passthroughModels": true,
+   "website": "https://poixe.com",
+   "hasFree": true,
+   "freeNote": "Current public free limits are small and model-group specific: 2 RPM/5 RPD for large-cup models and 20 RPM/50 RPD for small-cup models.",
+   "apiHint": "Create a Poixe Bearer key, then use https://api.poixe.com/v1 as the OpenAI-compatible base URL. Treat free model provenance and regional availability as experimental."
+  },
+  "naga-ai": {
+   "id": "naga-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "naga-ai",
+   "name": "Naga AI",
+   "icon": "router",
+   "color": "#059669",
+   "textIcon": "NA",
+   "passthroughModels": true,
+   "website": "https://naga.ac",
+   "hasFree": true,
+   "freeNote": "Models marked :free are publicly listed, but no numeric quota is confirmed. Naga's policy warns that free-tier prompts and outputs may be collected or used for training.",
+   "apiHint": "Create a Naga AI Bearer key, then use https://api.naga.ac/v1 as the OpenAI-compatible base URL. Never send sensitive data to the free tier without accepting its training policy."
+  },
+  "chat-oripe": {
+   "id": "chat-oripe",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "chat-oripe",
+   "name": "Chat Oripe",
+   "icon": "router",
+   "color": "#64748B",
+   "textIcon": "CO",
+   "passthroughModels": true,
+   "website": "https://api.oriper.com",
+   "hasFree": true,
+   "freeNote": "Official metadata advertises 2M tokens/month, but the public site and documentation were blocked during audit; treat the quota and brand mapping as unconfirmed.",
+   "apiHint": "Use https://api.oriper.com/v1 only after confirming the provider's current documentation, terms and key issuance. No quota is guaranteed by this catalog."
+  },
+  "freeinference": {
+   "id": "freeinference",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "freeinference",
+   "name": "FreeInference",
+   "icon": "science",
+   "color": "#8B5CF6",
+   "textIcon": "FI",
+   "passthroughModels": true,
+   "website": "https://freeinference.org",
+   "hasFree": true,
+   "freeNote": "Free research access without a card; non-Harvard applicants require manual approval and no numeric quota is publicly guaranteed.",
+   "apiHint": "Apply for a FreeInference key, then use https://freeinference.org/v1 as the OpenAI-compatible base URL. Terms allow prompt/response logging and possible publication of anonymized research data; never send sensitive or production data."
+  },
+  "free-ai": {
+   "id": "free-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "free-ai",
+   "name": "Free.ai",
+   "icon": "hub",
+   "color": "#16A34A",
+   "textIcon": "FA",
+   "passthroughModels": true,
+   "website": "https://free.ai",
+   "hasFree": true,
+   "freeNote": "30,000 tokens/day cover self-hosted models after email verification. Usage beyond the pool can bill at raw cost, and premium external models are paid.",
+   "apiHint": "Create an sk-free- key, then use the nonstandard but OpenAI-shaped https://api.free.ai/v1/chat/ endpoint. Select a self-hosted zero-price model to stay within the free pool."
+  },
+  "dgrid": {
+   "id": "dgrid",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dgrid",
+   "name": "DGrid",
+   "icon": "router",
+   "color": "#65A30D",
+   "textIcon": "DG",
+   "passthroughModels": true,
+   "website": "https://dgrid.ai",
+   "hasFree": true,
+   "freeNote": "DGrid Free Models Router: 10 requests/minute and 100 requests/day. A $5 lifetime top-up unlocks up to 20 requests/minute and 1,000 requests/day.",
+   "apiHint": "Create a DGrid API key at https://dgrid.ai, then use https://api.dgrid.ai/v1 as the OpenAI-compatible base URL."
+  },
+  "qiniu": {
+   "id": "qiniu",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "qiniu",
+   "name": "Qiniu",
+   "icon": "cloud",
+   "color": "#1E88E5",
+   "textIcon": "QN",
+   "passthroughModels": true,
+   "website": "https://www.qiniu.com",
+   "apiHint": "Create a Qiniu AI inference API key at https://portal.qiniu.com/ai-inference/api-key, then paste it here as a Bearer token. OpenAI-compatible endpoint at https://api.qnaigc.com/v1, proxying DeepSeek, Claude, Kimi and more behind one key."
+  },
+  "orcarouter": {
+   "id": "orcarouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "orcarouter",
+   "name": "OrcaRouter",
+   "icon": "router",
+   "color": "#0891B2",
+   "textIcon": "ORC",
+   "passthroughModels": true,
+   "website": "https://www.orcarouter.ai",
+   "apiHint": "Create an API key (starts with sk-orca-) at https://www.orcarouter.ai, then paste it as a Bearer token. OpenAI-compatible endpoint at https://api.orcarouter.ai/v1."
+  },
+  "api-airforce": {
+   "id": "api-airforce",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "af",
+   "name": "Api.airforce",
+   "icon": "flight",
+   "color": "#1E3A5F",
+   "textIcon": "AF",
+   "website": "https://api.airforce",
+   "hasFree": true,
+   "freeNote": "55 free tier models including Grok-3, Claude 3.7, Qwen3, Kimi-K2, Gemini 2.5 Flash, DeepSeek-V3",
+   "apiHint": "Get your API key from https://panel.api.airforce — OpenAI-compatible endpoint at https://api.airforce/v1"
+  },
+  "crof": {
+   "id": "crof",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "crof",
+   "name": "CrofAI",
+   "icon": "auto_awesome",
+   "color": "#0EA5E9",
+   "textIcon": "CR",
+   "website": "https://crof.ai"
+  },
+  "bazaarlink": {
+   "id": "bazaarlink",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bzl",
+   "name": "BazaarLink",
+   "icon": "storefront",
+   "color": "#6366F1",
+   "textIcon": "BZ",
+   "website": "https://bazaarlink.ai",
+   "hasFree": true,
+   "freeNote": "Free tier: 4M tokens/day per account with auto:free routing — zero-cost inference, no credit card required.",
+   "authHint": "Use your BazaarLink API key (starts with sk-bl-) in Authorization: Bearer <key>. OpenAI SDK works with base URL https://bazaarlink.ai/api/v1. Models use provider/model-name format.",
+   "apiHint": "Create a free API key at https://bazaarlink.ai — model 'auto:free' routes to zero-cost inference. All models use the provider/model-name format, e.g. xiaomi/mimo-v2.5-pro."
+  },
+  "synthetic": {
+   "id": "synthetic",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "synthetic",
+   "name": "Synthetic",
+   "icon": "verified_user",
+   "color": "#6366F1",
+   "textIcon": "SY",
+   "website": "https://synthetic.new",
+   "passthroughModels": true
+  },
+  "kilo-gateway": {
+   "id": "kilo-gateway",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kg",
+   "name": "Kilo Gateway",
+   "icon": "hub",
+   "color": "#617A91",
+   "textIcon": "KG",
+   "website": "https://kilo.ai",
+   "passthroughModels": true
+  },
+  "wafer": {
+   "id": "wafer",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "wafer",
+   "name": "Wafer AI",
+   "icon": "layers",
+   "color": "#6366F1",
+   "textIcon": "WF",
+   "website": "https://wafer.ai",
+   "apiHint": "API key from https://wafer.ai"
+  },
+  "opencode-zen": {
+   "id": "opencode-zen",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "opencode-zen",
+   "name": "OpenCode Zen",
+   "icon": "opencode",
+   "color": "#6366f1",
+   "website": "https://opencode.ai/zen",
+   "anonymousFallback": true,
+   "passthroughModels": true
+  },
+  "opencode-go": {
+   "id": "opencode-go",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "opencode-go",
+   "name": "OpenCode Go",
+   "icon": "opencode",
+   "color": "#6366f1",
+   "website": "https://opencode.ai/go",
+   "anonymousFallback": true,
+   "passthroughModels": true
+  },
+  "dahl": {
+   "id": "dahl",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dahl",
+   "name": "Dahl",
+   "icon": "dahl",
+   "color": "#6B7280",
+   "textIcon": "DA",
+   "website": "https://inference.dahl.global",
+   "hasFree": true,
+   "freeNote": "Free — MiniMax M2.7, Kimi K2.6. Click 'Add Account' to auto-generate a token, or add your own API key.",
+   "authHint": "Click 'Add Account' to auto-generate a token, or add a manual API key.",
+   "apiHint": "Auto-generate a token or paste your own API key.",
+   "apiKeyUrl": "https://inference.dahl.global/tokens",
+   "passthroughModels": false,
+   "managedAccount": true,
+   "notice": {
+    "text": "Dahl auto-generates tokens via https://inference.dahl.global/tokens. No signup needed. Rate limits apply. You can also add your own API key."
+   }
+  },
+  "freetheai": {
+   "id": "freetheai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "fta",
+   "name": "FreeTheAi",
+   "icon": "hub",
+   "color": "#22C55E",
+   "textIcon": "FTA",
+   "website": "https://freetheai.org",
+   "hasFree": true,
+   "freeNote": "Free OpenAI-compatible gateway — sign up at freetheai.org for a free API key; a daily check-in unlocks the free models.",
+   "passthroughModels": true,
+   "authHint": "Sign up at https://freetheai.org/signup for a free API key. A daily check-in unlocks the free models; linking Discord is optional and only raises the daily limit."
+  },
+  "g4f-groq": {
+   "id": "g4f-groq",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "g4fgroq",
+   "name": "g4f.space — Groq",
+   "icon": "bolt",
+   "color": "#F97316",
+   "textIcon": "G4F",
+   "website": "https://g4f.space",
+   "hasFree": false,
+   "freeNote": "Anonymous access to Groq requires proof-of-work cake credits from g4f.dev/chat; alternatively, use a g4f.dev member API key. Limits vary.",
+   "passthroughModels": true,
+   "authHint": "Bake anonymous cake credits at g4f.dev/chat, or use a g4f.dev member key (create one at g4f.dev/members.html).",
+   "notice": {
+    "text": "Remote third-party gateway: prompts and request metadata leave OmniRoute and are handled by g4f.space. Its Terms and Privacy links were unavailable when last verified on 2026-08-27.",
+    "apiKeyUrl": "https://g4f.dev/members.html"
+   }
+  },
+  "g4f-gemini": {
+   "id": "g4f-gemini",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "g4fgem",
+   "name": "g4f.space — Gemini",
+   "icon": "bolt",
+   "color": "#F97316",
+   "textIcon": "G4F",
+   "website": "https://g4f.space",
+   "hasFree": false,
+   "freeNote": "Anonymous access to Gemini requires proof-of-work cake credits from g4f.dev/chat; alternatively, use a g4f.dev member API key. Limits vary.",
+   "passthroughModels": true,
+   "authHint": "Bake anonymous cake credits at g4f.dev/chat, or use a g4f.dev member key (create one at g4f.dev/members.html).",
+   "notice": {
+    "text": "Remote third-party gateway: prompts and request metadata leave OmniRoute and are handled by g4f.space. Its Terms and Privacy links were unavailable when last verified on 2026-08-27.",
+    "apiKeyUrl": "https://g4f.dev/members.html"
+   }
+  },
+  "g4f-pollinations": {
+   "id": "g4f-pollinations",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "g4fpol",
+   "name": "g4f.space — Pollinations",
+   "icon": "bolt",
+   "color": "#F97316",
+   "textIcon": "G4F",
+   "website": "https://g4f.space",
+   "hasFree": false,
+   "freeNote": "Anonymous access to Pollinations requires proof-of-work cake credits from g4f.dev/chat; alternatively, use a g4f.dev member API key. Limits vary.",
+   "passthroughModels": true,
+   "authHint": "Bake anonymous cake credits at g4f.dev/chat, or use a g4f.dev member key (create one at g4f.dev/members.html).",
+   "notice": {
+    "text": "Remote third-party gateway: prompts and request metadata leave OmniRoute and are handled by g4f.space. Its Terms and Privacy links were unavailable when last verified on 2026-08-27.",
+    "apiKeyUrl": "https://g4f.dev/members.html"
+   }
+  },
+  "g4f-ollama": {
+   "id": "g4f-ollama",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "g4foll",
+   "name": "g4f.space — Ollama",
+   "icon": "bolt",
+   "color": "#F97316",
+   "textIcon": "G4F",
+   "website": "https://g4f.space",
+   "hasFree": false,
+   "freeNote": "Anonymous access to hosted Ollama requires proof-of-work cake credits from g4f.dev/chat; alternatively, use a g4f.dev member API key. Limits vary.",
+   "passthroughModels": true,
+   "authHint": "Bake anonymous cake credits at g4f.dev/chat, or use a g4f.dev member key (create one at g4f.dev/members.html).",
+   "notice": {
+    "text": "Remote third-party gateway: prompts and request metadata leave OmniRoute and are handled by g4f.space. Its Terms and Privacy links were unavailable when last verified on 2026-08-27.",
+    "apiKeyUrl": "https://g4f.dev/members.html"
+   }
+  },
+  "g4f-nvidia": {
+   "id": "g4f-nvidia",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "g4fnv",
+   "name": "g4f.space — NVIDIA",
+   "icon": "bolt",
+   "color": "#F97316",
+   "textIcon": "G4F",
+   "website": "https://g4f.space",
+   "hasFree": false,
+   "freeNote": "Anonymous access to NVIDIA NIM requires proof-of-work cake credits from g4f.dev/chat; alternatively, use a g4f.dev member API key. Limits vary.",
+   "passthroughModels": true,
+   "authHint": "Bake anonymous cake credits at g4f.dev/chat, or use a g4f.dev member key (create one at g4f.dev/members.html).",
+   "notice": {
+    "text": "Remote third-party gateway: prompts and request metadata leave OmniRoute and are handled by g4f.space. Its Terms and Privacy links were unavailable when last verified on 2026-08-27.",
+    "apiKeyUrl": "https://g4f.dev/members.html"
+   }
+  },
+  "vercel-ai-gateway": {
+   "id": "vercel-ai-gateway",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "vag",
+   "name": "Vercel AI Gateway",
+   "icon": "route",
+   "color": "#111827",
+   "textIcon": "VAI",
+   "passthroughModels": true,
+   "website": "https://vercel.com/docs/ai-gateway"
+  },
+  "llm7": {
+   "id": "llm7",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "llm7",
+   "name": "LLM7.io",
+   "icon": "hub",
+   "color": "#6366F1",
+   "textIcon": "LM",
+   "website": "https://llm7.io",
+   "hasFree": true,
+   "freeNote": "No signup required - 2 req/s, 20 RPM, 100 req/hr free tier",
+   "authHint": "Use any non-empty key (for example 'unused'). If older built-in models return model_unavailable, use Available Models → Import from /models or Auto-Sync; verified live model: gemini-3.1-flash-lite.",
+   "apiHint": "Works without API key (use 'unused' as key). Get free token at token.llm7.io for higher limits."
+  },
+  "llamagate": {
+   "id": "llamagate",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "llamagate",
+   "name": "LlamaGate",
+   "icon": "gate",
+   "color": "#16A34A",
+   "textIcon": "LG",
+   "website": "https://llamagate.ai"
+  },
+  "gitlawb": {
+   "id": "gitlawb",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "glb",
+   "name": "Gitlawb Opengateway (MiMo)",
+   "icon": "hub",
+   "color": "#10B981",
+   "textIcon": "GLB",
+   "website": "https://opengateway.gitlawb.com",
+   "hasFree": false,
+   "freeNote": "Free MiMo (xiaomi/mimo-v2.5) revoked 2026-05 — Opengateway is now a pay-as-you-go credit gateway; no recurring free model.",
+   "apiHint": "Get your API key from Gitlawb Opengateway dashboard."
+  },
+  "gitlawb-gmi": {
+   "id": "gitlawb-gmi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "glb-gmi",
+   "name": "Gitlawb Opengateway (GMI Cloud)",
+   "icon": "hub",
+   "color": "#10B981",
+   "textIcon": "GMI",
+   "website": "https://opengateway.gitlawb.com",
+   "hasFree": false,
+   "freeNote": "Free Nemotron promo ended 2026-06 — the GMI Cloud route is now pay-as-you-go credit only.",
+   "apiHint": "Get your API key from Gitlawb Opengateway dashboard."
+  },
+  "nanogpt": {
+   "id": "nanogpt",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nanogpt",
+   "name": "NanoGPT",
+   "icon": "chat",
+   "color": "#4F46E5",
+   "textIcon": "NG",
+   "website": "https://nano-gpt.com"
+  },
+  "aimlapi": {
+   "id": "aimlapi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "aiml",
+   "name": "AI/ML API",
+   "icon": "hub",
+   "color": "#6366F1",
+   "textIcon": "AI",
+   "website": "https://aimlapi.com",
+   "hasFree": false,
+   "freeNote": "Free tier paused (2026) — AI/ML API is now pay-as-you-go only (min $20 top-up); no recurring free credits.",
+   "passthroughModels": true
+  },
+  "novita": {
+   "id": "novita",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "novita",
+   "name": "Novita AI",
+   "icon": "auto_awesome",
+   "color": "#FF4081",
+   "textIcon": "NV",
+   "website": "https://novita.ai",
+   "hasFree": true,
+   "freeNote": "$0.50 trial credits on signup (valid about 1 year)",
+   "passthroughModels": true
+  },
+  "piapi": {
+   "id": "piapi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "pi",
+   "name": "PiAPI",
+   "icon": "api",
+   "color": "#7C4DFF",
+   "textIcon": "PI",
+   "website": "https://piapi.ai",
+   "passthroughModels": true
+  },
+  "getgoapi": {
+   "id": "getgoapi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ggo",
+   "name": "GoAPI",
+   "icon": "rocket_launch",
+   "color": "#FF6D00",
+   "textIcon": "GO",
+   "website": "https://api.getgoapi.com",
+   "passthroughModels": true
+  },
+  "laozhang": {
+   "id": "laozhang",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "lz",
+   "name": "LaoZhang AI",
+   "icon": "hub",
+   "color": "#FF1744",
+   "textIcon": "LZ",
+   "website": "https://api.laozhang.ai",
+   "passthroughModels": true
+  },
+  "thebai": {
+   "id": "thebai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "thebai",
+   "name": "TheB.AI",
+   "icon": "hub",
+   "color": "#3B82F6",
+   "textIcon": "TB",
+   "website": "https://theb.ai",
+   "authHint": "Bearer API key for the TheB.AI OpenAI-compatible gateway.",
+   "passthroughModels": true
+  },
+  "bai": {
+   "id": "bai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bai",
+   "name": "b.ai",
+   "icon": "hub",
+   "color": "#6366F1",
+   "textIcon": "BA",
+   "website": "https://b.ai",
+   "authHint": "Bearer API key for the b.ai OpenAI-compatible LLM gateway (distinct from TheB.AI). Create a key at https://docs.b.ai, then use https://api.b.ai/v1 as the OpenAI-compatible base URL.",
+   "passthroughModels": true
+  },
+  "fenayai": {
+   "id": "fenayai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "fenayai",
+   "name": "FenayAI",
+   "icon": "hub",
+   "color": "#FF9800",
+   "textIcon": "FN",
+   "website": "https://fenayai.com",
+   "authHint": "Bearer API key for the FenayAI OpenAI-compatible gateway.",
+   "passthroughModels": true
+  },
+  "empower": {
+   "id": "empower",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "empower",
+   "name": "Empower",
+   "icon": "hub",
+   "color": "#14B8A6",
+   "textIcon": "EM",
+   "website": "https://docs.empower.dev",
+   "authHint": "Bearer API key for the Empower OpenAI-compatible endpoint.",
+   "apiHint": "Empower exposes OpenAI-compatible chat on https://app.empower.dev/api/v1 with tool-calling support on empower-functions.",
+   "passthroughModels": true
+  },
+  "poe": {
+   "id": "poe",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "poe",
+   "name": "Poe",
+   "icon": "hub",
+   "color": "#F97316",
+   "textIcon": "PO",
+   "website": "https://creator.poe.com/api-reference",
+   "authHint": "Bearer API key for the Poe OpenAI-compatible API.",
+   "apiHint": "Poe exposes OpenAI-compatible chat and responses on https://api.poe.com/v1, with authenticated balance checks on /usage/current_balance.",
+   "passthroughModels": true
+  },
+  "chutes": {
+   "id": "chutes",
+   "alias": "chutes",
+   "name": "Chutes.ai",
+   "icon": "hub",
+   "color": "#06B6D4",
+   "textIcon": "CH",
+   "website": "https://chutes.ai",
+   "hasFree": false,
+   "freeNote": "No free tier as of 2026 — Chutes moved to pay-as-you-go (free Early Access ended 2026-03).",
+   "authHint": "Bearer API key for the Chutes OpenAI-compatible gateway.",
+   "passthroughModels": true,
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "factory": {
+   "id": "factory",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "factory",
+   "name": "Factory",
+   "icon": "smart_toy",
+   "color": "#0F172A",
+   "textIcon": "FA",
+   "website": "https://factory.ai",
+   "authHint": "Bearer API key for the Factory OpenAI-compatible gateway.",
+   "apiHint": "Get your Factory API key at https://app.factory.ai/settings/api-keys, then paste it as a Bearer token. OpenAI-compatible endpoint at https://api.factory.ai/v1.",
+   "passthroughModels": true
+  },
+  "bluesminds": {
+   "id": "bluesminds",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bm",
+   "name": "BluesMinds",
+   "icon": "psychology",
+   "color": "#3B82F6",
+   "textIcon": "BM",
+   "website": "https://www.bluesminds.com",
+   "hasFree": true,
+   "freeNote": "Free daily pi credits — supports 200+ models including GPT-4o, GPT-4.1, Claude Sonnet 4.5, Gemini 2.0 Flash, DeepSeek V4, Qwen, Kimi K2",
+   "apiHint": "Get your API key at https://www.bluesminds.com — OpenAI-compatible endpoint at https://api.bluesminds.com/v1 with free daily credits. VIP models (Claude Opus 4.5, Gemini 2.5 Pro) consume pi credits."
+  },
+  "freemodel-dev": {
+   "id": "freemodel-dev",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "fmd",
+   "name": "FreeModel.dev",
+   "icon": "auto_awesome",
+   "color": "#8B5CF6",
+   "textIcon": "FM",
+   "website": "https://freemodel.dev",
+   "hasFree": true,
+   "freeNote": "$300 free credits on signup — no credit card required. Access GPT-5.4 and GPT-5.5 (OpenAI's latest flagship models) through an OpenAI-compatible API.",
+   "apiHint": "Get $300 free API credits at https://freemodel.dev — no payment info required. OpenAI-compatible endpoint. GPT-5.4 and GPT-5.5 models available."
+  },
+  "freeaiapikey": {
+   "id": "freeaiapikey",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "faik",
+   "name": "FreeAIAPIKey",
+   "icon": "vpn_key",
+   "color": "#F59E0B",
+   "textIcon": "FK",
+   "website": "https://freeaiapikey.com",
+   "apiHint": "Discounted API proxy for 40+ models including GPT-5, Claude Opus 4.6, Claude Sonnet 4.6, Qwen 3.5. Get your API key at https://freeaiapikey.com/dashboard. Base URL: https://freeaiapikey.com/v1."
+  },
+  "zenmux": {
+   "id": "zenmux",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zm",
+   "name": "ZenMux",
+   "icon": "neurology",
+   "color": "#7C3AED",
+   "textIcon": "ZM",
+   "website": "https://zenmux.ai",
+   "hasFree": true,
+   "freeNote": "Free tier includes access to Gemini 3 Flash, DeepSeek V3.2, Grok 4.1 Fast, Mistral Large, and more. Get your API key at https://zenmux.ai.",
+   "authHint": "Use your ZenMux API key in Authorization: Bearer <key>. ZenMux is fully OpenAI-compatible. Base URL: https://zenmux.ai/api/v1.",
+   "apiHint": "ZenMux exposes an OpenAI-compatible chat completions endpoint at /api/v1/chat/completions, plus Anthropic Messages (/api/anthropic/v1/messages) and Google Gemini (/api/vertex-ai) protocol surfaces. OmniRoute uses the OpenAI protocol."
+  },
+  "openadapter": {
+   "id": "openadapter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "oad",
+   "name": "OpenAdapter",
+   "icon": "hub",
+   "color": "#10B981",
+   "textIcon": "OD",
+   "website": "https://openadapter.dev",
+   "hasFree": true,
+   "freeNote": "Free tier with a generous quota and no credit card — 15+ open-source models with daily quota. Get your API key at https://dashboard.openadapter.in.",
+   "authHint": "Use your OpenAdapter API key in Authorization: Bearer sk-cv-<key>. Fully OpenAI-compatible. API base URL: https://api.openadapter.in/v1.",
+   "apiHint": "OpenAdapter exposes an OpenAI-compatible chat completions endpoint at https://api.openadapter.in/v1/chat/completions, aggregating 70+ open-source models (DeepSeek, Qwen, Kimi, MiniMax, GLM, Llama, Mistral, …). OmniRoute uses the OpenAI protocol."
+  },
+  "dit": {
+   "id": "dit",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dai",
+   "name": "DIT.ai",
+   "icon": "hub",
+   "color": "#0EA5E9",
+   "textIcon": "DT",
+   "website": "https://dit.ai",
+   "authHint": "Use your dit.ai API key in Authorization: Bearer <key>. Fully OpenAI-compatible — a drop-in replacement, just change the base URL to https://api.dit.ai/v1.",
+   "apiHint": "dit.ai (Distributed Intelligence Trade) is an OpenAI-compatible router/gateway with dynamic per-request pricing, exposing /v1/chat/completions at https://api.dit.ai/v1. OmniRoute uses the OpenAI protocol; spend/savings analytics live in the dit.ai dashboard."
+  },
+  "tokenrouter": {
+   "id": "tokenrouter",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "trk",
+   "name": "TokenRouter",
+   "icon": "hub",
+   "color": "#F59E0B",
+   "textIcon": "TK",
+   "website": "https://tokenrouter.com",
+   "hasFree": true,
+   "freeNote": "Free tier includes the MiniMax 3 model. Get your API key at https://tokenrouter.com.",
+   "authHint": "Use your TokenRouter API key in Authorization: Bearer <key>. Fully OpenAI-compatible. API base URL: https://api.tokenrouter.com/v1.",
+   "apiHint": "TokenRouter exposes an OpenAI-compatible chat completions endpoint at https://api.tokenrouter.com/v1/chat/completions, plus a working /v1/models catalog. OmniRoute uses the OpenAI protocol."
+  },
+  "token-kiosk": {
+   "id": "token-kiosk",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tk",
+   "name": "Token Kiosk",
+   "icon": "hub",
+   "color": "#6366F1",
+   "textIcon": "TKI",
+   "website": "https://agent-router.gaib.ai",
+   "authHint": "Use your Token Kiosk API key in Authorization: Bearer <key>. Fully OpenAI-compatible gateway. API base URL: https://agent-router.gaib.ai/v1.",
+   "apiHint": "Token Kiosk is a multi-provider agent LLM routing infrastructure exposing an OpenAI-compatible endpoint at https://agent-router.gaib.ai/v1/chat/completions with auto-fallback and latency routing."
+  },
+  "sumopod": {
+   "id": "sumopod",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "sumopod",
+   "name": "SumoPod",
+   "icon": "router",
+   "color": "#2563EB",
+   "textIcon": "SP",
+   "passthroughModels": true,
+   "website": "https://ai.sumopod.com",
+   "authHint": "Use your SumoPod API key (sk-...) in Authorization: Bearer <key>. Fully OpenAI-compatible. API base URL: https://ai.sumopod.com/v1.",
+   "apiHint": "SumoPod exposes an OpenAI-compatible chat completions endpoint at https://ai.sumopod.com/v1/chat/completions, plus a live /v1/models catalog. OmniRoute uses the OpenAI protocol and lists models via passthrough."
+  },
+  "x5lab": {
+   "id": "x5lab",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "x5lab",
+   "name": "X5Lab",
+   "icon": "router",
+   "color": "#7C3AED",
+   "textIcon": "X5",
+   "passthroughModels": true,
+   "website": "https://x5lab.dev",
+   "authHint": "Use your X5Lab API key (x5-...) in Authorization: Bearer <key>. Fully OpenAI-compatible. API base URL: https://api.x5lab.dev/v1.",
+   "apiHint": "X5Lab exposes an OpenAI-compatible chat completions endpoint at https://api.x5lab.dev/v1/chat/completions, plus a live /v1/models catalog. OmniRoute uses the OpenAI protocol and lists models via passthrough."
+  },
+  "chenzk": {
+   "id": "chenzk",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "chenzk",
+   "name": "Chenzk API",
+   "icon": "hub",
+   "color": "#10B981",
+   "textIcon": "CZ",
+   "passthroughModels": true,
+   "website": "https://chenzk.top",
+   "apiHint": "Create an API key at https://chenzk.top/token, then paste it here as a Bearer token. OpenAI-compatible endpoint at https://chenzk.top/v1, with a live /v1/models catalog."
+  },
+  "kenari": {
+   "id": "kenari",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kenari",
+   "name": "Kenari",
+   "icon": "hub",
+   "color": "#B5362A",
+   "textIcon": "KN",
+   "passthroughModels": true,
+   "website": "https://kenari.id",
+   "authHint": "Use your Kenari API key (kn-...) in Authorization: Bearer <key>. Fully OpenAI-compatible. API base URL: https://kenari.id/v1.",
+   "apiHint": "Kenari exposes an OpenAI-compatible chat completions endpoint at https://kenari.id/v1/chat/completions, plus a live /v1/models catalog covering Claude, GPT, DeepSeek, GLM, Kimi and more. OmniRoute uses the OpenAI protocol and lists models via passthrough."
+  },
+  "tokenmarket": {
+   "id": "tokenmarket",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tokenmarket",
+   "name": "Token Market",
+   "icon": "hub",
+   "color": "#2563EB",
+   "textIcon": "TM",
+   "passthroughModels": true,
+   "website": "https://www.tokensmarket.ai",
+   "authHint": "Create an API key in the Token Market console, then paste it here as a Bearer token.",
+   "apiHint": "Token Market provides an OpenAI-compatible API at https://api.tokensmarket.ai/v1 and discovers its current model catalog from /v1/models."
+  },
+  "navy": {
+   "id": "navy",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "navy",
+   "name": "NavyAI",
+   "icon": "hub",
+   "color": "#1E3A8A",
+   "textIcon": "NV",
+   "passthroughModels": true,
+   "website": "https://api.navy",
+   "hasFree": true,
+   "freeNote": "Free plan is one shared 150K tokens/day pool at 20 RPM. Each model carries a token multiplier, so heavier models drain the pool faster (grok-4 at 10x is ~15K real tokens/day).",
+   "authHint": "Create a free API key from the NavyAI dashboard, then paste it here as a Bearer token.",
+   "apiHint": "OpenAI-compatible endpoint at https://api.navy/v1 with a live /v1/models catalog that exposes per-model token_multiplier and premium flags. Upstream requires an explicit User-Agent header."
+  },
+  "ainative": {
+   "id": "ainative",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ainative",
+   "name": "AINative Studio",
+   "icon": "hub",
+   "color": "#7C3AED",
+   "textIcon": "AN",
+   "passthroughModels": true,
+   "website": "https://ainative.studio",
+   "hasFree": true,
+   "freeNote": "Free tier ~10M tokens/month (claimed) across Qwen3, Llama 4, DeepSeek R1 and more.",
+   "authHint": "Create a free API key at ainative.studio (no card), then paste it here as a Bearer token.",
+   "apiHint": "OpenAI-compatible endpoint at https://api.ainative.studio/api/v1 with a public /models catalog (84 models). OmniRoute lists models via passthrough."
+  },
+  "aion": {
+   "id": "aion",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "aion",
+   "name": "Aion Labs",
+   "icon": "hub",
+   "color": "#0EA5E9",
+   "textIcon": "AI",
+   "passthroughModels": true,
+   "website": "https://www.aionlabs.ai",
+   "hasFree": true,
+   "freeNote": "Free tier ~20k tokens/day across the Aion reasoning models.",
+   "authHint": "Create a free API key at aionlabs.ai (no card), then paste it here as a Bearer token.",
+   "apiHint": "OpenAI-compatible endpoint at https://api.aionlabs.ai/v1 with a public /models catalog carrying context and pricing."
+  },
+  "routeway": {
+   "id": "routeway",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "routeway",
+   "name": "Routeway",
+   "icon": "hub",
+   "color": "#F59E0B",
+   "textIcon": "RW",
+   "passthroughModels": true,
+   "website": "https://routeway.ai",
+   "hasFree": true,
+   "freeNote": "Free models (:free suffix) at ~5 RPM / 200 RPD across Llama, Nemotron, Step and Laguna.",
+   "authHint": "Create a free API key at routeway.ai, then paste it here as a Bearer token.",
+   "apiHint": "OpenAI-compatible endpoint at https://api.routeway.ai/v1 with a public /models catalog (236 models). Cloudflare fronts the API and requires a browser-style User-Agent."
+  },
+  "nara": {
+   "id": "nara",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nara",
+   "name": "NaraRouter",
+   "icon": "hub",
+   "color": "#EC4899",
+   "textIcon": "NA",
+   "passthroughModels": true,
+   "website": "https://bynara.id",
+   "hasFree": true,
+   "freeNote": "Free plan: one 7M tokens/day bucket per account (15 req/min) across the plan's 8 models; others need credit.",
+   "authHint": "Create a free NaraRouter account, link your Telegram (required before /v1 answers), then paste the key here as a Bearer token.",
+   "apiHint": "OpenAI-compatible endpoint at https://router.bynara.id/v1. Free-tier models are pinned; others need credit."
+  },
+  "xkiro": {
+   "id": "xkiro",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "xkiro",
+   "name": "xKiro",
+   "icon": "hub",
+   "color": "#0EA5E9",
+   "textIcon": "XK",
+   "passthroughModels": true,
+   "website": "https://xkiro.com",
+   "hasFree": true,
+   "freeNote": "Free plan: 5M tokens/day per account across 40 upstream free models — 39 pinned here (Qwen, MiniMax, DeepSeek, Mistral, SenseNova) — no card; past the daily allowance free requests get a 429 until the reset. RPM not published.",
+   "authHint": "Create a free account at xkiro.com and paste the key here (Bearer; x-api-key also accepted).",
+   "apiHint": "OpenAI-compatible endpoint at https://api.xkiro.com/v1. Public /v1/models tags free rows with access_tier=free; paid models are rejected on the free plan."
+  },
+  "regolo": {
+   "id": "regolo",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "regolo",
+   "name": "Regolo AI",
+   "icon": "hub",
+   "color": "#6366F1",
+   "textIcon": "RG",
+   "website": "https://regolo.ai",
+   "passthroughModels": true,
+   "authHint": "Get your Regolo API key from regolo.ai, then paste it here as a Bearer token.",
+   "apiHint": "OpenAI-compatible endpoint at https://api.regolo.ai/v1 with dynamic model discovery (19 models)."
+  },
+  "naga-ac": {
+   "id": "naga-ac",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "naga",
+   "name": "Naga.ac",
+   "icon": "bolt",
+   "color": "#7C3AED",
+   "textIcon": "NA",
+   "website": "https://naga.ac",
+   "docsUrl": "https://docs.naga.ac",
+   "hasFree": true,
+   "freeNote": "Free models include Nemotron 3 Ultra (free) and Llama 3.3 70B Instruct (Free). Paid models require credits. Google/GitHub/Discord signup.",
+   "passthroughModels": true,
+   "authHint": "Get API key at naga.ac — Google/GitHub/Discord signup available."
+  },
+  "void-ai": {
+   "id": "void-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "void-ai",
+   "name": "Void AI",
+   "icon": "science",
+   "color": "#111827",
+   "textIcon": "VA",
+   "passthroughModels": true,
+   "website": "https://voidai.app",
+   "hasFree": true,
+   "freeNote": "The public model catalog marks some models with a free plan requirement, but access is conditional and no numeric quota is confirmed.",
+   "apiHint": "Use https://api.voidai.app/v1 only after confirming authentication, account eligibility and terms. Treat this integration as experimental until the blocked documentation becomes public."
+  },
+  "helixmind": {
+   "id": "helixmind",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "helixmind",
+   "name": "HelixMind",
+   "icon": "hub",
+   "color": "#4F46E5",
+   "textIcon": "HM",
+   "passthroughModels": true,
+   "website": "https://helixmind.online",
+   "hasFree": false,
+   "freeNote": "Previously circulated 3 RPM/50 RPD and no-card claims were not confirmed during the 2026-08-02 audit; current quota and billing require account verification.",
+   "apiHint": "Create a helix- key and use https://helixmind.online/v1. OpenAI requests use Bearer authentication; the Anthropic-compatible messages endpoint accepts x-api-key."
+  },
+  "logfare": {
+   "id": "logfare",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "logfare",
+   "name": "Logfare",
+   "icon": "auto_awesome",
+   "color": "#22C55E",
+   "textIcon": "LF",
+   "website": "https://logfare.ai",
+   "hasFree": true,
+   "freeNote": "Free OpenAI-compatible inference — no rate limits, no card. Logfare logs every request (prompts, completions, metadata) for internal research; opt out at /consent. Read https://logfare.ai/tos and https://logfare.ai/privacy before use.",
+   "authHint": "Create a free account at https://logfare.ai/register (username/password, no email verification) to get an instant API key, then paste it here as a Bearer token.",
+   "apiHint": "Create a free API key at https://logfare.ai/register, then use https://logfare.ai/v1 as the OpenAI-compatible base URL. Note the request-logging policy: prompts, completions and metadata are logged for research (opt out at https://logfare.ai/consent).",
+   "passthroughModels": true
+  },
+  "tabitoken": {
+   "id": "tabitoken",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tabitoken",
+   "name": "TabiToken",
+   "icon": "hub",
+   "color": "#F97316",
+   "textIcon": "TT",
+   "passthroughModels": true,
+   "website": "https://tabitoken.com",
+   "apiHint": "Create an sk- key at https://tabitoken.com and use https://tabitoken.com. The Anthropic-compatible /v1/messages endpoint (default) takes x-api-key; /v1/chat/completions takes Bearer."
+  },
+  "seekai": {
+   "id": "seekai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ska",
+   "name": "SeekAi",
+   "icon": "hub",
+   "color": "#0D9488",
+   "textIcon": "SK",
+   "passthroughModels": true,
+   "website": "https://seekai.cc",
+   "hasFree": true,
+   "freeNote": "Signup credit toward available models; amount and eligibility are set by SeekAi, not OmniRoute.",
+   "authHint": "Create an API key at https://seekai.cc, then paste it here as a Bearer token.",
+   "apiHint": "Create an API key at https://seekai.cc, then paste it here as a Bearer token. OpenAI-compatible base URL: https://seekai.cc/v1."
+  },
+  "beatapi": {
+   "id": "beatapi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "beatapi",
+   "name": "BeatAPI",
+   "icon": "hub",
+   "color": "#2563EB",
+   "textIcon": "BA",
+   "passthroughModels": true,
+   "website": "https://beatapi.io",
+   "authHint": "Create an API key at https://beatapi.io/dashboard/apikeys, then paste it here.",
+   "apiHint": "OpenAI-compatible base URL: https://api.beatapi.io/v1. Available models depend on your account; check the live model list before selecting one."
+  },
+  "openai": {
+   "id": "openai",
+   "alias": "openai",
+   "name": "OpenAI",
+   "icon": "auto_awesome",
+   "color": "#10A37F",
+   "textIcon": "OA",
+   "website": "https://platform.openai.com",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "reka": {
+   "id": "reka",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "reka",
+   "name": "Reka",
+   "icon": "auto_awesome",
+   "color": "#111827",
+   "textIcon": "RK",
+   "website": "https://docs.reka.ai/chat/overview",
+   "authHint": "Use your Reka API key. OmniRoute supports the OpenAI-compatible base URL https://api.reka.ai/v1 and sends both Authorization and X-Api-Key headers for compatibility.",
+   "apiHint": "Reka Chat is OpenAI-compatible on /v1. OmniRoute probes /v1/models and routes chat traffic to /v1/chat/completions.",
+   "hasFree": true,
+   "freeNote": "$10/month recurring free API credits"
+  },
+  "pioneer": {
+   "id": "pioneer",
+   "alias": "pn",
+   "name": "Pioneer AI",
+   "icon": "rocket_launch",
+   "color": "#7C5CFF",
+   "textIcon": "PN",
+   "website": "https://pioneer.ai",
+   "notice": {
+    "text": "Pioneer AI by Fastino Labs. Use API key auth with a pio_sk_... key. Only open-tier models (Qwen3, Llama, Gemma, SmolLM) work directly — gated models (Claude/GPT/Gemini) require prior fine-tuning via the Pioneer platform. No free tier — paid plans start with $40 of platform credits.",
+    "apiKeyUrl": "https://agent.pioneer.ai/settings/api-keys",
+    "signupUrl": "https://agent.pioneer.ai/auth"
+   },
+   "hasFree": false,
+   "serviceKinds": [
+    "llm"
+   ]
+  },
+  "uc-direct": {
+   "id": "uc-direct",
+   "alias": "ucd",
+   "name": "UC Direct (uncensored.com)",
+   "icon": "auto_awesome",
+   "color": "#111827",
+   "textIcon": "UD",
+   "website": "https://uncensored.com",
+   "authHint": "Use your uncensored.com Developer API key (uai_sk_live_...). OmniRoute sends it as the X-api-key header to the OpenAI-compatible https://api.uncensored.com/api/v1 endpoint. The key never expires. This is the metered/credits surface; the un-metered subscription chat is the separate 'uc' provider.",
+   "apiHint": "UC Direct is OpenAI-compatible on /api/v1. OmniRoute probes /api/v1/models (public) and routes chat traffic to /api/v1/chat/completions. Errors: 402 out of credits, 403 moderation/scope, 429 rate limit.",
+   "serviceKinds": [
+    "llm"
+   ]
+  },
+  "anthropic": {
+   "id": "anthropic",
+   "alias": "anthropic",
+   "name": "Anthropic",
+   "icon": "smart_toy",
+   "color": "#D97757",
+   "textIcon": "AN",
+   "website": "https://platform.claude.com",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "gemini": {
+   "id": "gemini",
+   "alias": "gemini",
+   "name": "Gemini (Google AI Studio)",
+   "icon": "diamond",
+   "color": "#4285F4",
+   "textIcon": "GE",
+   "website": "https://aistudio.google.com",
+   "hasFree": true,
+   "freeNote": "Free tier available through Google AI Studio; current per-model quotas and regional limits apply",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "groq": {
+   "id": "groq",
+   "alias": "groq",
+   "name": "Groq",
+   "icon": "speed",
+   "color": "#F55036",
+   "textIcon": "GQ",
+   "website": "https://groq.com",
+   "hasFree": true,
+   "freeNote": "Free plan: per-model caps (200K tokens/day per chat model; see console.groq.com/docs/rate-limits for RPM/RPD) — no payment method on file.",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "blackbox": {
+   "id": "blackbox",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bb",
+   "name": "Blackbox AI",
+   "icon": "view_in_ar",
+   "color": "#1A1A2E",
+   "textIcon": "BB",
+   "website": "https://blackbox.ai",
+   "hasFree": true,
+   "freeNote": "Limited free access is available through Blackbox; model availability and account limits apply",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "deprecated",
+   "deprecated": true,
+   "deprecationReason": "api.blackbox.ai returns HTTP 404 on every path variant (sweep 2026-08-21); the public inference surface has moved to the gated enterprise.blackbox.ai/v1 endpoint."
+  },
+  "xai": {
+   "id": "xai",
+   "alias": "xai",
+   "name": "xAI (Grok)",
+   "icon": "auto_awesome",
+   "color": "#1DA1F2",
+   "textIcon": "XA",
+   "website": "https://x.ai",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ],
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Use an official xAI API key, or sign in with xAI OAuth. Grok Build JWT sessions remain a separate provider.",
+   "oauthProviderId": "xai-oauth"
+  },
+  "mistral": {
+   "id": "mistral",
+   "alias": "mistral",
+   "name": "Mistral",
+   "icon": "air",
+   "color": "#FF7000",
+   "textIcon": "MI",
+   "website": "https://mistral.ai",
+   "hasFree": true,
+   "freeNote": "Free Experiment tier: rate-limited access to all models, no credit card required",
+   "serviceKinds": [
+    "llm",
+    "imageToText"
+   ]
+  },
+  "perplexity": {
+   "id": "perplexity",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "pplx",
+   "name": "Perplexity",
+   "icon": "search",
+   "color": "#20808D",
+   "textIcon": "PP",
+   "website": "https://www.perplexity.ai"
+  },
+  "perplexity-agent": {
+   "id": "perplexity-agent",
+   "alias": "pplx-agent",
+   "name": "Perplexity Agent",
+   "icon": "search",
+   "color": "#20808D",
+   "textIcon": "PA",
+   "website": "https://www.perplexity.ai",
+   "authHint": "Use your Perplexity API key. OmniRoute routes Agent API model IDs through Perplexity's Responses-compatible endpoint.",
+   "apiHint": "Use Agent API model IDs with the pplx-agent/ prefix, for example pplx-agent/openai/gpt-5.6-sol or pplx-agent/anthropic/claude-opus-4-5.",
+   "passthroughModels": true,
+   "serviceKinds": [
+    "llm"
+   ]
+  },
+  "cohere": {
+   "id": "cohere",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cohere",
+   "name": "Cohere",
+   "icon": "hub",
+   "color": "#39594D",
+   "textIcon": "CO",
+   "website": "https://cohere.com",
+   "hasFree": true,
+   "freeNote": "Free Trial: 1,000 API calls/month for testing, no credit card required"
+  },
+  "meta-llama": {
+   "id": "meta-llama",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "meta",
+   "name": "Meta Llama API",
+   "icon": "smart_toy",
+   "color": "#0F766E",
+   "textIcon": "ML",
+   "website": "https://llama.developer.meta.com"
+  },
+  "morph": {
+   "id": "morph",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "morph",
+   "name": "Morph",
+   "icon": "auto_fix_high",
+   "color": "#2563EB",
+   "textIcon": "MP",
+   "website": "https://morphllm.com",
+   "hasFree": true,
+   "freeNote": "Free tier: 250K credits/month, $0"
+  },
+  "galadriel": {
+   "id": "galadriel",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "galadriel",
+   "name": "Galadriel",
+   "icon": "auto_awesome",
+   "color": "#F59E0B",
+   "textIcon": "GA",
+   "website": "https://galadriel.com",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "deprecated",
+   "deprecated": true,
+   "deprecationReason": "api.galadriel.ai no longer resolves (sweep 2026-06-19); the inference API appears discontinued."
+  },
+  "ai21": {
+   "id": "ai21",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ai21",
+   "name": "AI21 Labs",
+   "icon": "psychology_alt",
+   "color": "#0284C7",
+   "textIcon": "AI21",
+   "website": "https://www.ai21.com",
+   "hasFree": true,
+   "freeNote": "$10 trial credits on signup (valid 3 months), no credit card required"
+  },
+  "venice": {
+   "id": "venice",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "venice",
+   "name": "Venice.ai",
+   "icon": "travel_explore",
+   "color": "#0EA5E9",
+   "textIcon": "VN",
+   "website": "https://venice.ai"
+  },
+  "codestral": {
+   "id": "codestral",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "codestral",
+   "name": "Codestral",
+   "icon": "terminal",
+   "color": "#FF7000",
+   "textIcon": "CS",
+   "website": "https://mistral.ai"
+  },
+  "upstage": {
+   "id": "upstage",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "upstage",
+   "name": "Upstage",
+   "icon": "trending_up",
+   "color": "#0F766E",
+   "textIcon": "UP",
+   "website": "https://www.upstage.ai"
+  },
+  "maritalk": {
+   "id": "maritalk",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "maritalk",
+   "name": "Maritalk",
+   "icon": "translate",
+   "color": "#1D4ED8",
+   "textIcon": "MT",
+   "website": "https://www.maritaca.ai"
+  },
+  "nous-research": {
+   "id": "nous-research",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nous",
+   "name": "Nous Research",
+   "icon": "hub",
+   "color": "#2563EB",
+   "textIcon": "NO",
+   "website": "https://portal.nousresearch.com/help",
+   "authHint": "Use your Nous Portal API key. OmniRoute targets the official OpenAI-compatible inference endpoint at https://inference-api.nousresearch.com/v1.",
+   "apiHint": "Nous exposes an OpenAI-compatible /v1 surface with a large remote /models catalog. The /chat/completions endpoint requires a valid API key for programmatic inference.",
+   "hasFree": true,
+   "freeNote": "Free tier: 50 RPM, 500,000 TPM — no credit card"
+  },
+  "arcee-ai": {
+   "id": "arcee-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "arcee",
+   "name": "Arcee AI",
+   "icon": "auto_awesome",
+   "color": "#8B5CF6",
+   "textIcon": "AR",
+   "website": "https://arcee.ai",
+   "hasFree": true,
+   "freeNote": "Free Trinity Large Thinking model (262K context). No credit card required.",
+   "passthroughModels": true,
+   "authHint": "Get API key at arcee.ai"
+  },
+  "liquid": {
+   "id": "liquid",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "liquid",
+   "name": "Liquid AI",
+   "icon": "water_drop",
+   "color": "#06B6D4",
+   "textIcon": "LQ",
+   "website": "https://liquid.ai",
+   "hasFree": true,
+   "freeNote": "Free LFM2.5-1.2B-Thinking and LFM2.5-1.2B-Instruct models. MIT spinoff, hybrid architecture.",
+   "passthroughModels": true,
+   "authHint": "Get API key at liquid.ai"
+  },
+  "inception": {
+   "id": "inception",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "inception",
+   "name": "Inception",
+   "icon": "auto_awesome",
+   "color": "#F97316",
+   "textIcon": "IN",
+   "website": "https://docs.inceptionlabs.ai",
+   "apiHint": "Inception Labs is OpenAI-compatible at https://api.inceptionlabs.ai/v1. mercury-2 is the first diffusion LLM (dLLM) in the catalog — 5-10x faster generation than comparable autoregressive models, with tool calling, json_mode, and structured outputs.",
+   "hasFree": true,
+   "freeNote": "10M free tokens on signup, no credit card required."
+  },
+  "writer": {
+   "id": "writer",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "writer",
+   "name": "Writer",
+   "icon": "auto_awesome",
+   "color": "#111827",
+   "textIcon": "WR",
+   "website": "https://dev.writer.com",
+   "apiHint": "Writer Palmyra is OpenAI-compatible at https://api.writer.com/v1. palmyra-x5 offers a 1M-token context window.",
+   "hasFree": false
+  },
+  "together": {
+   "id": "together",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "together",
+   "name": "Together AI",
+   "icon": "group_work",
+   "color": "#0F6FFF",
+   "textIcon": "TG",
+   "website": "https://www.together.ai",
+   "hasFree": false,
+   "notice": {
+    "text": "No free tier — Together AI is fully prepaid and requires a minimum $5 credit purchase (valid payment method) before API calls work. The former $25 signup credit was retired.",
+    "apiKeyUrl": "https://api.together.ai/settings/api-keys"
+   }
+  },
+  "openvecta": {
+   "id": "openvecta",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "openvecta",
+   "name": "OpenVecta",
+   "icon": "vector_polygon",
+   "color": "#7C3AED",
+   "textIcon": "OV",
+   "website": "https://openvecta.com",
+   "hasFree": true,
+   "freeNote": "Free credits on signup for OpenAI-compatible inference across LLMs, embeddings, and reasoning models"
+  },
+  "openference-api": {
+   "id": "openference-api",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ofa",
+   "name": "Openference API",
+   "icon": "openference",
+   "color": "#6366F1",
+   "textIcon": "OF",
+   "website": "https://openference.com",
+   "hasFree": true,
+   "freeNote": "Free tier: includes Qwen3.8 27b and Llama 3.2 3B — see openference.com/pricing for current terms"
+  },
+  "poolside": {
+   "id": "poolside",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "poolside",
+   "name": "Poolside",
+   "icon": "memory",
+   "color": "#111827",
+   "textIcon": "PS",
+   "passthroughModels": true,
+   "website": "https://poolside.ai",
+   "hasFree": true,
+   "freeNote": "Laguna S 2.1 and XS 2.1 are free during Preview; no public numeric quota is published.",
+   "apiHint": "Create a free developer API key, then use https://inference.poolside.ai/v1 as the OpenAI-compatible base URL."
+  },
+  "fireworks": {
+   "id": "fireworks",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "fireworks",
+   "name": "Fireworks AI",
+   "icon": "local_fire_department",
+   "color": "#7B2EF2",
+   "textIcon": "FW",
+   "website": "https://fireworks.ai",
+   "hasFree": true,
+   "freeNote": "$1 free starter credits on signup for API testing"
+  },
+  "cerebras": {
+   "id": "cerebras",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cerebras",
+   "name": "Cerebras",
+   "icon": "memory",
+   "color": "#FF4F00",
+   "textIcon": "CB",
+   "website": "https://inference.cerebras.ai",
+   "hasFree": true,
+   "freeNote": "One-time $5 signup credit (30-day validity); a payment method is required. Not a recurring free tier."
+  },
+  "nvidia": {
+   "id": "nvidia",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nvidia",
+   "name": "NVIDIA NIM",
+   "icon": "developer_board",
+   "color": "#76B900",
+   "textIcon": "NV",
+   "website": "https://build.nvidia.com",
+   "hasFree": true,
+   "freeNote": "Free dev access: ~40 RPM, 70+ models (Kimi K2.5, GLM 4.7, DeepSeek V3.2...)"
+  },
+  "nebius": {
+   "id": "nebius",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nebius",
+   "name": "Nebius AI",
+   "icon": "cloud",
+   "color": "#6C5CE7",
+   "textIcon": "NB",
+   "website": "https://nebius.com",
+   "hasFree": true,
+   "freeNote": "~$1 trial credits on signup for API testing"
+  },
+  "nube": {
+   "id": "nube",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nube",
+   "name": "Nube.sh",
+   "icon": "cloud",
+   "color": "#2563EB",
+   "textIcon": "NB",
+   "website": "https://nube.sh",
+   "hasFree": false,
+   "notice": {
+    "text": "OpenAI-compatible gateway (LiteLLM). Bring your own API key — models are resolved live from the account (passthrough).",
+    "apiKeyUrl": "https://nube.sh/dashboard/api-keys"
+   }
+  },
+  "siliconflow": {
+   "id": "siliconflow",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "siliconflow",
+   "name": "SiliconFlow",
+   "icon": "cloud_queue",
+   "color": "#5B6EF5",
+   "textIcon": "SF",
+   "website": "https://cloud.siliconflow.com",
+   "hasFree": true,
+   "freeNote": "$1 free credits plus currently listed $0 models after identity verification; availability and limits may change"
+  },
+  "hyperbolic": {
+   "id": "hyperbolic",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "hyp",
+   "name": "Hyperbolic",
+   "icon": "bolt",
+   "color": "#00D4FF",
+   "textIcon": "HY",
+   "website": "https://hyperbolic.xyz",
+   "hasFree": true,
+   "freeNote": "$1-5 trial credits on signup for serverless inference"
+  },
+  "ollama-cloud": {
+   "id": "ollama-cloud",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ollamacloud",
+   "name": "Ollama Cloud",
+   "icon": "cloud",
+   "color": "#58A6FF",
+   "textIcon": "OC",
+   "website": "https://ollama.com/settings/keys",
+   "hasFree": true
+  },
+  "huggingface": {
+   "id": "huggingface",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "hf",
+   "name": "HuggingFace",
+   "icon": "face",
+   "color": "#FFD21E",
+   "textIcon": "HF",
+   "website": "https://huggingface.co",
+   "hasFree": true,
+   "freeNote": "Free Inference API for thousands of models (Whisper, VITS, SDXL…)"
+  },
+  "deepinfra": {
+   "id": "deepinfra",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "deepinfra",
+   "name": "DeepInfra",
+   "icon": "hub",
+   "color": "#2563EB",
+   "textIcon": "DI",
+   "website": "https://deepinfra.com",
+   "hasFree": true,
+   "freeNote": "Free signup credits for API testing and model exploration"
+  },
+  "lambda-ai": {
+   "id": "lambda-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "lambda",
+   "name": "Lambda AI",
+   "icon": "bolt",
+   "color": "#7C3AED",
+   "textIcon": "LA",
+   "website": "https://lambda.ai"
+  },
+  "sambanova": {
+   "id": "sambanova",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "samba",
+   "name": "SambaNova",
+   "icon": "memory",
+   "color": "#DC2626",
+   "textIcon": "SN",
+   "website": "https://sambanova.ai",
+   "hasFree": true,
+   "freeNote": "$5 free credits on signup (30-day validity), no credit card required"
+  },
+  "nscale": {
+   "id": "nscale",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nscale",
+   "name": "nScale",
+   "icon": "token",
+   "color": "#0891B2",
+   "textIcon": "NS",
+   "website": "https://nscale.com",
+   "hasFree": true,
+   "freeNote": "$5 free credits on signup for inference testing"
+  },
+  "baseten": {
+   "id": "baseten",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "baseten",
+   "name": "Baseten",
+   "icon": "deployed_code",
+   "color": "#111827",
+   "textIcon": "BT",
+   "website": "https://baseten.co",
+   "hasFree": true,
+   "freeNote": "$30 free trial credits for GPU inference"
+  },
+  "publicai": {
+   "id": "publicai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "publicai",
+   "name": "PublicAI",
+   "icon": "public",
+   "color": "#059669",
+   "textIcon": "PA",
+   "website": "https://publicai.co",
+   "hasFree": false,
+   "freeNote": "Requires an API key — one-time signup credit, then paid"
+  },
+  "featherless-ai": {
+   "id": "featherless-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "featherless",
+   "name": "Featherless AI",
+   "icon": "flutter_dash",
+   "color": "#EA580C",
+   "textIcon": "FL",
+   "website": "https://featherless.ai",
+   "hasFree": false,
+   "freeNote": "Free tier available — no credit card required"
+  },
+  "friendliai": {
+   "id": "friendliai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "friendli",
+   "name": "FriendliAI",
+   "icon": "handshake",
+   "color": "#EC4899",
+   "textIcon": "FR",
+   "website": "https://friendli.ai",
+   "hasFree": true,
+   "freeNote": "Free tier for serverless inference — no credit card required"
+  },
+  "wandb": {
+   "id": "wandb",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "wandb",
+   "name": "Weights & Biases Inference",
+   "icon": "monitoring",
+   "color": "#FFBE0B",
+   "textIcon": "WB",
+   "website": "https://wandb.ai"
+  },
+  "inference-net": {
+   "id": "inference-net",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "inet",
+   "name": "Inference.net",
+   "icon": "dns",
+   "color": "#2563EB",
+   "textIcon": "IN",
+   "website": "https://inference.net",
+   "hasFree": true,
+   "freeNote": "$25 free credits on signup plus research grants available"
+  },
+  "predibase": {
+   "id": "predibase",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "predibase",
+   "name": "Predibase",
+   "icon": "deployed_code_history",
+   "color": "#0F766E",
+   "textIcon": "PB",
+   "website": "https://predibase.com",
+   "hasFree": false,
+   "freeNote": "$25 free trial credits (30-day validity)",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "deprecated",
+   "deprecated": true,
+   "deprecationReason": "serving.app.predibase.com no longer resolves (sweep 2026-06-19); the managed serving API appears discontinued."
+  },
+  "bytez": {
+   "id": "bytez",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bytez",
+   "name": "Bytez",
+   "icon": "api",
+   "color": "#6366F1",
+   "textIcon": "BZ",
+   "website": "https://bytez.com",
+   "hasFree": true,
+   "freeNote": "$1 free credits, refreshes every 4 weeks"
+  },
+  "monsterapi": {
+   "id": "monsterapi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "monster",
+   "name": "MonsterAPI",
+   "icon": "cloud",
+   "color": "#EF4444",
+   "textIcon": "MA",
+   "website": "https://monsterapi.ai",
+   "hasFree": true,
+   "freeNote": "One-time signup trial credits for decentralized GPU inference (no recurring free plan). No credit card required.",
+   "passthroughModels": true,
+   "authHint": "Get API key at monsterapi.ai",
+   "deprecated": true,
+   "deprecationReason": "Monster API shuttered operations on 2026-06-30. Use alternative OpenAI-compatible providers."
+  },
+  "modelscope": {
+   "id": "modelscope",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ms",
+   "name": "ModelScope",
+   "icon": "cloud",
+   "color": "#FF6A00",
+   "textIcon": "MS",
+   "website": "https://modelscope.cn",
+   "hasFree": true,
+   "freeNote": "Free tier via ModelScope API-Inference — Alibaba account required."
+  },
+  "byteplus": {
+   "id": "byteplus",
+   "alias": "bpm",
+   "name": "BytePlus ModelArk",
+   "icon": "cloud",
+   "color": "#2563EB",
+   "textIcon": "BP",
+   "website": "https://console.byteplus.com/ark",
+   "hasFree": true,
+   "notice": {
+    "text": "Free credits for new accounts. Seed 2.0, Kimi K2 Thinking, GLM 4.7, GPT-OSS-120B available.",
+    "apiKeyUrl": "https://console.byteplus.com/ark/region:ark+ap-southeast-1/apiKey"
+   },
+   "serviceKinds": [
+    "llm"
+   ]
+  },
+  "digitalocean": {
+   "id": "digitalocean",
+   "alias": "digitalocean",
+   "name": "DigitalOcean",
+   "icon": "cloud",
+   "color": "#0060FF",
+   "textIcon": "DO",
+   "passthroughModels": true,
+   "website": "https://docs.digitalocean.com/products/ai-platform/",
+   "hasFree": false,
+   "notice": {
+    "text": "Use a DigitalOcean Personal Access Token (dop_v1_...) or a Model Access Key from the Inference console. OAuth tokens (doo_v1_...) may not have the required scopes.",
+    "apiKeyUrl": "https://cloud.digitalocean.com/account/api/tokens"
+   },
+   "serviceKinds": [
+    "llm"
+   ]
+  },
+  "azure-openai": {
+   "id": "azure-openai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "azure",
+   "name": "Azure OpenAI",
+   "icon": "cloud",
+   "color": "#0078D4",
+   "textIcon": "AZ",
+   "website": "https://azure.microsoft.com/products/ai-services/openai-service",
+   "authHint": "Use your Azure OpenAI API key. Base URL should be your resource endpoint, for example https://my-resource.openai.azure.com.",
+   "passthroughModels": true
+  },
+  "azure-ai": {
+   "id": "azure-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "azure-ai",
+   "name": "Azure AI Foundry",
+   "icon": "cloud",
+   "color": "#2563EB",
+   "textIcon": "AF",
+   "website": "https://learn.microsoft.com/azure/ai-foundry",
+   "authHint": "Use your Azure AI Foundry key. Base URL can be https://<resource>.services.ai.azure.com/openai/v1/ or https://<resource>.openai.azure.com/openai/v1/.",
+   "apiHint": "Foundry uses the OpenAI v1 surface with deployment names as models. OmniRoute normalizes root resource URLs to the v1 chat and /models endpoints.",
+   "passthroughModels": true
+  },
+  "bedrock": {
+   "id": "bedrock",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bedrock",
+   "name": "Amazon Bedrock",
+   "icon": "cloud",
+   "color": "#FF9900",
+   "textIcon": "BR",
+   "website": "https://aws.amazon.com/bedrock",
+   "authHint": "Use your Amazon Bedrock API key and configure the AWS region where your models are enabled (for example eu-west-2). OmniRoute calls Bedrock's native Converse API directly.",
+   "apiHint": "Native Bedrock integration: model discovery uses Bedrock foundation models and inference profiles, while chat uses the regional Bedrock Runtime Converse/ConverseStream APIs.",
+   "passthroughModels": true
+  },
+  "watsonx": {
+   "id": "watsonx",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "watsonx",
+   "name": "IBM watsonx.ai Gateway",
+   "icon": "hub",
+   "color": "#0F62FE",
+   "textIcon": "WX",
+   "website": "https://www.ibm.com/products/watsonx-ai",
+   "authHint": "Use your watsonx bearer token. Base URL can be https://<region>.ml.cloud.ibm.com/ml/gateway/v1/ or a self-managed /ml/gateway/v1 endpoint.",
+   "apiHint": "The watsonx model gateway exposes OpenAI-compatible /chat/completions and /models under /ml/gateway/v1.",
+   "passthroughModels": true
+  },
+  "oci": {
+   "id": "oci",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "oci",
+   "name": "OCI Generative AI",
+   "icon": "cloud",
+   "color": "#C74634",
+   "textIcon": "OCI",
+   "website": "https://www.oracle.com/artificial-intelligence/generative-ai",
+   "authHint": "Use your OCI Generative AI API key or IAM bearer token. Base URL can be https://inference.generativeai.<region>.oci.oraclecloud.com/openai/v1/.",
+   "apiHint": "OCI exposes OpenAI-compatible chat and responses endpoints. Project ID is optional in OmniRoute but may be required for Responses and agentic workflows.",
+   "passthroughModels": true
+  },
+  "sap": {
+   "id": "sap",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "sap",
+   "name": "SAP Generative AI Hub",
+   "icon": "business",
+   "color": "#0FAAFF",
+   "textIcon": "SAP",
+   "website": "https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/generative-ai-hub-in-sap-ai-core",
+   "authHint": "Use your SAP AI Core bearer token. Base URL can be your AI_API_URL root or a deploymentUrl from Generative AI Hub.",
+   "apiHint": "Model discovery uses /v2/lm/scenarios/foundation-models/models on AI_API_URL. Chat requests use deploymentUrl/chat/completions and require AI-Resource-Group.",
+   "passthroughModels": true
+  },
+  "modal": {
+   "id": "modal",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mdl",
+   "name": "Modal",
+   "icon": "cloud_queue",
+   "color": "#7C3AED",
+   "textIcon": "MDL",
+   "website": "https://modal.com/docs",
+   "authHint": "Use the bearer token that protects your Modal deployment, if enabled. Base URL should point to your OpenAI-compatible Modal app, for example https://<workspace>--<app>.modal.run/v1.",
+   "apiHint": "Modal commonly serves user-hosted OpenAI-compatible apps on /v1. OmniRoute will probe /v1/models and route chat traffic to /v1/chat/completions.",
+   "hasFree": true,
+   "freeNote": "$30/month free credits for new accounts",
+   "passthroughModels": true
+  },
+  "vertex": {
+   "id": "vertex",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "vertex",
+   "name": "Vertex AI",
+   "icon": "cloud",
+   "color": "#4285F4",
+   "textIcon": "VA",
+   "website": "https://cloud.google.com/vertex-ai",
+   "hasFree": true,
+   "authHint": "Provide Service Account JSON, an OAuth access token, a Vertex Express API key, or a service-account-bound authorization key. Express mode supports Gemini only; partner models require project-scoped credentials."
+  },
+  "vertex-partner": {
+   "id": "vertex-partner",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "vp",
+   "name": "Vertex AI Partners",
+   "icon": "cloud",
+   "color": "#34A853",
+   "textIcon": "VP",
+   "website": "https://cloud.google.com/vertex-ai",
+   "authHint": "Provide Service Account JSON or OAuth credentials. A service-account-bound authorization key also supports discovery, but partner inference additionally requires its Google Cloud project ID. Standard Express keys support Gemini only."
+  },
+  "cloudflare-ai": {
+   "id": "cloudflare-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cf",
+   "name": "Cloudflare Workers AI",
+   "icon": "cloud",
+   "color": "#F48120",
+   "textIcon": "CF",
+   "website": "https://developers.cloudflare.com/workers-ai",
+   "hasFree": true,
+   "freeNote": "Free 10K Neurons/day: ~150 LLM responses, 500s Whisper audio, or ~500 FLUX.1 Schnell images at 1024x1024 (4.80 Neurons per 512x512 tile) — edge inference globally",
+   "authHint": "Requires API Token AND Account ID (found at dash.cloudflare.com)"
+  },
+  "scaleway": {
+   "id": "scaleway",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "scw",
+   "name": "Scaleway AI",
+   "icon": "cloud",
+   "color": "#4F0599",
+   "textIcon": "SCW",
+   "website": "https://www.scaleway.com/en/docs/ai-data/generative-apis/",
+   "hasFree": true,
+   "freeNote": "1M free tokens for new accounts — EU/GDPR compliant (Paris), Qwen3 235B & Llama 70B"
+  },
+  "ovhcloud": {
+   "id": "ovhcloud",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ovh",
+   "name": "OVHcloud AI",
+   "icon": "cloud",
+   "color": "#2563EB",
+   "textIcon": "OVH",
+   "website": "https://www.ovhcloud.com"
+  },
+  "heroku": {
+   "id": "heroku",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "heroku",
+   "name": "Heroku AI",
+   "icon": "cloud_upload",
+   "color": "#7C3AED",
+   "textIcon": "HK",
+   "website": "https://www.heroku.com"
+  },
+  "databricks": {
+   "id": "databricks",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "databricks",
+   "name": "Databricks",
+   "icon": "table_chart",
+   "color": "#F97316",
+   "textIcon": "DB",
+   "website": "https://www.databricks.com"
+  },
+  "datarobot": {
+   "id": "datarobot",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "datarobot",
+   "name": "DataRobot",
+   "icon": "precision_manufacturing",
+   "color": "#6D28D9",
+   "textIcon": "DR",
+   "website": "https://docs.datarobot.com",
+   "authHint": "Use your DataRobot API token. Optional Base URL can be the account root (for LLM Gateway) or a deployment URL under /api/v2/deployments/<id>.",
+   "apiHint": "The default gateway catalogs active models from /genai/llmgw/catalog/. Deployment URLs are also supported for direct OpenAI-compatible chat requests.",
+   "passthroughModels": true
+  },
+  "clarifai": {
+   "id": "clarifai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "clarifai",
+   "name": "Clarifai",
+   "icon": "hub",
+   "color": "#7C3AED",
+   "textIcon": "CF",
+   "website": "https://docs.clarifai.com",
+   "authHint": "Use your Clarifai PAT or app-specific API key. OmniRoute targets the OpenAI-compatible endpoint at https://api.clarifai.com/v2/ext/openai/v1 and authenticates with Authorization: Key <token>.",
+   "apiHint": "Clarifai exposes OpenAI-compatible chat, responses and /models on /v2/ext/openai/v1. Public/community models typically require a PAT; app-scoped keys only work for resources inside that app.",
+   "passthroughModels": true
+  },
+  "snowflake": {
+   "id": "snowflake",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "snowflake",
+   "name": "Snowflake Cortex",
+   "icon": "ac_unit",
+   "color": "#29B5E8",
+   "textIcon": "SF",
+   "website": "https://www.snowflake.com"
+  },
+  "qianfan": {
+   "id": "qianfan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "qianfan",
+   "name": "Baidu Qianfan",
+   "icon": "cloud",
+   "color": "#2468F2",
+   "textIcon": "BD",
+   "website": "https://cloud.baidu.com/product-s/qianfan_home",
+   "apiHint": "Use a Qianfan API key from Baidu AI Cloud. The default endpoint is OpenAI-compatible v2."
+  },
+  "glm": {
+   "id": "glm",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "glm",
+   "name": "GLM Coding",
+   "icon": "code",
+   "color": "#2563EB",
+   "textIcon": "GL",
+   "website": "https://z.ai/subscribe"
+  },
+  "glm-cn": {
+   "id": "glm-cn",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "glmcn",
+   "name": "GLM Coding (China)",
+   "icon": "code",
+   "color": "#DC2626",
+   "textIcon": "GC",
+   "website": "https://open.bigmodel.cn"
+  },
+  "bigmodel": {
+   "id": "bigmodel",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bigmodel",
+   "name": "BigModel.cn (Zhipu)",
+   "icon": "psychology",
+   "color": "#2563EB",
+   "textIcon": "BM",
+   "website": "https://open.bigmodel.cn",
+   "apiHint": "Create an API key at https://bigmodel.cn/usercenter/proj-mgmt/apikeys. OmniRoute uses BigModel.cn's OpenAI-compatible chat API.",
+   "passthroughModels": true
+  },
+  "glmt": {
+   "id": "glmt",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "glmt",
+   "name": "GLM Thinking",
+   "icon": "psychology",
+   "color": "#1D4ED8",
+   "textIcon": "GT",
+   "website": "https://open.bigmodel.cn",
+   "apiHint": "Preset GLM profile with higher token budget, thinking enabled, and longer timeout."
+  },
+  "bailian-coding-plan": {
+   "id": "bailian-coding-plan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bcp",
+   "name": "Alibaba Token Plan",
+   "icon": "code",
+   "color": "#FF6A00",
+   "textIcon": "BCP",
+   "website": "https://www.alibabacloud.com/help/en/model-studio/token-plan-overview",
+   "apiHint": "Use an Alibaba Token Plan key and select its Singapore or Beijing region."
+  },
+  "qwen-cloud": {
+   "id": "qwen-cloud",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "qwc",
+   "name": "Qwen Cloud",
+   "icon": "cloud",
+   "color": "#615CED",
+   "textIcon": "QC",
+   "website": "https://www.qwencloud.com/",
+   "apiHint": "Use a Qwen Cloud API key and select its Global or Beijing region."
+  },
+  "qwen-cloud-token-plan": {
+   "id": "qwen-cloud-token-plan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "qct",
+   "name": "Qwen Cloud Token Plan",
+   "icon": "cloud",
+   "color": "#615CED",
+   "textIcon": "QCT",
+   "website": "https://www.qwencloud.com/pricing/token-plan",
+   "apiHint": "Use a Qwen Cloud Token Plan key and select its Singapore or Beijing region."
+  },
+  "kimi": {
+   "id": "kimi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kimi",
+   "name": "Kimi (Legacy Moonshot API)",
+   "icon": "psychology",
+   "color": "#1E3A8A",
+   "textIcon": "KM",
+   "website": "https://platform.kimi.ai?aff=omniroute",
+   "hiddenFromDashboard": true
+  },
+  "kimi-coding-apikey": {
+   "id": "kimi-coding-apikey",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kmca",
+   "name": "Kimi Code API Key",
+   "icon": "psychology",
+   "color": "#1E40AF",
+   "textIcon": "KC",
+   "website": "https://www.kimi.ai/code?aff=omniroute",
+   "hiddenFromDashboard": true
+  },
+  "minimax": {
+   "id": "minimax",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "minimax",
+   "name": "Minimax Coding",
+   "icon": "memory",
+   "color": "#7C3AED",
+   "textIcon": "MM",
+   "website": "https://www.minimax.io"
+  },
+  "minimax-cn": {
+   "id": "minimax-cn",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "minimax-cn",
+   "name": "Minimax (China)",
+   "icon": "memory",
+   "color": "#DC2626",
+   "textIcon": "MC",
+   "website": "https://www.minimaxi.com"
+  },
+  "deepseek": {
+   "id": "deepseek",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ds",
+   "name": "DeepSeek",
+   "icon": "bolt",
+   "color": "#4D6BFE",
+   "textIcon": "DS",
+   "website": "https://platform.deepseek.com",
+   "hasFree": true,
+   "freeNote": "5M free tokens on signup - no credit card required"
+  },
+  "zai": {
+   "id": "zai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zai",
+   "name": "Z.AI",
+   "icon": "psychology",
+   "color": "#2563EB",
+   "textIcon": "ZA",
+   "website": "https://z.ai/model-api",
+   "apiHint": "Create an API key at https://z.ai/manage-apikey/apikey-list."
+  },
+  "alibaba": {
+   "id": "alibaba",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ali",
+   "name": "Alibaba Cloud Model Studio",
+   "icon": "cloud_queue",
+   "color": "#FF6600",
+   "textIcon": "AL",
+   "website": "https://bailian.console.alibabacloud.com/",
+   "hasFree": false,
+   "apiHint": "Use a Model Studio API key and select its Singapore or Beijing region."
+  },
+  "alibaba-cn": {
+   "id": "alibaba-cn",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ali-cn",
+   "name": "Alibaba (China)",
+   "icon": "cloud_queue",
+   "color": "#FF6600",
+   "textIcon": "AL",
+   "website": "https://dashscope.console.aliyun.com/",
+   "hasFree": false,
+   "hiddenFromDashboard": true
+  },
+  "longcat": {
+   "id": "longcat",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "lc",
+   "name": "LongCat AI",
+   "icon": "auto_awesome",
+   "color": "#FF6B9D",
+   "textIcon": "LC",
+   "website": "https://longcat.chat/platform/docs",
+   "hasFree": true,
+   "freeNote": "Free: one-time 10M-token grant after account signup + KYC verification (LongCat-2.0). One-time only — not a recurring daily/monthly allowance."
+  },
+  "moonshot": {
+   "id": "moonshot",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "moonshot",
+   "name": "Kimi",
+   "icon": "rocket_launch",
+   "color": "#1E40AF",
+   "textIcon": "MS",
+   "website": "https://platform.kimi.ai?aff=omniroute"
+  },
+  "volcengine": {
+   "id": "volcengine",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "volcengine",
+   "name": "Volcengine",
+   "icon": "local_fire_department",
+   "color": "#DC2626",
+   "textIcon": "VE",
+   "website": "https://www.volcengine.com"
+  },
+  "volcengine-agent-plan": {
+   "id": "volcengine-agent-plan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "veap",
+   "name": "Volcengine Ark Agent Plan",
+   "icon": "local_fire_department",
+   "color": "#DC2626",
+   "textIcon": "VA",
+   "website": "https://console.volcengine.com/ark/region:cn-beijing/subscription/agent-plan",
+   "authHint": "Connect your Volcano Engine account or use an Ark Agent Plan subscription API key."
+  },
+  "volcengine-coding-plan": {
+   "id": "volcengine-coding-plan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "vecp",
+   "name": "Volcengine Ark Coding Plan",
+   "icon": "code",
+   "color": "#FF6A00",
+   "textIcon": "VC",
+   "website": "https://console.volcengine.com/ark/region:cn-beijing/subscription/coding-plan",
+   "authHint": "Connect your Volcano Engine account or use an Ark Coding Plan subscription API key."
+  },
+  "gigachat": {
+   "id": "gigachat",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gigachat",
+   "name": "GigaChat (Sber)",
+   "icon": "lock_person",
+   "color": "#10B981",
+   "textIcon": "GC",
+   "website": "https://developers.sber.ru"
+  },
+  "xiaomi-mimo": {
+   "id": "xiaomi-mimo",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mimo",
+   "name": "Xiaomi MiMo",
+   "icon": "devices",
+   "color": "#EA580C",
+   "textIcon": "MM",
+   "website": "https://mimo.mi.com"
+  },
+  "xiaomi-mimo-token-plan": {
+   "id": "xiaomi-mimo-token-plan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mimotp",
+   "name": "Xiaomi MiMo Token Plan",
+   "icon": "devices",
+   "color": "#EA580C",
+   "textIcon": "MT",
+   "website": "https://mimo.mi.com",
+   "apiHint": "Use a Token Plan key (tp-…) and select the cluster (Singapore, Amsterdam, or China) that issued it."
+  },
+  "baidu": {
+   "id": "baidu",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "baidu",
+   "name": "Baidu (ERNIE)",
+   "icon": "auto_awesome",
+   "color": "#2932E1",
+   "textIcon": "BD",
+   "website": "https://ernie.baidu.com/",
+   "hasFree": true,
+   "freeNote": "Free ERNIE Speed/Lite models. China's #2 LLM.",
+   "passthroughModels": true,
+   "authHint": "Get API key at console.bce.baidu.com"
+  },
+  "tencent": {
+   "id": "tencent",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tencent",
+   "name": "Tencent Hunyuan",
+   "icon": "auto_awesome",
+   "color": "#07C160",
+   "textIcon": "TC",
+   "website": "https://hunyuan.tencent.com",
+   "hasFree": true,
+   "freeNote": "Free Hunyuan Lite models. WeChat ecosystem.",
+   "passthroughModels": true,
+   "authHint": "Get API key at console.cloud.tencent.com"
+  },
+  "iflytek": {
+   "id": "iflytek",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "iflytek",
+   "name": "iFlytek Spark",
+   "icon": "auto_awesome",
+   "color": "#0066FF",
+   "textIcon": "IF",
+   "website": "https://xinghuo.xfyun.cn",
+   "hasFree": true,
+   "freeNote": "Spark Lite is free (2 QPS rate-limited), but iFlytek ToS §2.4(3) prohibits programmatic extraction and requires Chinese real-name auth — use with caution.",
+   "passthroughModels": true,
+   "authHint": "Get API key at console.xfyun.cn"
+  },
+  "baichuan": {
+   "id": "baichuan",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "baichuan",
+   "name": "Baichuan",
+   "icon": "auto_awesome",
+   "color": "#6366F1",
+   "textIcon": "BC",
+   "website": "https://www.baichuan-ai.com/",
+   "hasFree": true,
+   "freeNote": "Free Baichuan models. Popular Chinese LLM startup.",
+   "passthroughModels": true,
+   "authHint": "Get API key at platform.baichuan-ai.com"
+  },
+  "yi": {
+   "id": "yi",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "yi",
+   "name": "Yi (01.AI)",
+   "icon": "auto_awesome",
+   "color": "#10B981",
+   "textIcon": "YI",
+   "website": "https://01.ai",
+   "hasFree": false,
+   "freeNote": "No free API tier (2026) — Yi-Light retired; platform.01.ai is pay-as-you-go (Yi-Lightning paid). Open weights are download-only.",
+   "passthroughModels": true,
+   "authHint": "Get API key at platform.lingyiwanwu.com"
+  },
+  "stepfun": {
+   "id": "stepfun",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "stepfun",
+   "name": "StepFun",
+   "icon": "auto_awesome",
+   "color": "#8B5CF6",
+   "textIcon": "SF",
+   "website": "https://stepfun.com",
+   "hasFree": true,
+   "freeNote": "Free Step-2 models. Chinese AI company.",
+   "passthroughModels": true,
+   "authHint": "Get API key at platform.stepfun.com",
+   "notice": {
+    "text": "This connects to StepFun's China platform (platform.stepfun.com), whose sign-up appears to require a Chinese phone number. Users outside mainland China can instead register at the global StepFun Open Platform (platform.stepfun.ai, operated by Sparkling AI Pte. Ltd., Singapore) with email/Google/Discord login.",
+    "signupUrl": "https://platform.stepfun.ai"
+   }
+  },
+  "coze": {
+   "id": "coze",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "coze",
+   "name": "Coze",
+   "icon": "smart_toy",
+   "color": "#3B82F6",
+   "textIcon": "CZ",
+   "website": "https://coze.com",
+   "hasFree": true,
+   "freeNote": "Free ByteDance agent platform. Bot building + LLM access.",
+   "passthroughModels": true,
+   "authHint": "Get API key at coze.com/open/api"
+  },
+  "360ai": {
+   "id": "360ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "360ai",
+   "name": "360 AI",
+   "icon": "auto_awesome",
+   "color": "#00B96B",
+   "textIcon": "360",
+   "website": "https://ai.360.cn",
+   "hasFree": true,
+   "freeNote": "Free 360 AI Brain models. Major Chinese security company.",
+   "passthroughModels": true,
+   "authHint": "Get API key at ai.360.cn"
+  },
+  "doubao": {
+   "id": "doubao",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "doubao",
+   "name": "Doubao",
+   "icon": "auto_awesome",
+   "color": "#FE2C55",
+   "textIcon": "DB",
+   "website": "https://doubao.com",
+   "hasFree": true,
+   "freeNote": "Free Doubao models. ByteDance's chatbot.",
+   "passthroughModels": true,
+   "authHint": "Get API key at console.volcengine.com"
+  },
+  "sensenova": {
+   "id": "sensenova",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "sensenova",
+   "name": "SenseNova",
+   "icon": "auto_awesome",
+   "color": "#0066FF",
+   "textIcon": "SN",
+   "website": "https://platform.sensenova.cn",
+   "hasFree": true,
+   "freeNote": "Free SenseTime models. Computer vision leader.",
+   "passthroughModels": true,
+   "authHint": "Get API key at platform.sensenova.cn",
+   "notice": {
+    "text": "SenseNova registration appears to require a Chinese (+86) phone number for SMS verification — no international sign-up path is documented, so users outside mainland China may be unable to obtain an API key.",
+    "signupUrl": "https://platform.sensenova.cn/console"
+   }
+  },
+  "sparkdesk": {
+   "id": "sparkdesk",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "sparkdesk",
+   "name": "SparkDesk",
+   "icon": "auto_awesome",
+   "color": "#0066FF",
+   "textIcon": "SD",
+   "website": "https://xinghuo.xfyun.cn",
+   "hasFree": true,
+   "freeNote": "Spark Lite free (alias for iflytek), but ToS restricts to personal/non-commercial use and prohibits relaying access to third parties — use with caution.",
+   "passthroughModels": true,
+   "authHint": "Get API key at console.xfyun.cn"
+  },
+  "hcnsec": {
+   "id": "hcnsec",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "hcnsec",
+   "name": "Huancheng Public API",
+   "icon": "security",
+   "color": "#0EA5E9",
+   "textIcon": "HC",
+   "website": "https://api.hcnsec.cn",
+   "hasFree": true,
+   "freeNote": "Xinjiang Huancheng Cybersecurity public LLM API platform: free credits with daily check-ins.",
+   "passthroughModels": true,
+   "authHint": "Get API key at api.hcnsec.cn"
+  },
+  "agnes": {
+   "id": "agnes",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "agnes",
+   "name": "Agnes AI",
+   "icon": "auto_awesome",
+   "color": "#10B981",
+   "textIcon": "AG",
+   "website": "https://agnes-ai.com",
+   "hasFree": true,
+   "freeNote": "Permanently free API - no credit card required.",
+   "authHint": "Get API key at agnes-ai.com"
+  },
+  "agnes-cn": {
+   "id": "agnes-cn",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "agnescn",
+   "name": "Agnes AI (China)",
+   "icon": "auto_awesome",
+   "color": "#047857",
+   "textIcon": "AC",
+   "website": "https://api.agnes-ai.cn",
+   "hasFree": true,
+   "freeNote": "Permanently free, no API credit card required.",
+   "authHint": "Get API key from the Agnes CN site."
+  },
+  "sealion": {
+   "id": "sealion",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "sealion",
+   "name": "SEA-LION",
+   "icon": "public",
+   "color": "#0D9488",
+   "textIcon": "SL",
+   "website": "https://sea-lion.ai",
+   "hasFree": true,
+   "freeNote": "Permanently free at 10 RPM — AI Singapore's Southeast-Asian models (Llama/Qwen/Gemma SEA-LION).",
+   "authHint": "Sign in at sea-lion.ai with Google (no card, no region wall), create an API key, then paste it here."
+  },
+  "clova-studio": {
+   "id": "clova-studio",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "clova",
+   "name": "Naver CLOVA Studio",
+   "icon": "auto_awesome",
+   "color": "#03C75A",
+   "textIcon": "CS",
+   "website": "https://api.ncloud-docs.com/docs/en/ai-naver-clovastudio-summary",
+   "apiHint": "OmniRoute routes chat traffic to the native Chat Completions v3 API (/v3/chat-completions/{model}), not the OpenAI-compatibility shim. All three v3 models are served: HCX-007 (reasoning, text only), HCX-005 (vision — accepts both public image URLs and inline base64 images), and HCX-DASH-002 (lightweight, text only). Requests stream upstream and are accumulated into a JSON body when the client asks for a non-streaming response."
+  },
+  "internlm": {
+   "id": "internlm",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "internlm",
+   "name": "InternLM (Intern-S1)",
+   "icon": "auto_awesome",
+   "color": "#4F46E5",
+   "textIcon": "IL",
+   "website": "https://internlm.intern-ai.org.cn/",
+   "hasFree": true,
+   "freeNote": "Free monthly quota ~1M input / 3M output tokens (~10 RPM)"
+  },
+  "ant-ling": {
+   "id": "ant-ling",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ling",
+   "name": "Ant Ling / Ring (inclusionAI)",
+   "icon": "auto_awesome",
+   "color": "#1677FF",
+   "textIcon": "AL",
+   "website": "https://developer.ant-ling.com/en/docs/",
+   "hasFree": true,
+   "freeNote": "500,000 free tokens per day per account (resets 02:00 UTC+8, no rollover)",
+   "authHint": "Register and create an API key at the Ant Ling API console (https://chat.ant-ling.com/open), then paste it here. OmniRoute routes chat traffic to https://api.ant-ling.com/v1/chat/completions; the provider is OpenAI-compatible and also exposes an Anthropic-compatible surface."
+  },
+  "sarvam": {
+   "id": "sarvam",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "sarvam",
+   "name": "Sarvam AI",
+   "icon": "public",
+   "color": "#0EA5E9",
+   "textIcon": "SV",
+   "website": "https://docs.sarvam.ai",
+   "apiHint": "Sarvam AI is OpenAI-compatible on /v1. OmniRoute probes /v1/models and routes chat traffic to /v1/chat/completions. Models are tuned for Indic languages.",
+   "hasFree": true,
+   "freeNote": "₹1,000 in free signup credits — never expire"
+  },
+  "plamo": {
+   "id": "plamo",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "plamo",
+   "name": "PLaMo",
+   "icon": "public",
+   "color": "#DC2626",
+   "textIcon": "PL",
+   "website": "https://plamo.preferredai.jp/api",
+   "apiHint": "PLaMo is OpenAI-compatible at https://api.platform.preferredai.jp/v1. Built by Preferred Networks and optimized for Japanese. Docs are primarily in Japanese.",
+   "hasFree": false
+  },
+  "typhoon": {
+   "id": "typhoon",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "typhoon",
+   "name": "Typhoon",
+   "icon": "public",
+   "color": "#7C3AED",
+   "textIcon": "TY",
+   "website": "https://docs.opentyphoon.ai",
+   "apiHint": "Typhoon is OpenAI-compatible on /v1. Built by SCB 10X (Thailand); typhoon-v2.5-30b-a3b-instruct is a thai-first, multilingual model.",
+   "hasFree": true,
+   "freeNote": "Free API key with a 5 req/s and 200 req/m rate limit."
+  },
+  "apmix": {
+   "id": "apmix",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "apmix",
+   "name": "Apmix",
+   "icon": "hub",
+   "color": "#7C3AED",
+   "textIcon": "AP",
+   "website": "https://apmix.ai",
+   "apiHint": "Get your API key from the Apmix dashboard (apmix.ai/dashboard)."
+  },
+  "nlpcloud": {
+   "id": "nlpcloud",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nlpc",
+   "name": "NLP Cloud",
+   "icon": "psychology",
+   "color": "#2196F3",
+   "textIcon": "NLPC",
+   "website": "https://docs.nlpcloud.com",
+   "authHint": "Use your NLP Cloud API key in Authorization: Token <key>. OmniRoute targets the chatbot endpoint on https://api.nlpcloud.io/v1/gpu/<model>/chatbot by default.",
+   "apiHint": "NLP Cloud uses a proprietary chatbot API instead of OpenAI chat/completions. OmniRoute adapts OpenAI messages to input/context/history and exposes a local catalog of supported chatbot models.",
+   "hasFree": true,
+   "freeNote": "Trial credits for new accounts"
+  },
+  "runwayml": {
+   "id": "runwayml",
+   "serviceKinds": [],
+   "alias": "runway",
+   "name": "Runway",
+   "icon": "movie",
+   "color": "#111827",
+   "textIcon": "RW",
+   "website": "https://docs.dev.runwayml.com",
+   "authHint": "Use your Runway API key in Authorization: Bearer <key>. OmniRoute targets the current Runway API at https://api.dev.runwayml.com/v1 and sends the required X-Runway-Version header automatically.",
+   "apiHint": "Runway video generation is task-based. OmniRoute submits text-to-video or image-to-video jobs, polls /v1/tasks/{id}, and normalizes the finished video outputs back into the OpenAI-like /v1/videos/generations response."
+  },
+  "kie": {
+   "id": "kie",
+   "serviceKinds": [],
+   "alias": "kie",
+   "name": "KIE.AI",
+   "icon": "hub",
+   "color": "#2563EB",
+   "textIcon": "KIE",
+   "website": "https://kie.ai"
+  },
+  "pollinations": {
+   "id": "pollinations",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "pol",
+   "name": "Pollinations AI",
+   "icon": "local_florist",
+   "color": "#4CAF50",
+   "textIcon": "PO",
+   "website": "https://pollinations.ai",
+   "hasFree": true,
+   "anonymousFallback": true,
+   "authHint": "Anonymous/keyless access to the documented free models is best-effort. Local v3.8.50 verification (2026-07-31) returned 401 via OmniRoute and Cloudflare 1010 on direct upstream probes from the same network. Premium models still require a Pollinations API key from enter.pollinations.ai.",
+   "freeNote": "Free keyless tier: openai, openai-fast, openai-large, qwen-coder, mistral, deepseek, grok, gemini-flash-lite-3.1, perplexity-fast, perplexity-reasoning. Premium models (claude, gemini, midijourney) require a Pollinations API key from enter.pollinations.ai."
+  },
+  "haiper": {
+   "id": "haiper",
+   "serviceKinds": [],
+   "alias": "hp",
+   "name": "Haiper",
+   "icon": "videocam",
+   "color": "#6366F1",
+   "textIcon": "HP",
+   "website": "https://haiper.ai",
+   "authHint": "Get API key at haiper.ai/haiper-api"
+  },
+  "leonardo": {
+   "id": "leonardo",
+   "serviceKinds": [],
+   "alias": "leo",
+   "name": "Leonardo AI",
+   "icon": "palette",
+   "color": "#8B5CF6",
+   "textIcon": "LE",
+   "website": "https://leonardo.ai",
+   "authHint": "Get API key at leonardo.ai/developer"
+  },
+  "ideogram": {
+   "id": "ideogram",
+   "serviceKinds": [],
+   "alias": "ideo",
+   "name": "Ideogram",
+   "icon": "image",
+   "color": "#EC4899",
+   "textIcon": "ID",
+   "website": "https://ideogram.ai",
+   "authHint": "Get API key at ideogram.ai/docs/api"
+  },
+  "magnific": {
+   "id": "magnific",
+   "serviceKinds": [],
+   "alias": "freepik",
+   "name": "Magnific",
+   "icon": "image",
+   "color": "#1B9E7F",
+   "textIcon": "MG",
+   "website": "https://www.magnific.com",
+   "authHint": "Get an API key at magnific.com/user/api-keys (header x-magnific-api-key). Legacy Freepik developer keys still work.",
+   "hasFree": true,
+   "freeNote": "One-time ~€5 API credit for new accounts; pay-per-use afterward."
+  },
+  "udio": {
+   "id": "udio",
+   "serviceKinds": [],
+   "alias": "udio",
+   "name": "Udio",
+   "icon": "music_note",
+   "color": "#10B981",
+   "textIcon": "UD",
+   "website": "https://udio.com",
+   "authHint": "Paste session cookie from udio.com (Supabase auth)"
+  },
+  "v0-vercel": {
+   "id": "v0-vercel",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "v0",
+   "name": "v0 (Vercel)",
+   "icon": "code_blocks",
+   "color": "#111827",
+   "textIcon": "V0",
+   "website": "https://v0.dev"
+  },
+  "gitlab": {
+   "id": "gitlab",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gitlab",
+   "name": "GitLab Duo PAT",
+   "icon": "hub",
+   "color": "#FC6D26",
+   "textIcon": "GL",
+   "website": "https://docs.gitlab.com/user/duo_agent_platform/code_suggestions/",
+   "authHint": "GitLab personal access token for the public Code Suggestions API. Configure a self-hosted base URL when not using gitlab.com."
+  },
+  "voyage-ai": {
+   "id": "voyage-ai",
+   "serviceKinds": [],
+   "alias": "voyage",
+   "name": "Voyage AI",
+   "icon": "blur_on",
+   "color": "#0F766E",
+   "textIcon": "VA",
+   "website": "https://www.voyageai.com",
+   "authHint": "Bearer API key for Voyage AI embeddings and rerank APIs.",
+   "hasFree": true,
+   "freeNote": "200M free tokens for embeddings and reranking"
+  },
+  "jina-ai": {
+   "id": "jina-ai",
+   "serviceKinds": [],
+   "alias": "jina",
+   "name": "Jina AI (Foundation API)",
+   "icon": "sort",
+   "color": "#2563EB",
+   "textIcon": "JA",
+   "website": "https://jina.ai",
+   "authHint": "Bearer API key for api.jina.ai — embeddings, rerank, classify, segment, and search. Dashboard keys take precedence over JINA_AI_API_KEY. This is not the Reader / r.jina.ai card and does not fetch URLs.",
+   "hasFree": true,
+   "freeNote": "10M free tokens on signup (non-commercial), no credit card required"
+  },
+  "fal-ai": {
+   "id": "fal-ai",
+   "serviceKinds": [],
+   "alias": "fal",
+   "name": "Fal.ai",
+   "icon": "image",
+   "color": "#2563EB",
+   "textIcon": "FL",
+   "website": "https://fal.ai"
+  },
+  "stability-ai": {
+   "id": "stability-ai",
+   "serviceKinds": [],
+   "alias": "stability",
+   "name": "Stability AI",
+   "icon": "image",
+   "color": "#8B5CF6",
+   "textIcon": "SA",
+   "website": "https://stability.ai"
+  },
+  "black-forest-labs": {
+   "id": "black-forest-labs",
+   "serviceKinds": [],
+   "alias": "bfl",
+   "name": "Black Forest Labs",
+   "icon": "image",
+   "color": "#111827",
+   "textIcon": "BF",
+   "website": "https://blackforestlabs.ai"
+  },
+  "recraft": {
+   "id": "recraft",
+   "serviceKinds": [],
+   "alias": "recraft",
+   "name": "Recraft",
+   "icon": "image",
+   "color": "#EC4899",
+   "textIcon": "RC",
+   "website": "https://recraft.ai"
+  },
+  "topaz": {
+   "id": "topaz",
+   "serviceKinds": [],
+   "alias": "topaz",
+   "name": "Topaz",
+   "icon": "image",
+   "color": "#059669",
+   "textIcon": "TP",
+   "website": "https://topazlabs.com"
+  },
+  "segmind": {
+   "id": "segmind",
+   "serviceKinds": [],
+   "alias": "segmind",
+   "name": "Segmind",
+   "icon": "image",
+   "color": "#7C3AED",
+   "textIcon": "SG",
+   "website": "https://segmind.com",
+   "authHint": "Use your Segmind API key in the x-api-key header. OmniRoute targets https://api.segmind.com/v1/<model> and returns the generated image/video bytes directly.",
+   "apiHint": "Segmind exposes 200+ hosted image and video models (Flux, SDXL, SD3, Kandinsky, Wan, Hunyuan, LTX, Kling, ...) under a single POST /v1/<model> REST call per model. OmniRoute ships a curated starter subset for each modality; more models can be routed by using their Segmind slug as the model id.",
+   "hasFree": true,
+   "freeNote": "Free trial credits on signup, no credit card required (per Segmind's public docs)."
+  },
+  "dify": {
+   "id": "dify",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dify",
+   "name": "Dify",
+   "icon": "smart_toy",
+   "color": "#6366F1",
+   "textIcon": "DF",
+   "website": "https://dify.ai",
+   "hasFree": true,
+   "freeNote": "Free open-source AI app builder + RAG platform.",
+   "passthroughModels": true,
+   "authHint": "Get API key from your Dify instance."
+  },
+  "nomic": {
+   "id": "nomic",
+   "serviceKinds": [],
+   "alias": "nomic",
+   "name": "Nomic",
+   "icon": "hub",
+   "color": "#7C3AED",
+   "textIcon": "NM",
+   "website": "https://nomic.ai",
+   "hasFree": true,
+   "freeNote": "Free Nomic Embed API. Open-source embeddings, no credit card required.",
+   "passthroughModels": true,
+   "authHint": "Get API key at atlas.nomic.ai"
+  },
+  "mixedbread": {
+   "id": "mixedbread",
+   "serviceKinds": [],
+   "alias": "mxbai",
+   "name": "Mixedbread AI",
+   "icon": "hub",
+   "color": "#F59E0B",
+   "textIcon": "MB",
+   "website": "https://www.mixedbread.com",
+   "hasFree": true,
+   "freeNote": "Free-tier API key via signup, no credit card required.",
+   "authHint": "Bearer API key for the Mixedbread embeddings API."
+  },
+  "jina-reader": {
+   "id": "jina-reader",
+   "alias": "jr",
+   "name": "Jina Reader (r.jina.ai)",
+   "icon": "menu_book",
+   "color": "#0EA5E9",
+   "textIcon": "JR",
+   "website": "https://jina.ai/reader",
+   "authHint": "Bearer API key for r.jina.ai URL-to-markdown (/v1/web/fetch only). Does not serve /v1/embeddings or /v1/rerank. The same Jina token as Foundation API works; OmniRoute reuses a jina-ai dashboard key or JINA_AI_API_KEY when this card is empty.",
+   "hasFree": true,
+   "notice": {
+    "text": "Reader / r.jina.ai only — not embeddings or rerank. Free tier: 1M fetches/month.",
+    "apiKeyUrl": "https://jina.ai/api-dashboard"
+   },
+   "serviceKinds": [
+    "webFetch"
+   ]
+  },
+  "tinyfish": {
+   "id": "tinyfish",
+   "alias": "tf",
+   "name": "TinyFish Fetch",
+   "icon": "language",
+   "color": "#0891B2",
+   "textIcon": "TF",
+   "website": "https://docs.tinyfish.ai/fetch-api",
+   "notice": {
+    "text": "Fetch does not use TinyFish credits. Submit up to 10 URLs per request (OmniRoute fetches one URL per call).",
+    "apiKeyUrl": "https://agent.tinyfish.ai/api-keys"
+   },
+   "authHint": "X-API-Key from agent.tinyfish.ai/api-keys",
+   "serviceKinds": [
+    "webFetch"
+   ]
+  },
+  "deepai": {
+   "id": "deepai",
+   "serviceKinds": [],
+   "alias": "deepai",
+   "name": "DeepAI",
+   "icon": "psychology",
+   "color": "#4A90D9",
+   "textIcon": "DA",
+   "website": "https://deepai.org",
+   "authHint": "Use your DeepAI API key. Get one at deepai.org — requires a Pro subscription ($9.99/mo).",
+   "apiHint": "DeepAI uses per-endpoint REST calls (e.g. /api/text2img) instead of OpenAI chat/completions. OmniRoute adapts OpenAI image generation requests to DeepAI's /api/{slug} endpoints."
+  },
+  "cursor-api": {
+   "id": "cursor-api",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cua",
+   "name": "Cursor API",
+   "icon": "edit_note",
+   "color": "#00D4AA",
+   "textIcon": "CA",
+   "website": "https://cursor.com/dashboard/api",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Paste a Cursor user API key (crsr_...) from cursor.com/dashboard/api. OmniRoute exchanges it for a session token on demand; no IDE or cursor-agent install is needed. Usage bills to the Cursor plan that owns the key.",
+   "apiHint": "Same agent protocol and model catalog as the Cursor IDE provider. The Cursor CLI can also be pointed at /api/cursor-cli on this instance and authenticated with an OmniRoute API key."
+  }
+ },
+ "OAUTH_PROVIDERS": {
+  "ghe-copilot": {
+   "id": "ghe-copilot",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ghe-copilot",
+   "name": "GitHub Enterprise Copilot",
+   "icon": "code",
+   "color": "#10B981",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Enter your GHE instance URL (e.g., https://ghe.company.com) in provider settings, then authenticate via device flow."
+  },
+  "xai-oauth": {
+   "id": "xai-oauth",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "xao",
+   "name": "xAI OAuth (Grok)",
+   "icon": "auto_awesome",
+   "color": "#1DA1F2",
+   "textIcon": "XA",
+   "website": "https://x.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "hiddenFromDashboard": true,
+   "authHint": "Sign in with xAI to use api.x.ai models such as Grok 4.5. This is separate from Grok Build JWT sessions, which use cli-chat-proxy.grok.com and grok-build model aliases."
+  },
+  "openference": {
+   "id": "openference",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "of",
+   "name": "Openference",
+   "icon": "openference",
+   "color": "#6366F1",
+   "textIcon": "OF",
+   "website": "https://openference.com",
+   "hasFree": true,
+   "freeNote": "Free tier: includes Qwen3.8 27b and Llama 3.2 3B — see openference.com/pricing for current terms",
+   "authHint": "Sign in with your Openference account to route requests through api.openference.com. Includes free-tier access to Qwen3.8 27b and Llama 3.2 3B — see openference.com/pricing for current plan terms."
+  },
+  "grok-cli": {
+   "id": "grok-cli",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gc",
+   "name": "Grok Build",
+   "icon": "bolt",
+   "color": "#000000",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Sign in with your browser, or paste your ~/.grok/auth.json (or the JWT access token) from the Grok Build CLI; refresh_token is rotated automatically either way."
+  },
+  "qoder": {
+   "id": "qoder",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "if",
+   "name": "Qoder",
+   "icon": "water_drop",
+   "color": "#6366F1",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "hasFree": true
+  },
+  "agy": {
+   "id": "agy",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "agy",
+   "name": "Antigravity CLI",
+   "icon": "terminal",
+   "color": "#F59E0B",
+   "textIcon": "AGY",
+   "website": "https://antigravity.google",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "hasFree": true,
+   "authHint": "Import your Antigravity CLI (`agy`) login (paste/upload its token file), auto-detect a local CLI login, or sign in with Google. Shares the Antigravity backend (incl. Claude models)."
+  },
+  "kiro": {
+   "id": "kiro",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kr",
+   "name": "Kiro AI",
+   "icon": "psychology_alt",
+   "color": "#FF6B35",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "deprecated",
+   "hasFree": true,
+   "freeNote": "Free tier: 50 credits/month (~25K–100K tokens). ⚠️ Kiro ToS prohibits third-party proxy/harness use."
+  },
+  "amazon-q": {
+   "id": "amazon-q",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "aq",
+   "name": "Amazon Q",
+   "icon": "cloud",
+   "color": "#FF9900",
+   "textIcon": "AQ",
+   "website": "https://aws.amazon.com/q/developer/",
+   "hasFree": true,
+   "authHint": "Uses the same AWS Builder ID or imported refresh-token flow as Kiro, but keeps Amazon Q connections separate."
+  },
+  "claude": {
+   "id": "claude",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cc",
+   "name": "Claude Code",
+   "icon": "smart_toy",
+   "color": "#D97757",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth"
+  },
+  "antigravity": {
+   "id": "antigravity",
+   "serviceKinds": [
+    "llm"
+   ],
+   "name": "Antigravity",
+   "icon": "rocket_launch",
+   "color": "#F59E0B",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth"
+  },
+  "codex": {
+   "id": "codex",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cx",
+   "name": "OpenAI Codex",
+   "icon": "code",
+   "color": "#3B82F6",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth"
+  },
+  "github": {
+   "id": "github",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gh",
+   "name": "GitHub Copilot",
+   "icon": "code",
+   "color": "#333333"
+  },
+  "gitlab-duo": {
+   "id": "gitlab-duo",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gitlab-duo",
+   "name": "GitLab Duo",
+   "icon": "hub",
+   "color": "#FC6D26",
+   "textIcon": "GL",
+   "website": "https://docs.gitlab.com/user/duo_agent_platform/code_suggestions/",
+   "authHint": "GitLab Duo OAuth is not configured. Register an OAuth application at https://gitlab.com/-/profile/applications with redirect URI http://localhost:20128/callback and scopes \"ai_features read_user\", then set GITLAB_DUO_OAUTH_CLIENT_ID (and optionally GITLAB_DUO_OAUTH_CLIENT_SECRET) and restart."
+  },
+  "cursor": {
+   "id": "cursor",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cu",
+   "name": "Cursor IDE",
+   "icon": "edit_note",
+   "color": "#00D4AA",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth"
+  },
+  "zed": {
+   "id": "zed",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zd",
+   "name": "Zed IDE",
+   "icon": "code",
+   "color": "#084CCF",
+   "textIcon": "ZD",
+   "website": "https://zed.dev",
+   "authHint": "Zed stores LLM provider credentials (OpenAI, Anthropic, Google, Mistral, xAI) in the OS keychain. Use the Import button below to discover and import them automatically."
+  },
+  "zed-hosted": {
+   "id": "zed-hosted",
+   "serviceKinds": [
+    "llm"
+   ],
+   "name": "Zed Hosted Models",
+   "icon": "code_blocks",
+   "color": "#101010",
+   "textIcon": "ZH",
+   "website": "https://zed.dev",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Sign in with your Zed account (native-app sign-in). OmniRoute generates a one-time RSA keypair and opens zed.dev to authorize it — on a remote/headless install, copy the resulting 127.0.0.1 callback URL from your browser's address bar and paste it back here. Distinct from the 'Zed IDE' credential-import entry above: this proxies chat completions through Zed's own hosted model aggregator (cloud.zed.dev), fronting Anthropic/OpenAI/Google/xAI models under your Zed plan."
+  },
+  "trae": {
+   "id": "trae",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tr",
+   "name": "Trae",
+   "icon": "edit_square",
+   "color": "#FF7849",
+   "textIcon": "TR",
+   "website": "https://trae.ai",
+   "authHint": "Trae is an AI-native IDE by ByteDance (SOLO remote agent). Authorize via trae.ai in the popup, or sign in at solo.trae.ai and paste the Cloud-IDE-JWT (sent as 'Authorization: Cloud-IDE-JWT <token>', ~14-day lifetime) as the access token; web_id/biz_user_id/user_unique_id/scope/tenant/region propagate via providerSpecificData. No headless refresh for pasted tokens — re-paste on expiry."
+  },
+  "kimi-coding": {
+   "id": "kimi-coding",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kmc",
+   "name": "Kimi Code CLI",
+   "icon": "psychology",
+   "color": "#1E40AF",
+   "textIcon": "KC",
+   "website": "https://www.kimi.ai/code?aff=omniroute",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Sign in with the same Kimi account used by Kimi Code CLI. OmniRoute uses the CLI OAuth flow and Kimi Coding Plan endpoints."
+  },
+  "kilocode": {
+   "id": "kilocode",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kc",
+   "name": "Kilo Code",
+   "icon": "code",
+   "color": "#FF6B35",
+   "textIcon": "KC",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "anonymousFallback": true,
+   "authHint": "Sign in with your Kilo Code account (device-code OAuth), or paste a direct API key from app.kilo.ai → Settings → API Keys. Multiple API keys are supported and rotated automatically — add each as a separate connection. Without any connection, free anonymous models are available via the anonymousFallback."
+  },
+  "cline": {
+   "id": "cline",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cl",
+   "name": "Cline",
+   "icon": "smart_toy",
+   "color": "#5B9BD5",
+   "textIcon": "CL",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Sign in with your Cline account (OAuth), or paste a direct API key from app.cline.bot → Settings → API Keys. Multiple API keys are supported and rotated automatically — add each as a separate connection."
+  },
+  "clinepass": {
+   "id": "clinepass",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cp",
+   "name": "ClinePass",
+   "icon": "smart_toy",
+   "color": "#9D4EDD",
+   "textIcon": "CP",
+   "website": "https://cline.bot/cline-pass",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "ClinePass is Cline's $9.99/mo subscription bundling 10 open coding models. Sign in with your Cline account (same login as the Cline CLI/IDE), or paste a direct ClinePass API key (app.cline.bot → Settings → API Keys). A ClinePass subscription unlocks the cline-pass/* models. Reuses the Cline WorkOS OAuth flow."
+  },
+  "devin-desktop": {
+   "id": "devin-desktop",
+   "serviceKinds": [
+    "llm"
+   ],
+   "name": "Devin Desktop",
+   "icon": "terminal",
+   "color": "#6366F1",
+   "textIcon": "DD",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Paste an existing Devin API key from an authenticated Devin session. Key export availability and steps vary by Devin version and account.",
+   "website": "https://devin.ai"
+  },
+  "devin-cli": {
+   "id": "devin-cli",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dv",
+   "name": "Devin CLI",
+   "icon": "terminal",
+   "color": "#6366F1",
+   "textIcon": "DV",
+   "authHint": "Requires the Devin CLI binary. Run `devin auth login` to authenticate, or provide your WINDSURF_API_KEY. Install: https://cli.devin.ai",
+   "website": "https://cli.devin.ai"
+  },
+  "codebuddy-cn": {
+   "id": "codebuddy-cn",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cbcn",
+   "name": "CodeBuddy CN",
+   "icon": "smart_toy",
+   "color": "#006EFF",
+   "textIcon": "CB",
+   "website": "https://copilot.tencent.com",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Tencent CodeBuddy CN (copilot.tencent.com). Sign in via the official CLI device-code flow, or paste a direct API key (sent as Authorization: Bearer). Catalog: GLM / Kimi / MiniMax / DeepSeek / Hunyuan."
+  },
+  "workbuddy": {
+   "id": "workbuddy",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "wb",
+   "name": "WorkBuddy",
+   "icon": "smart_toy",
+   "color": "#1A73E8",
+   "textIcon": "WB",
+   "website": "https://www.workbuddy.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "authHint": "Tencent WorkBuddy (www.workbuddy.ai). Authorize the CLI device flow in the popup; OmniRoute then polls for the token and attaches the required X-Product: SaaS header. The model roster is served by the authenticated catalogue, so it is discovered live rather than listed here. WorkBuddy only accepts streaming requests, which OmniRoute accumulates back into a JSON response for non-streaming callers."
+  },
+  "muse-code": {
+   "id": "muse-code",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mc",
+   "name": "Muse Code (Meta)",
+   "icon": "auto_awesome",
+   "color": "#0866FF",
+   "textIcon": "MC",
+   "website": "https://ai.developer.meta.com/docs/muse-code/auth",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "oauth",
+   "passthroughModels": true,
+   "authHint": "Sign in with the Muse Code device flow (same as `muse login` / CLIProxyAPI `-meta-login`) to use a Muse subscription, or paste a META_API_KEY. Device login keeps the durable dca token and mints the inference key; a 401 remints that key. Wire format is OpenAI Responses (POST /responses)."
+  }
+ },
+ "NOAUTH_PROVIDERS": {
+  "devin-cli-agentic": {
+   "id": "devin-cli-agentic",
+   "alias": "dva",
+   "name": "Devin CLI Agentic Bridge",
+   "icon": "terminal",
+   "color": "#635BFF",
+   "textIcon": "DV",
+   "website": "https://docs.devin.ai/work-with-devin/devin-cli",
+   "noAuth": true,
+   "hasFree": false,
+   "serviceKinds": [
+    "llm"
+   ],
+   "isLocalCli": true,
+   "toolCalling": "emulated",
+   "authHint": "Authentication is owned by the official Devin CLI in its isolated bridge volume.",
+   "notice": {
+    "text": "This provider accepts only the official Devin CLI over local ACP stdio and never falls back to another provider."
+   }
+  },
+  "opencode": {
+   "id": "opencode",
+   "alias": "oc",
+   "name": "OpenCode Free",
+   "icon": "terminal",
+   "color": "#E87040",
+   "textIcon": "OC",
+   "website": "https://opencode.ai",
+   "noAuth": true,
+   "hasFree": true,
+   "serviceKinds": [
+    "llm"
+   ],
+   "authHint": "No API key required — OpenCode's free tier can only be used from within OpenCode (client-contract requests).",
+   "freeNote": "No API key required — public OpenCode endpoint with Kimi, GLM, Qwen, MiMo, MiniMax models. Free tier only works from within OpenCode.",
+   "notice": {
+    "text": "OpenCode Free uses the public OpenCode endpoint (https://opencode.ai/zen/v1). No signup or API key needed. Rate limits apply. OpenCode's free tier can only be used from within OpenCode — requests that do not match the OpenCode client contract are refused with 403 FreeTierError."
+   }
+  },
+  "duckduckgo-web": {
+   "id": "duckduckgo-web",
+   "alias": "ddgw",
+   "name": "DuckDuckGo AI Chat",
+   "icon": "auto_awesome",
+   "color": "#DE5833",
+   "textIcon": "DDG",
+   "website": "https://duckduckgo.com/duckchat",
+   "noAuth": true,
+   "hasFree": true,
+   "serviceKinds": [
+    "llm"
+   ],
+   "freeNote": "Free — anonymous access to multiple AI models via DuckDuckGo.",
+   "authHint": "No credentials required — DuckDuckGo AI Chat is anonymous and free.",
+   "toolCalling": "emulated"
+  },
+  "cloudflare-playground": {
+   "id": "cloudflare-playground",
+   "alias": "cfp",
+   "name": "Cloudflare AI Playground",
+   "icon": "cloud",
+   "color": "#F38020",
+   "textIcon": "CF",
+   "website": "https://playground.ai.cloudflare.com",
+   "noAuth": true,
+   "hasFree": true,
+   "serviceKinds": [
+    "llm"
+   ],
+   "freeNote": "Free — Cloudflare's AI Playground: GLM 5.2, Kimi K2.7 Code, DeepSeek V4 Pro, gpt-oss-120B and 16 more. No account, no API key.",
+   "authHint": "No credentials required — anonymous browser sessions over a reverse-engineered cf_agent WebSocket protocol (Playwright transport).",
+   "notice": {
+    "text": "Cloudflare AI Playground uses a reverse-engineered anonymous WebSocket protocol (no official API). Requires Playwright with a Chromium browser on first request. Rate limits apply per IP (error 3021)."
+   }
+  },
+  "veoaifree-web": {
+   "id": "veoaifree-web",
+   "alias": "veo-free",
+   "name": "Veo AI Free",
+   "icon": "videocam",
+   "color": "#8B5CF6",
+   "textIcon": "VF",
+   "website": "https://veoaifree.com",
+   "noAuth": true,
+   "hasFree": true,
+   "serviceKinds": [
+    "video"
+   ],
+   "freeNote": "Free video generation — VEO 3.1, Seedance. 6 requests/hour.",
+   "authHint": "No auth required. Rate limited to 6 requests/hour per IP."
+  },
+  "auggie": {
+   "id": "auggie",
+   "alias": "aug",
+   "name": "Augment (Auggie CLI)",
+   "icon": "terminal",
+   "color": "#7C3AED",
+   "textIcon": "AU",
+   "website": "https://augmentcode.com",
+   "noAuth": true,
+   "hasFree": false,
+   "serviceKinds": [
+    "llm"
+   ],
+   "isLocalCli": true,
+   "freeNote": "Local passthrough — runs the Augment CLI (`auggie`) on this machine. Auth is handled by `auggie login`, not OmniRoute.",
+   "authHint": "No API key stored by OmniRoute. Install the Auggie CLI and run `auggie login` on this machine, then OmniRoute spawns it locally for each request.",
+   "notice": {
+    "text": "Augment (Auggie CLI) requires the `auggie` binary installed and authenticated locally (`auggie login`). OmniRoute spawns it as a subprocess and never sees or stores your Augment credentials."
+   }
+  },
+  "zcode": {
+   "id": "zcode",
+   "alias": "zc",
+   "name": "ZCode (GLM Coding Plan)",
+   "icon": "terminal",
+   "color": "#3B82F6",
+   "textIcon": "ZC",
+   "website": "https://zcode.z.ai",
+   "noAuth": true,
+   "hasFree": false,
+   "serviceKinds": [
+    "llm"
+   ],
+   "isLocalCli": true,
+   "authHint": "No API key stored by OmniRoute. The local ZCode app-server uses the existing builtin:zai-coding-plan login.",
+   "notice": {
+    "text": "ZCode runs locally through its native app-server. OmniRoute never receives or stores the Z.ai credential."
+   }
+  },
+  "codex-app-server": {
+   "id": "codex-app-server",
+   "alias": "cxa",
+   "name": "OpenAI Codex (App-Server)",
+   "icon": "code",
+   "color": "#10A37F",
+   "textIcon": "CA",
+   "website": "https://developers.openai.com/codex/cli",
+   "noAuth": true,
+   "hasFree": false,
+   "serviceKinds": [
+    "llm"
+   ],
+   "isLocalCli": true,
+   "authHint": "No token stored by OmniRoute. The Codex CLI app-server manages its own ChatGPT sign-in (~/.codex/auth.json, auto-refreshed). Use “Sign in with ChatGPT” if the CLI is not yet authenticated.",
+   "notice": {
+    "text": "OpenAI Codex (App-Server) drives the Codex CLI's local app-server (JSON-RPC over WebSocket). The CLI self-manages its OpenAI OAuth, so OmniRoute never sees or replays your token. Requires the codex CLI reachable at the configured app-server URL; sign in via the CLI or the dashboard “Sign in with ChatGPT” action."
+   }
+  },
+  "uncloseai": {
+   "id": "uncloseai",
+   "alias": "unc",
+   "name": "UncloseAI",
+   "icon": "auto_awesome",
+   "color": "#8B5CF6",
+   "textIcon": "UN",
+   "website": "https://uncloseai.com",
+   "noAuth": true,
+   "hasFree": true,
+   "passthroughModels": true,
+   "serviceKinds": [
+    "llm"
+   ],
+   "authHint": "No auth required. API accepts any non-empty string as key for identification. If older built-in models return 404, use Available Models → Import from /models or Auto-Sync; verified live model: Lorbus/Qwen3.6-27B-int4-AutoRound.",
+   "freeNote": "Free forever — no signup, no credit card. OpenAI-compatible endpoints.",
+   "notice": {
+    "text": "UncloseAI needs no API key. API accepts any non-empty string as key for identification. If older built-in models return 404, use Available Models → Import from /models or Auto-Sync."
+   }
+  },
+  "aihorde": {
+   "id": "aihorde",
+   "alias": "horde",
+   "name": "AI Horde",
+   "icon": "diversity_3",
+   "color": "#8B5CF6",
+   "textIcon": "AH",
+   "website": "https://aihorde.net",
+   "noAuth": true,
+   "hasFree": true,
+   "passthroughModels": true,
+   "serviceKinds": [
+    "llm"
+   ],
+   "authHint": "No API key required — uses AI Horde's documented anonymous key. Adding a free aihorde.net key is optional and only buys higher queue priority (kudos).",
+   "freeNote": "Crowdsourced inference from volunteer GPUs. Throughput is a shared queue, not a quota: there is no RPM/RPD cap, but waits grow when the network is busy.",
+   "notice": {
+    "text": "AI Horde routes to volunteer-run workers, so chat and image jobs can take minutes and tool calling is unavailable. Chat models come from the live oai.aihorde.net catalog. Image models are listed only while Horde reports at least one worker. An optional aihorde.net API key raises queue priority (kudos)."
+   }
+  }
+ },
+ "LOCAL_PROVIDERS": {
+  "mlx-gemma": {
+   "id": "mlx-gemma",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mlx-gemma",
+   "name": "MLX Gemma 26B",
+   "icon": "memory",
+   "color": "#8B5CF6",
+   "textIcon": "MG",
+   "website": "https://github.com/ml-explore/mlx",
+   "authHint": "No API key required. Runs mlx-lm server locally on port 11435. Requires uv and mlx-lm installed. Model: mlx-community/gemma-4-26B-A4B-it-qat-q4_0-mlx-aligned (~15.9GB peak memory).",
+   "localDefault": "http://localhost:11435/v1",
+   "passthroughModels": false
+  },
+  "mlx-qwen": {
+   "id": "mlx-qwen",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mlx-qwen",
+   "name": "MLX Qwen 3.8 27B",
+   "icon": "memory",
+   "color": "#EC4899",
+   "textIcon": "MQ",
+   "website": "https://github.com/ml-explore/mlx",
+   "authHint": "No API key required. Runs mlx-lm server locally on port 11436. Requires uv and mlx-lm installed. Model: maglun/Qwen3.8-27B-MLX-Mixed-3.80bpw (~13.1GB peak memory).",
+   "localDefault": "http://localhost:11436/v1",
+   "passthroughModels": false
+  },
+  "ollama-local": {
+   "id": "ollama-local",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ollama",
+   "name": "Ollama",
+   "icon": "pets",
+   "color": "#58A6FF",
+   "textIcon": "OL",
+   "website": "https://ollama.com",
+   "authHint": "No API key required. Ollama runs locally — configure its OpenAI-compatible base URL (default: http://localhost:11434/v1) and make sure Ollama is running before connecting.",
+   "localDefault": "http://localhost:11434/v1",
+   "passthroughModels": true
+  },
+  "lm-studio": {
+   "id": "lm-studio",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "lmstudio",
+   "name": "LM Studio",
+   "icon": "server",
+   "color": "#4A148C",
+   "textIcon": "LM",
+   "website": "https://lmstudio.ai",
+   "authHint": "API key optional. Configure the local LM Studio OpenAI-compatible base URL (default: http://localhost:1234/v1).",
+   "localDefault": "http://localhost:1234/v1",
+   "passthroughModels": true
+  },
+  "vllm": {
+   "id": "vllm",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "vllm",
+   "name": "vLLM",
+   "icon": "memory",
+   "color": "#0F766E",
+   "textIcon": "VL",
+   "website": "https://github.com/vllm-project/vllm",
+   "authHint": "API key optional. Configure the local vLLM OpenAI-compatible base URL (default: http://localhost:8000/v1).",
+   "localDefault": "http://localhost:8000/v1",
+   "passthroughModels": true
+  },
+  "lemonade": {
+   "id": "lemonade",
+   "serviceKinds": [
+    "llm",
+    "embedding"
+   ],
+   "alias": "lemonade",
+   "name": "Lemonade Server",
+   "icon": "bolt",
+   "color": "#F59E0B",
+   "textIcon": "LM",
+   "website": "https://lemonade-server.ai",
+   "authHint": "API key optional. Configure the local Lemonade OpenAI-compatible base URL (default: http://localhost:13305/api/v1).",
+   "localDefault": "http://localhost:13305/api/v1",
+   "passthroughModels": true
+  },
+  "llamafile": {
+   "id": "llamafile",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "llamafile",
+   "name": "Llamafile",
+   "icon": "article",
+   "color": "#EA580C",
+   "textIcon": "LF",
+   "website": "https://github.com/Mozilla-Ocho/llamafile",
+   "authHint": "API key optional. Configure the local Llamafile OpenAI-compatible base URL (default: http://127.0.0.1:8080/v1).",
+   "localDefault": "http://127.0.0.1:8080/v1",
+   "passthroughModels": true
+  },
+  "llama-cpp": {
+   "id": "llama-cpp",
+   "serviceKinds": [
+    "llm",
+    "embedding"
+   ],
+   "alias": "llamacpp",
+   "name": "llama.cpp",
+   "icon": "memory",
+   "color": "#795548",
+   "textIcon": "LC",
+   "website": "https://github.com/ggml-org/llama.cpp",
+   "authHint": "API key optional (use any value, e.g. any-value). Configure the llama-server OpenAI-compatible base URL (default: http://127.0.0.1:8080/v1). Note: if Llamafile is also installed, both default to port 8080 — run only one at a time or override the port.",
+   "localDefault": "http://127.0.0.1:8080/v1",
+   "passthroughModels": true
+  },
+  "triton": {
+   "id": "triton",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "triton",
+   "name": "NVIDIA Triton",
+   "icon": "developer_board",
+   "color": "#76B900",
+   "textIcon": "TR",
+   "website": "https://developer.nvidia.com/triton-inference-server",
+   "authHint": "API key optional. Configure the Triton OpenAI-compatible base URL (default: http://localhost:8000/v1).",
+   "localDefault": "http://localhost:8000/v1",
+   "passthroughModels": true
+  },
+  "docker-model-runner": {
+   "id": "docker-model-runner",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "dmr",
+   "name": "Docker Model Runner",
+   "icon": "inventory_2",
+   "color": "#2496ED",
+   "textIcon": "DM",
+   "website": "https://docs.docker.com/ai/model-runner/",
+   "authHint": "API key optional. Configure the local Docker Model Runner OpenAI-compatible base URL (default: http://localhost:12434/v1).",
+   "localDefault": "http://localhost:12434/v1",
+   "passthroughModels": true
+  },
+  "xinference": {
+   "id": "xinference",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "xinference",
+   "name": "XInference",
+   "icon": "hub",
+   "color": "#DC2626",
+   "textIcon": "XI",
+   "website": "https://inference.readthedocs.io",
+   "authHint": "API key optional. Configure the local XInference OpenAI-compatible base URL (default: http://localhost:9997/v1).",
+   "localDefault": "http://localhost:9997/v1",
+   "passthroughModels": true
+  },
+  "oobabooga": {
+   "id": "oobabooga",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ooba",
+   "name": "oobabooga",
+   "icon": "dns",
+   "color": "#8B5CF6",
+   "textIcon": "OO",
+   "website": "https://github.com/oobabooga/text-generation-webui",
+   "authHint": "API key optional. Configure the local oobabooga OpenAI-compatible base URL (default: http://localhost:5000/v1).",
+   "localDefault": "http://localhost:5000/v1",
+   "passthroughModels": true
+  },
+  "sdwebui": {
+   "id": "sdwebui",
+   "serviceKinds": [],
+   "alias": "sdwebui",
+   "name": "SD WebUI",
+   "icon": "brush",
+   "color": "#FF7043",
+   "textIcon": "SD",
+   "website": "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
+   "hasFree": true,
+   "authHint": "No API key required. Configure the local WebUI base URL (default: http://localhost:7860).",
+   "localDefault": "http://localhost:7860"
+  },
+  "comfyui": {
+   "id": "comfyui",
+   "serviceKinds": [],
+   "alias": "comfyui",
+   "name": "ComfyUI",
+   "icon": "account_tree",
+   "color": "#4CAF50",
+   "textIcon": "CF",
+   "website": "https://github.com/comfyanonymous/ComfyUI",
+   "hasFree": true,
+   "authHint": "No API key required. Configure the local ComfyUI base URL (default: http://localhost:8188).",
+   "localDefault": "http://localhost:8188"
+  }
+ },
+ "UPSTREAM_PROXY_PROVIDERS": {
+  "cliproxyapi": {
+   "id": "cliproxyapi",
+   "serviceKinds": [],
+   "alias": "cpa",
+   "name": "CLIProxyAPI",
+   "icon": "proxy",
+   "color": "#6366F1",
+   "textIcon": "CPA",
+   "website": "https://github.com/router-for-me/CLIProxyAPI",
+   "defaultPort": 8317,
+   "healthEndpoint": "/v1/models",
+   "managementPrefix": "/v0/management",
+   "configDir": "~/.cli-proxy-api",
+   "binaryName": "cli-proxy-api",
+   "githubRepo": "router-for-me/CLIProxyAPI"
+  },
+  "9router": {
+   "id": "9router",
+   "serviceKinds": [],
+   "alias": "nr",
+   "name": "9router",
+   "icon": "router",
+   "color": "#0EA5E9",
+   "textIcon": "9R",
+   "website": "https://www.npmjs.com/package/9router",
+   "defaultPort": 20130,
+   "healthEndpoint": "/api/health",
+   "npmPackage": "9router",
+   "embedded": true,
+   "isEmbeddedService": true,
+   "riskNoticeVariant": "embedded-service"
+  }
+ },
+ "WEB_COOKIE_PROVIDERS": {
+  "chatgpt-web": {
+   "id": "chatgpt-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "name": "ChatGPT Web (Clean Room)",
+   "icon": "auto_awesome",
+   "color": "#10A37F",
+   "textIcon": "CG",
+   "website": "https://chatgpt.com",
+   "authHint": "Paste Playwright-compatible storage-state JSON exported from a logged-in chatgpt.com browser context. Cookie headers and individual token values are not accepted.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "none"
+  },
+  "chatgpt-web-codex": {
+   "id": "chatgpt-web-codex",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cgpt-codex",
+   "name": "ChatGPT Web (Codex)",
+   "icon": "terminal",
+   "color": "#10A37F",
+   "textIcon": "CC",
+   "website": "https://chatgpt.com",
+   "authHint": "Paste the full ChatGPT Cookie header. OmniRoute verifies it in an isolated headless browser profile.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "native"
+  },
+  "grok-web": {
+   "id": "grok-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gw",
+   "name": "Grok Web (Subscription)",
+   "icon": "auto_awesome",
+   "color": "#1DA1F2",
+   "textIcon": "GW",
+   "website": "https://grok.com",
+   "authHint": "Paste the full grok.com cookie line from DevTools → Application → Cookies. Include both `sso` and `sso-rw` (e.g. `sso=...; sso-rw=...`) — Grok's anti-bot rejects `sso` on its own.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "gemini-web": {
+   "id": "gemini-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "gweb",
+   "name": "Gemini Web (Free)",
+   "icon": "auto_awesome",
+   "color": "#4285F4",
+   "textIcon": "GWeb",
+   "website": "https://gemini.google.com",
+   "authHint": "Paste the full cookie header, the __Secure-1PSID value, or the JSON export containing cookies from gemini.google.com. Include __Secure-1PSIDTS and __Secure-1PSIDCC when available.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated"
+  },
+  "perplexity-web": {
+   "id": "perplexity-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "pplx-web",
+   "name": "Perplexity Web (Pro/Max)",
+   "icon": "search",
+   "color": "#20808D",
+   "textIcon": "PW",
+   "website": "https://www.perplexity.ai",
+   "authHint": "Paste your __Secure-next-auth.session-token cookie value from perplexity.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated"
+  },
+  "blackbox-web": {
+   "id": "blackbox-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "bb-web",
+   "name": "Blackbox Web (Subscription)",
+   "icon": "view_in_ar",
+   "color": "#1A1A2E",
+   "textIcon": "BW",
+   "website": "https://app.blackbox.ai",
+   "authHint": "Paste your __Secure-authjs.session-token value or full cookie header from app.blackbox.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated"
+  },
+  "muse-spark-web": {
+   "id": "muse-spark-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ms-web",
+   "name": "Muse Spark Web (Meta AI)",
+   "icon": "auto_awesome",
+   "color": "#0866FF",
+   "textIcon": "MS",
+   "website": "https://www.meta.ai",
+   "hasFree": true,
+   "freeNote": "Free with login — Meta AI platform with Llama models.",
+   "authHint": "Paste your ecto_1_sess cookie AND the ecto1:... WS auth token from meta.ai. Capture the ecto1: token in DevTools → Network → WS → the clippy request's Authorization query param. Example: ecto_1_sess=4240a308...NVDg0; ecto1:ABCD...",
+   "toolCalling": "emulated"
+  },
+  "claude-web": {
+   "id": "claude-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cw",
+   "name": "Claude Web",
+   "icon": "auto_awesome",
+   "color": "#D97757",
+   "textIcon": "CW",
+   "website": "https://claude.ai",
+   "authHint": "Paste your session cookie from claude.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "none"
+  },
+  "deepseek-web": {
+   "id": "deepseek-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ds-web",
+   "name": "DeepSeek Web",
+   "icon": "auto_awesome",
+   "color": "#4D6BFE",
+   "textIcon": "DS",
+   "website": "https://chat.deepseek.com",
+   "authHint": "Paste your userToken from chat.deepseek.com — DevTools → Application → Local Storage → userToken",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated"
+  },
+  "copilot-web": {
+   "id": "copilot-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "copilot",
+   "name": "Microsoft Copilot Web",
+   "icon": "auto_awesome",
+   "color": "#0078D4",
+   "textIcon": "CP",
+   "website": "https://copilot.microsoft.com",
+   "authHint": "Paste the access_token from an authenticated copilot.microsoft.com request (DevTools → Network → Authorization), or export a HAR while logged in",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "copilot-m365-web": {
+   "id": "copilot-m365-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "m365copilot",
+   "name": "Microsoft 365 Copilot (BizChat)",
+   "icon": "business_center",
+   "color": "#0078D4",
+   "textIcon": "M365",
+   "website": "https://m365.cloud.microsoft/chat",
+   "authHint": "Sign in at m365.cloud.microsoft/chat, then open DevTools → Network → filter 'WS' → click the Chathub WebSocket connection. Copy both the access_token query parameter AND the account-specific Chathub path segment from its request URL (wss://…/Chathub/<path>?…&access_token=…). It is NOT an Authorization: Bearer header on an XHR/Fetch request. The token is short-lived; this is an unofficial integration. Optional: store a refresh_token in providerSpecificData.refreshToken (any Microsoft device-code/refresh flow for the substrate.office.com/sydney scopes) and OmniRoute pre-flight-refreshes the access token itself — otherwise re-capture after every ~75 min expiry.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "t3-web": {
+   "id": "t3-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "t3chat",
+   "name": "t3.chat (Pro/Free)",
+   "icon": "auto_awesome",
+   "color": "#7C3AED",
+   "textIcon": "T3",
+   "website": "https://t3.chat",
+   "hasFree": true,
+   "freeNote": "Free tier gives limited model access. Pro ($8/month) unlocks 50+ models.",
+   "authHint": "Open t3.chat in your browser, log in, then open DevTools → Application → Local Storage → https://t3.chat. Copy the value of 'convex-session-id'. Also open DevTools → Network, copy the Cookie header from any request. Paste both values here. See provider setup docs for a step-by-step guide.",
+   "toolCalling": "emulated"
+  },
+  "inner-ai": {
+   "id": "inner-ai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "in-ai",
+   "name": "Inner.ai (Subscription)",
+   "icon": "auto_awesome",
+   "color": "#1A56DB",
+   "textIcon": "IA",
+   "website": "https://app.innerai.com",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Paste your token cookie and email separated by a space: open DevTools → Application → Cookies → .innerai.com, copy the token value, then append a space and your Inner.ai login email. Example: eyJhbG... user@example.com",
+   "toolCalling": "emulated"
+  },
+  "adapta-web": {
+   "id": "adapta-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "adp-web",
+   "name": "Adapta.org (Adapta One Web)",
+   "icon": "auto_awesome",
+   "color": "#6E3AD3",
+   "textIcon": "AW",
+   "website": "https://agent.adapta.one",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Paste your __client cookie value from .clerk.agent.adapta.one (DevTools → Application → Cookies)",
+   "toolCalling": "emulated"
+  },
+  "lmarena": {
+   "id": "lmarena",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "lma",
+   "name": "Arena (Free)",
+   "icon": "auto_awesome",
+   "color": "#FF6B6B",
+   "textIcon": "AR",
+   "website": "https://arena.ai",
+   "hasFree": true,
+   "freeNote": "Free model comparison platform (formerly LMArena) at arena.ai — Direct-chat catalog of chat models (GPT, Claude, Gemini, Llama, …). No subscription required.",
+   "authHint": "Paste the full Cookie header from arena.ai (DevTools → Network → request → Cookie). Include arena-auth-prod-v1.0/.1… and cf_clearance/__cf_bm when present. OmniRoute uses Chrome TLS impersonation; if Arena still 403s, set providerSpecificData.recaptchaV3Token from a live browser session.",
+   "riskNoticeVariant": "webCookie"
+  },
+  "yuanbao-web": {
+   "id": "yuanbao-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ybw",
+   "name": "Tencent Yuanbao (Free)",
+   "icon": "auto_awesome",
+   "color": "#0052D9",
+   "textIcon": "YB",
+   "website": "https://yuanbao.tencent.com",
+   "hasFree": true,
+   "freeNote": "Free consumer web session — DeepSeek V3/R1 and Hunyuan / Hunyuan-T1, optional web search. No subscription required. Rate limits apply.",
+   "authHint": "Log in to yuanbao.tencent.com, then paste the full Cookie header (DevTools → Network → any /api request → Request Headers → Cookie). It must contain hy_user and hy_token.",
+   "riskNoticeVariant": "webCookie"
+  },
+  "tencent-aistudio-web": {
+   "id": "tencent-aistudio-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tasw",
+   "name": "Tencent AI Studio (Free)",
+   "icon": "auto_awesome",
+   "color": "#0052D9",
+   "textIcon": "TAS",
+   "website": "https://aistudio.tencent.ai",
+   "hasFree": true,
+   "freeNote": "Free web session on Tencent AI Studio (aistudio.tencent.ai) — Direct chat with Hunyuan models (hy3-g, HunyuanDefault, Hunyuan3D). Cookie authentication.",
+   "authHint": "Log in to aistudio.tencent.ai, open DevTools -> Network, copy any request Cookie header containing session tokens.",
+   "riskNoticeVariant": "webCookie"
+  },
+  "huggingchat": {
+   "id": "huggingchat",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "huggingchat",
+   "name": "HuggingChat (Free)",
+   "icon": "auto_awesome",
+   "color": "#FFD21E",
+   "textIcon": "HC",
+   "website": "https://huggingface.co/chat",
+   "hasFree": true,
+   "freeNote": "Free LLM chat — no subscription required. Rate limits apply.",
+   "authHint": "Paste the full Cookie header from huggingface.co/chat (DevTools → Network → /chat/conversation → Request Headers → Cookie). It should include hf-chat and may also include token / aws-waf-token.",
+   "riskNoticeVariant": "webCookie"
+  },
+  "poe-web": {
+   "id": "poe-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "poe",
+   "name": "Poe Web (Subscription)",
+   "icon": "auto_awesome",
+   "color": "#6C3AED",
+   "textIcon": "PW",
+   "website": "https://poe.com",
+   "authHint": "Paste your p-b cookie value from poe.com (DevTools → Application → Cookies → p-b)",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "venice-web": {
+   "id": "venice-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ven",
+   "name": "Venice Web (Privacy)",
+   "icon": "auto_awesome",
+   "color": "#22C55E",
+   "textIcon": "VW",
+   "website": "https://venice.ai",
+   "authHint": "Paste your session cookie from venice.ai (DevTools → Application → Cookies)",
+   "riskNoticeVariant": "webCookie"
+  },
+  "v0-vercel-web": {
+   "id": "v0-vercel-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "v0-vercel-web",
+   "name": "v0 Vercel Web (Code Gen)",
+   "icon": "auto_awesome",
+   "color": "#000000",
+   "textIcon": "V0",
+   "website": "https://v0.dev",
+   "authHint": "Paste your session cookie from v0.dev (DevTools → Application → Cookies)",
+   "riskNoticeVariant": "webCookie"
+  },
+  "kimi-web": {
+   "id": "kimi-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "kimi-web",
+   "name": "Kimi Web",
+   "icon": "auto_awesome",
+   "color": "#2563EB",
+   "textIcon": "KW",
+   "website": "https://www.kimi.ai",
+   "authHint": "Paste access_token from www.kimi.ai DevTools → Application → Local Storage. A legacy kimi-auth cookie is also accepted.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "doubao-web": {
+   "id": "doubao-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "db",
+   "name": "Dola Web (ByteDance)",
+   "icon": "auto_awesome",
+   "color": "#3B82F6",
+   "textIcon": "DA",
+   "website": "https://www.dola.com",
+   "authHint": "Paste the full Cookie header from www.dola.com. It should include sessionid, ttwid, and s_v_web_id. If s_v_web_id is unavailable, fp=verify_... from a chat/completion request URL can be used as a fallback.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "zenmux-free": {
+   "id": "zenmux-free",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zmf",
+   "name": "ZenMux Free (Web)",
+   "icon": "bolt",
+   "color": "#667eea",
+   "textIcon": "ZF",
+   "website": "https://zenmux.ai",
+   "hasFree": true,
+   "freeNote": "Free tier (5 Flows/5h, 38.64 Flows/week) — DeepSeek V3.2, GLM 4.7 Flash Free and more. No subscription required.",
+   "authHint": "Login at zenmux.ai, then export all cookies using EditThisCookie or Cookie-Editor and paste the full Cookie header string here. Refresh every ~30 days."
+  },
+  "tinycms-web": {
+   "id": "tinycms-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tcw",
+   "name": "TinyCMS Web (Free/Sub)",
+   "icon": "layers",
+   "color": "#ED8936",
+   "textIcon": "TC",
+   "website": "https://site.tinycms.xyz",
+   "hasFree": true,
+   "freeNote": "Free tier has access to GPT 5.4, Gemini 3.5, and Grok 4.20 models. No login required. Subscription grants 300 requests/day for advanced models.",
+   "authHint": "Go to site.tinycms.xyz, open DevTools → Application → Local Storage, copy the value of 'app-config-uuid' (starts with 'R'), and paste it here."
+  },
+  "zai-web": {
+   "id": "zai-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "zw",
+   "name": "Z.ai Web",
+   "icon": "auto_awesome",
+   "color": "#2563EB",
+   "textIcon": "ZW",
+   "website": "https://chat.z.ai",
+   "hasFree": true,
+   "freeNote": "Consumer web session for the four models currently visible in chat.z.ai. Distinct from the API-key zai/glm providers.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Copy the \"token\" value from chat.z.ai → DevTools → Application → Local Storage. Do not copy cookies; OmniRoute handles the per-request CAPTCHA through its browser transport."
+  },
+  "promptql": {
+   "id": "promptql",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "pql",
+   "name": "PromptQL (Unofficial/Experimental)",
+   "icon": "auto_awesome",
+   "color": "#5B21B6",
+   "textIcon": "PQL",
+   "website": "https://prompt.ql.app",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Paste the Bearer JWT from prompt.ql.app DevTools → Network → graphql → Authorization (token only). Optional projectId + session Cookie for refresh."
+  },
+  "notion-web": {
+   "id": "notion-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "nw",
+   "name": "Notion AI Web (Unofficial/Experimental)",
+   "icon": "auto_awesome",
+   "color": "#000000",
+   "textIcon": "NW",
+   "website": "https://www.notion.so",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Paste only the token_v2 cookie VALUE from app.notion.com (DevTools → Application → Cookies → token_v2). Do not paste token_v2= or the full Cookie header. Workspace is auto-detected; space_id / notion_user_id are optional."
+  },
+  "adobe-firefly": {
+   "id": "adobe-firefly",
+   "serviceKinds": [],
+   "alias": "firefly",
+   "name": "Adobe Firefly (Image/Video)",
+   "icon": "auto_awesome",
+   "color": "#EB1000",
+   "textIcon": "FF",
+   "website": "https://firefly.adobe.com",
+   "authHint": "RECOMMENDED: firefly.adobe.com signed-in → F12 → Network → click firefly-3p.ff.adobe.io (generate-async or models/discovery) → Request Headers → Authorization → copy the token AFTER 'Bearer ' (starts with eyJ…). Cookie-only from firefly.adobe.com mints a GUEST token → 401/403; only multi-domain IMS cookies (adobelogin.com) or that Bearer JWT work. Unofficial/experimental media + Limits.",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie"
+  },
+  "hyperagent": {
+   "id": "hyperagent",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ha",
+   "name": "HyperAgent (Unofficial/Experimental)",
+   "icon": "auto_awesome",
+   "color": "#6C5CE7",
+   "textIcon": "HA",
+   "website": "https://hyperagent.com",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Paste the full Cookie header from hyperagent.com (DevTools → Network → any request → Request Headers → Cookie). Session cookies power chat + billing usage."
+  },
+  "notrack-web": {
+   "id": "notrack-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ntw",
+   "name": "NoTrack Web (Free)",
+   "icon": "auto_awesome",
+   "color": "#0EA5E9",
+   "textIcon": "NT",
+   "website": "https://notrack.ai",
+   "hasFree": true,
+   "freeNote": "Free consumer chat session on notrack.ai — Direct chat with the notrack C assistant. No subscription required; rate limits apply.",
+   "authHint": "Log in to notrack.ai, then paste the full Cookie header (DevTools → Network → any /api request → Request Headers → Cookie). It must contain uid, si_usr_id, and si_ses_id.",
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated"
+  },
+  "conol-web": {
+   "id": "conol-web",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cnl",
+   "name": "Conol (Unofficial/Experimental)",
+   "icon": "auto_awesome",
+   "color": "#F6C945",
+   "textIcon": "CO",
+   "website": "https://conol.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "authHint": "Use browser sign-in, or paste the full Cookie header from conol.ai. The __Secure-better-auth.session_token cookie is required."
+  },
+  "twinmind": {
+   "id": "twinmind",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "tm",
+   "name": "Twinmind (Unofficial/Experimental)",
+   "icon": "auto_awesome",
+   "color": "#4F46E5",
+   "textIcon": "TM",
+   "website": "https://app.twinmind.com",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated",
+   "authHint": "Paste the stsTokenManager JSON from app.twinmind.com IndexedDB (accessToken + refreshToken). Chat uses accessToken; refreshToken mints a new JWT when it expires."
+  },
+  "syntx": {
+   "id": "syntx",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "stx",
+   "name": "SYNTX.ai (Unofficial/Experimental)",
+   "icon": "auto_awesome",
+   "color": "#FF4D00",
+   "textIcon": "SX",
+   "website": "https://syntx.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated",
+   "authHint": "Paste the Authorization Bearer JWT from syntx.ai (DevTools → Network → api.syntx.ai → Request Headers). Chat, models, Limits, and media use this token."
+  },
+  "maxai": {
+   "id": "maxai",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "mx",
+   "name": "MaxAI",
+   "icon": "auto_awesome",
+   "color": "#6D28D9",
+   "textIcon": "MX",
+   "website": "https://www.maxai.co",
+   "toolCalling": "emulated",
+   "authHint": "Sign in once (email code or browser) to mint a MaxAI access token. OmniRoute signs each request, routes it through residential egress, and refreshes the token browserlessly, so a connection stays valid for about a year without re-login."
+  },
+  "uc": {
+   "id": "uc",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "ucn",
+   "name": "UC (uncensored.com)",
+   "icon": "auto_awesome",
+   "color": "#111827",
+   "textIcon": "UC",
+   "website": "https://uncensored.com",
+   "toolCalling": "emulated",
+   "authHint": "Sign in once with an email code to bootstrap a UC (uncensored.com) subscription session. OmniRoute mints a fresh short-lived token per request browserlessly, so the connection renews on its own; you only re-run the email login about once a month when the subscription session rolls over."
+  },
+  "chatplayground": {
+   "id": "chatplayground",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cpl",
+   "name": "ChatPlayground",
+   "icon": "auto_awesome",
+   "color": "#7C3AED",
+   "textIcon": "CP",
+   "website": "https://web.chatplayground.ai",
+   "subscriptionRisk": true,
+   "riskNoticeVariant": "webCookie",
+   "toolCalling": "emulated",
+   "authHint": "Paste your Clerk session token or full cookie export containing __client and __session from web.chatplayground.ai. OmniRoute auto-mints fresh short-lived Clerk session JWTs."
+  }
+ },
+ "AUDIO_ONLY_PROVIDERS": {
+  "deepgram": {
+   "id": "deepgram",
+   "serviceKinds": [],
+   "alias": "dg",
+   "name": "Deepgram",
+   "icon": "mic",
+   "color": "#13EF93",
+   "textIcon": "DG",
+   "website": "https://deepgram.com"
+  },
+  "assemblyai": {
+   "id": "assemblyai",
+   "serviceKinds": [],
+   "alias": "aai",
+   "name": "AssemblyAI",
+   "icon": "record_voice_over",
+   "color": "#0062FF",
+   "textIcon": "AA",
+   "website": "https://assemblyai.com"
+  },
+  "soniox": {
+   "id": "soniox",
+   "serviceKinds": [],
+   "alias": "sx",
+   "name": "Soniox",
+   "icon": "mic",
+   "color": "#5B5BD6",
+   "textIcon": "SX",
+   "website": "https://soniox.com"
+  },
+  "elevenlabs": {
+   "id": "elevenlabs",
+   "serviceKinds": [],
+   "alias": "el",
+   "name": "ElevenLabs",
+   "icon": "record_voice_over",
+   "color": "#6C47FF",
+   "textIcon": "EL",
+   "website": "https://elevenlabs.io"
+  },
+  "cartesia": {
+   "id": "cartesia",
+   "serviceKinds": [],
+   "alias": "cartesia",
+   "name": "Cartesia",
+   "icon": "spatial_audio",
+   "color": "#FF4F8B",
+   "textIcon": "CA",
+   "website": "https://cartesia.ai"
+  },
+  "fishaudio": {
+   "id": "fishaudio",
+   "serviceKinds": [],
+   "alias": "fishaudio",
+   "name": "Fish Audio",
+   "icon": "graphic_eq",
+   "color": "#3B82F6",
+   "textIcon": "FA",
+   "website": "https://fish.audio"
+  },
+  "playht": {
+   "id": "playht",
+   "serviceKinds": [],
+   "alias": "playht",
+   "name": "PlayHT",
+   "icon": "play_circle",
+   "color": "#00B4D8",
+   "textIcon": "PH",
+   "website": "https://play.ht"
+  },
+  "inworld": {
+   "id": "inworld",
+   "serviceKinds": [],
+   "alias": "inworld",
+   "name": "Inworld",
+   "icon": "voice_chat",
+   "color": "#7B2EF2",
+   "textIcon": "IW",
+   "website": "https://inworld.ai"
+  },
+  "aws-polly": {
+   "id": "aws-polly",
+   "serviceKinds": [],
+   "alias": "polly",
+   "name": "AWS Polly",
+   "icon": "record_voice_over",
+   "color": "#FF9900",
+   "textIcon": "PL",
+   "website": "https://aws.amazon.com/polly/",
+   "authHint": "Use AWS Secret Access Key as API key; set providerSpecificData.accessKeyId and optional region."
+  },
+  "gladia": {
+   "id": "gladia",
+   "serviceKinds": [],
+   "alias": "gladia",
+   "name": "Gladia",
+   "icon": "record_voice_over",
+   "color": "#6425FE",
+   "textIcon": "GL",
+   "website": "https://gladia.io"
+  },
+  "rev-ai": {
+   "id": "rev-ai",
+   "serviceKinds": [],
+   "alias": "revai",
+   "name": "Rev AI",
+   "icon": "record_voice_over",
+   "color": "#FF5C35",
+   "textIcon": "RV",
+   "website": "https://www.rev.ai"
+  },
+  "speechmatics": {
+   "id": "speechmatics",
+   "serviceKinds": [],
+   "alias": "sm",
+   "name": "Speechmatics",
+   "icon": "record_voice_over",
+   "color": "#0A2540",
+   "textIcon": "SM",
+   "website": "https://www.speechmatics.com",
+   "hasFree": true,
+   "freeNote": "Free tier — 8 hours/month, no credit card required. Batch (async) mode only."
+  }
+ },
+ "SEARCH_PROVIDERS": {
+  "perplexity-search": {
+   "id": "perplexity-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "pplx-search",
+   "name": "Perplexity Search",
+   "icon": "search",
+   "color": "#20808D",
+   "textIcon": "PS",
+   "website": "https://docs.perplexity.ai/guides/search-quickstart",
+   "authHint": "Same API key as Perplexity (pplx-...)"
+  },
+  "serper-search": {
+   "id": "serper-search",
+   "alias": "serper-search",
+   "name": "Serper Search",
+   "icon": "search",
+   "color": "#4285F4",
+   "textIcon": "SP",
+   "website": "https://serper.dev",
+   "hasFree": true,
+   "authHint": "API key from serper.dev dashboard",
+   "serviceKinds": [
+    "webSearch"
+   ]
+  },
+  "brave-search": {
+   "id": "brave-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "brave-search",
+   "name": "Brave Search",
+   "icon": "travel_explore",
+   "color": "#FB542B",
+   "textIcon": "BR",
+   "website": "https://brave.com/search/api",
+   "hasFree": false,
+   "authHint": "Subscription token from Brave Search API dashboard"
+  },
+  "exa-search": {
+   "id": "exa-search",
+   "alias": "exa-search",
+   "name": "Exa Search",
+   "icon": "neurology",
+   "color": "#1E40AF",
+   "textIcon": "EX",
+   "website": "https://exa.ai",
+   "hasFree": true,
+   "authHint": "API key from dashboard.exa.ai",
+   "serviceKinds": [
+    "webSearch",
+    "webFetch"
+   ]
+  },
+  "tavily-search": {
+   "id": "tavily-search",
+   "alias": "tavily-search",
+   "name": "Tavily Search",
+   "icon": "manage_search",
+   "color": "#5B4FDB",
+   "textIcon": "TV",
+   "website": "https://tavily.com",
+   "hasFree": true,
+   "authHint": "API key from app.tavily.com (format: tvly-...)",
+   "serviceKinds": [
+    "webSearch",
+    "webFetch"
+   ]
+  },
+  "anysearch-search": {
+   "id": "anysearch-search",
+   "alias": "anysearch",
+   "name": "AnySearch",
+   "icon": "travel_explore",
+   "color": "#0D9488",
+   "textIcon": "AS",
+   "website": "https://anysearch.com",
+   "hasFree": true,
+   "authHint": "Optional API key from anysearch.com (as_sk_...) - free 1000/day; keyless tier has lower limits",
+   "serviceKinds": [
+    "webSearch",
+    "webFetch"
+   ]
+  },
+  "firecrawl": {
+   "id": "firecrawl",
+   "alias": "fc",
+   "name": "Firecrawl",
+   "icon": "language",
+   "color": "#FB923C",
+   "textIcon": "FC",
+   "website": "https://firecrawl.dev",
+   "hasFree": true,
+   "authHint": "API key from firecrawl.dev/app/api-keys (or set your self-hosted Firecrawl base URL)",
+   "notice": {
+    "text": "Free tier: 1,000 credits/month. Powers /v1/web/fetch and /v1/search.",
+    "apiKeyUrl": "https://firecrawl.dev/app/api-keys"
+   },
+   "serviceKinds": [
+    "webSearch",
+    "webFetch"
+   ]
+  },
+  "google-pse-search": {
+   "id": "google-pse-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "google-pse",
+   "name": "Google Programmable Search",
+   "icon": "travel_explore",
+   "color": "#4285F4",
+   "textIcon": "GP",
+   "website": "https://developers.google.com/custom-search/v1/overview",
+   "authHint": "Requires a Google API key and your Programmable Search Engine ID (cx)"
+  },
+  "nimble-search": {
+   "id": "nimble-search",
+   "alias": "nimble",
+   "name": "Nimble Search",
+   "icon": "travel_explore",
+   "color": "#6D28D9",
+   "textIcon": "NB",
+   "website": "https://docs.nimbleway.com/nimble-sdk/web-tools/search",
+   "authHint": "Bearer API key from the Nimble dashboard",
+   "serviceKinds": [
+    "webSearch",
+    "webFetch"
+   ]
+  },
+  "linkup-search": {
+   "id": "linkup-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "linkup",
+   "name": "Linkup Search",
+   "icon": "public",
+   "color": "#0F766E",
+   "textIcon": "LU",
+   "website": "https://docs.linkup.so",
+   "authHint": "Bearer API key from the Linkup dashboard"
+  },
+  "searchapi-search": {
+   "id": "searchapi-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "searchapi",
+   "name": "SearchAPI",
+   "icon": "manage_search",
+   "color": "#2563EB",
+   "textIcon": "SA",
+   "website": "https://www.searchapi.io/docs/google",
+   "authHint": "API key from SearchAPI (query param or Bearer auth)"
+  },
+  "youcom-search": {
+   "id": "youcom-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "youcom-search",
+   "name": "You.com Search",
+   "icon": "travel_explore",
+   "color": "#2563EB",
+   "textIcon": "YOU",
+   "website": "https://you.com/business/api/",
+   "authHint": "X-API-Key from the You.com platform dashboard"
+  },
+  "searxng-search": {
+   "id": "searxng-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "searxng",
+   "name": "SearXNG Search",
+   "icon": "search",
+   "color": "#1A237E",
+   "textIcon": "SX",
+   "website": "https://docs.searxng.org",
+   "hasFree": true,
+   "authHint": "API key is optional. Set your SearXNG base URL. Some instances may require a bearer token for access."
+  },
+  "x-search": {
+   "id": "x-search",
+   "alias": "x_search",
+   "name": "X Search (Grok)",
+   "icon": "tag",
+   "color": "#000000",
+   "textIcon": "X",
+   "website": "https://docs.x.ai/developers/tools/x-search",
+   "authHint": "SuperGrok OAuth (xai-oauth) or xAI API key. This is Grok X Search, not the X Developer MCP.",
+   "serviceKinds": [
+    "webSearch"
+   ]
+  },
+  "xquik-search": {
+   "id": "xquik-search",
+   "alias": "xquik",
+   "name": "Xquik X Search",
+   "icon": "tag",
+   "color": "#111827",
+   "textIcon": "XQ",
+   "website": "https://docs.xquik.com",
+   "authHint": "Xquik API key (xq_...). Search is metered per returned post; the catalog estimate uses 5 results.",
+   "serviceKinds": [
+    "webSearch"
+   ]
+  },
+  "ollama-search": {
+   "id": "ollama-search",
+   "serviceKinds": [
+    "webSearch"
+   ],
+   "alias": "ollama-search",
+   "name": "Ollama Search",
+   "icon": "search",
+   "color": "#58A6FF",
+   "textIcon": "OS",
+   "website": "https://ollama.com/settings/keys",
+   "authHint": "Same API key as Ollama Cloud (from ollama.com/settings/keys)"
+  },
+  "context7": {
+   "id": "context7",
+   "alias": "context7",
+   "name": "Context7 (library docs)",
+   "icon": "menu_book",
+   "color": "#6B4FBB",
+   "textIcon": "C7",
+   "website": "https://context7.com",
+   "hasFree": true,
+   "authHint": "API key optional (ctx7sk-...) — anonymous tier works without a key; a key raises the rate limit",
+   "serviceKinds": [
+    "webSearch",
+    "webFetch"
+   ]
+  }
+ },
+ "SYSTEM_PROVIDERS": {
+  "auto": {
+   "id": "auto",
+   "serviceKinds": [],
+   "alias": "auto",
+   "name": "Auto (Zero-Config)",
+   "icon": "auto_awesome",
+   "color": "#6366F1",
+   "textIcon": "Auto",
+   "systemOnly": true,
+   "description": "Zero-config auto-routing with LKGP across all connected providers"
+  }
+ },
+ "CLOUD_AGENT_PROVIDERS": {
+  "jules": {
+   "id": "jules",
+   "serviceKinds": [],
+   "alias": "jules",
+   "name": "Google Jules",
+   "icon": "engineering",
+   "color": "#4285F4",
+   "textIcon": "JL",
+   "website": "https://jules.google",
+   "authHint": "Jules API key for creating and managing cloud coding tasks."
+  },
+  "devin": {
+   "id": "devin",
+   "serviceKinds": [],
+   "alias": "devin",
+   "name": "Devin",
+   "icon": "smart_toy",
+   "color": "#111827",
+   "textIcon": "DV",
+   "website": "https://devin.ai",
+   "authHint": "Devin API key for cloud agent sessions."
+  },
+  "codex-cloud": {
+   "id": "codex-cloud",
+   "serviceKinds": [],
+   "alias": "codex-cloud",
+   "name": "Codex Cloud",
+   "icon": "cloud",
+   "color": "#10A37F",
+   "textIcon": "CC",
+   "website": "https://openai.com/codex",
+   "authHint": "OpenAI API key with Codex Cloud task access."
+  }
+ }
+}

@@ -1,0 +1,86 @@
+@inject NavigationManager Nav
+@inject Loc Loc
+@inject IJSRuntime JS
+@implements IDisposable
+
+@if (_open)
+{
+    <div class="cmdk" @onclick="Close">
+        <div class="cmdk-box" @onclick:stopPropagation>
+            <input class="cmdk-input" placeholder="Search pages…" @bind="_q" @bind:event="oninput" @ref="_input" @onkeydown="OnKey" />
+            <div class="cmdk-list">
+                @{ var results = Results().ToList(); }
+                @foreach (var (it, i) in results.Select((x, i) => (x, i)))
+                {
+                    <button class="cmdk-item @(i == _sel ? "active" : "")" @onclick="() => Go(it.Href)">
+                        <span class="material-symbols-outlined" style="font-size:17px">@it.Icon</span>
+                        @Loc.T($"sidebar.{it.Key}", it.Label ?? it.Key)
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _open;
+    private string _q = "";
+    private int _sel;
+    private ElementReference _input;
+    private DotNetObjectReference<CommandPalette>? _ref;
+
+    protected override void OnInitialized()
+    {
+        _ref = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool first)
+    {
+        if (first) await JS.InvokeVoidAsync("llmrouter.registerHotkeys", _ref);
+        if (_open) await _input.FocusAsync();
+    }
+
+    [JSInvokable]
+    public void Toggle()
+    {
+        _open = !_open;
+        _q = "";
+        _sel = 0;
+        StateHasChanged();
+    }
+
+    private IEnumerable<SidebarData.NavItem> Results()
+    {
+        var all = new List<SidebarData.NavItem>();
+        void Walk(IEnumerable<SidebarData.NavItem> items)
+        {
+            foreach (var i in items)
+            {
+                all.Add(i);
+                if (i.Children is not null) Walk(i.Children);
+            }
+        }
+        foreach (var s in SidebarData.Sections)
+        {
+            if (s.Items is not null) Walk(s.Items);
+            if (s.Groups is not null) foreach (var g in s.Groups) Walk(g.Items);
+        }
+        return string.IsNullOrWhiteSpace(_q)
+            ? all
+            : all.Where(i => Loc.T($"sidebar.{i.Key}", i.Label ?? i.Key).Contains(_q, StringComparison.OrdinalIgnoreCase)
+                || i.Href.Contains(_q, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        var n = Results().Count();
+        if (e.Key == "ArrowDown") _sel = Math.Min(_sel + 1, n - 1);
+        else if (e.Key == "ArrowUp") _sel = Math.Max(_sel - 1, 0);
+        else if (e.Key == "Enter" && n > 0) Go(Results().ElementAt(_sel).Href);
+        else if (e.Key == "Escape") Close();
+    }
+
+    private void Go(string href) { _open = false; Nav.NavigateTo(href); }
+    private void Close() => _open = false;
+    public void Dispose() => _ref?.Dispose();
+}

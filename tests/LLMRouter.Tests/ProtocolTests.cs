@@ -118,3 +118,24 @@ public class MitmTests
         LLMRouter.Server.Mitm.ForwardProxy.IsProxyRequest(ctx.Request).ShouldBeTrue();
     }
 }
+
+public class ExtrasTests
+{
+    [Fact]
+    public void Gamification_levels_and_badges()
+    {
+        var (xp, level, badges) = LLMRouter.Core.Extras.Extras.Gamification(0, 0, 0);
+        level.ShouldBe("novice"); xp.ShouldBe(0); badges.ShouldBeEmpty();
+        var (xp2, level2, badges2) = LLMRouter.Core.Extras.Extras.Gamification(120, 2_000_000, 5);
+        level2.ShouldBe("master"); // 1200 + 20000 + 250 = 21450
+        badges2.ShouldContain("centurion");
+        badges2.ShouldContain("multi-provider");
+    }
+
+    [Fact]
+    public void DiscoveryTargets_cover_local_providers()
+    {
+        LLMRouter.Core.Extras.Extras.DiscoveryTargets.ShouldContain(t => t.Name == "ollama" && t.Port == 11434);
+        LLMRouter.Core.Extras.Extras.DiscoveryTargets.Length.ShouldBeGreaterThanOrEqualTo(4);
+    }
+}

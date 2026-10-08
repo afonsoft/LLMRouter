@@ -154,6 +154,14 @@ public static class GatewayEndpoints
         }
         model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
 
+        // SPEC-015: chaos fault injection (latency + random 5xx)
+        if (await Core.Extras.Extras.ChaosDelayAsync(db) is { } chaosStatus)
+        {
+            ctx.Response.StatusCode = chaosStatus;
+            await WriteError(ctx, "openai", "chaos", "Injected fault (chaos mode).");
+            return;
+        }
+
         var targets = await engine.ResolveAsync(model, body);
         targets = Core.Routing.MediaKinds.Filter(targets,
             Core.Routing.MediaKinds.KindForPath(ctx.Request.Path.Value ?? ""), t => t.Connection);
@@ -199,6 +207,21 @@ public static class GatewayEndpoints
                 if (!resp.IsSuccessStatusCode && ShouldCascade(resp.StatusCode) && target != targets[^1])
                     continue;
                 ctx.Response.StatusCode = (int)resp.StatusCode;
+                var scopeFactory = ctx.RequestServices.GetRequiredService<IServiceScopeFactory>();
+                var hookClient = httpFactory.CreateClient("webhook");
+                var st = (int)resp.StatusCode; var msDone = sw.ElapsedMilliseconds; var mdl = model;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await using var sc = scopeFactory.CreateAsyncScope();
+                        await Core.Extras.Extras.WebhooksDispatchAsync(
+                            sc.ServiceProvider.GetRequiredService<Core.Data.LlmRouterDbContext>(),
+                            hookClient, "request",
+                            new { model = mdl, status = st, ms = msDone });
+                    }
+                    catch { }
+                });
                 ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
                 await resp.Content.CopyToAsync(ctx.Response.Body);
                 if (!resp.IsSuccessStatusCode)

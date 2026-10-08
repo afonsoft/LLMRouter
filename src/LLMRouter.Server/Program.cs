@@ -79,6 +79,7 @@ app.MapOAuthEndpoints();
 app.MapProtocolEndpoints();
 app.MapDocsEndpoints();
 app.MapInspectorEndpoints();
+app.MapExtrasEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

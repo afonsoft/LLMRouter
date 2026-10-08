@@ -1,0 +1,239 @@
+@page "/dashboard/discovery"
+@page "/dashboard/radar"
+@page "/dashboard/gamification"
+@page "/dashboard/leaderboard"
+@page "/dashboard/free-tiers"
+@page "/dashboard/free-provider-rankings"
+@page "/dashboard/chaos"
+@page "/dashboard/memory"
+@page "/dashboard/webhooks"
+@page "/dashboard/batch"
+@page "/dashboard/batches"
+@page "/dashboard/plugins"
+@page "/dashboard/search-tools"
+@page "/dashboard/audit"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+@{
+    var section = Nav.Uri.Split('/').Last().Split('?')[0];
+}
+
+<h1 class="page-title">@_title</h1>
+<p class="page-desc">@_subtitle</p>
+
+@if (section is "discovery" or "radar")
+{
+    <button class="btn" @onclick="Scan">@Loc.T("extras.scan", "Scan local providers")</button>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:12px">
+        @if (_discovered is not null)
+        {
+            @foreach (var d in _discovered)
+            {
+                <div class="card card-p">
+                    <div class="bold">@d.GetProperty("name").GetString()</div>
+                    <div class="muted xs">@d.GetProperty("baseUrl").GetString()</div>
+                    <span class="badge @(d.GetProperty("detected").GetBoolean() ? "ok" : "")">
+                        @(d.GetProperty("detected").GetBoolean() ? "detected" : "not found")
+                    </span>
+                </div>
+            }
+        }
+    </div>
+}
+else if (section is "gamification" or "leaderboard")
+{
+    @if (_gam is not null)
+    {
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px">
+            <div class="card card-p"><div class="xs muted">XP</div><div class="bold" style="font-size:22px">@_gam.Value.GetProperty("xp").GetInt32()</div></div>
+            <div class="card card-p"><div class="xs muted">Level</div><div class="bold" style="font-size:22px">@_gam.Value.GetProperty("level").GetString()</div></div>
+            <div class="card card-p"><div class="xs muted">Requests</div><div class="bold" style="font-size:22px">@_gam.Value.GetProperty("requests").GetInt64()</div></div>
+        </div>
+        <div class="flex" style="gap:6px;flex-wrap:wrap;margin-bottom:14px">
+            @foreach (var b in _gam.Value.GetProperty("badges").EnumerateArray())
+            {
+                <span class="badge ok">@b.GetString()</span>
+            }
+        </div>
+    }
+    @if (_board is not null)
+    {
+        <table class="tbl"><thead><tr><th>Model</th><th>Requests</th><th>Tokens</th></tr></thead>
+        <tbody>
+        @foreach (var r in _board)
+        {
+            <tr><td>@r.GetProperty("model").GetString()</td><td>@r.GetProperty("requests").GetInt64()</td><td>@r.GetProperty("tokens").GetInt64()</td></tr>
+        }
+        </tbody></table>
+    }
+}
+else if (section is "free-tiers" or "free-provider-rankings")
+{
+    <table class="tbl"><thead><tr><th>Provider</th><th>Connection</th><th>Active</th></tr></thead>
+    <tbody>
+    @if (_free is not null)
+    {
+        @foreach (var f in _free)
+        {
+            <tr><td>@f.GetProperty("provider").GetString()</td><td class="mono xs">@f.GetProperty("id").GetString()</td><td>@f.GetProperty("isActive").GetBoolean()</td></tr>
+        }
+    }
+    </tbody></table>
+}
+else if (section is "chaos")
+{
+    <div class="card card-p" style="max-width:420px">
+        <div class="flex" style="gap:10px;align-items:center">
+            <label>Error %</label><input class="input" type="number" style="width:80px" @bind="_errorPct" />
+            <label>Latency ms</label><input class="input" type="number" style="width:100px" @bind="_latencyMs" />
+            <button class="btn" @onclick="SaveChaos">@Loc.T("common.save", "Save")</button>
+        </div>
+        <p class="muted xs" style="margin-top:8px">@Loc.T("extras.chaosHint", "Fault injection applies to gateway requests")</p>
+    </div>
+}
+else if (section is "memory")
+{
+    <div class="flex" style="gap:8px;margin-bottom:10px">
+        <input class="input" style="flex:1" @bind="_memContent" placeholder="memory content…" />
+        <input class="input" style="width:160px" @bind="_memTags" placeholder="tags" />
+        <button class="btn" @onclick="AddMemory">@Loc.T("common.add", "Add")</button>
+        <input class="input" style="width:160px" @bind="_memQ" placeholder="search" @bind:event="oninput" @bind:after="LoadMemory" />
+    </div>
+    @if (_memory is not null)
+    {
+        @foreach (var m in _memory)
+        {
+            <div class="card card-p" style="margin-bottom:6px">
+                <div>@m.GetProperty("content").GetString()</div>
+                <div class="muted xs">@m.GetProperty("at").GetString() @(m.TryGetProperty("tags", out var tg) ? tg.GetString() : "")
+                    <a style="cursor:pointer" @onclick='() => DelMemory(m.GetProperty("id").GetString()!)'> ✕</a>
+                </div>
+            </div>
+        }
+    }
+}
+else if (section is "webhooks")
+{
+    <div class="flex" style="gap:8px;margin-bottom:10px">
+        <input class="input" style="flex:1" @bind="_whUrl" placeholder="https://…/hook" />
+        <input class="input" style="width:160px" @bind="_whEvents" placeholder="events (comma, * = all)" />
+        <button class="btn" @onclick="AddWebhook">@Loc.T("common.add", "Add")</button>
+    </div>
+    @if (_hooks is not null)
+    {
+        @foreach (var w in _hooks)
+        {
+            <div class="card card-p" style="margin-bottom:6px">
+                <code>@w.GetProperty("url").GetString()</code>
+                <span class="muted xs"> — @string.Join(",", w.GetProperty("events").EnumerateArray().Select(e => e.GetString()))
+                    <a style="cursor:pointer" @onclick='() => DelWebhook(w.GetProperty("id").GetString()!)'> ✕</a></span>
+            </div>
+        }
+    }
+}
+else if (section is "batch" or "batches")
+{
+    <p class="muted">POST <code>/api/batches</code> with <code>{"requests":[…chat bodies…]}</code></p>
+    @if (_batches is not null)
+    {
+        <table class="tbl"><thead><tr><th>Id</th><th>Status</th><th>Total</th></tr></thead>
+        <tbody>
+        @foreach (var b in _batches)
+        {
+            <tr><td class="mono xs">@b.GetProperty("id").GetString()</td><td>@b.GetProperty("status").GetString()</td><td>@b.GetProperty("total").GetInt32()</td></tr>
+        }
+        </tbody></table>
+    }
+}
+else if (section is "audit")
+{
+    <table class="tbl"><thead><tr><th>At</th><th>Action</th><th>Detail</th></tr></thead>
+    <tbody>
+    @if (_audit is not null)
+    {
+        @foreach (var a in _audit)
+        {
+            <tr><td class="muted xs">@a.GetProperty("at").GetString()</td><td>@a.GetProperty("action").GetString()</td><td class="muted xs">@a.GetProperty("detail").GetString()</td></tr>
+        }
+    }
+    </tbody></table>
+}
+else
+{
+    <p class="muted">@Loc.T("extras.none", "Nothing here yet — this page is reserved by the spec.")</p>
+}
+
+@code {
+    private string _title = "", _subtitle = "";
+    private JsonElement[]? _discovered, _board, _free, _memory, _hooks, _batches, _audit;
+    private JsonElement? _gam;
+    private int _errorPct, _latencyMs;
+    private string _memContent = "", _memTags = "", _memQ = "", _whUrl = "", _whEvents = "*";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var section = Nav.Uri.Split('/').Last().Split('?')[0];
+        _title = section; _subtitle = Loc.T($"extras.{section}", "");
+        switch (section)
+        {
+            case "discovery": case "radar": await Scan(); break;
+            case "gamification": case "leaderboard":
+                _gam = await Api.GetAsync("api/gamification");
+                _board = (await Api.GetAsync("api/leaderboard")).GetProperty("leaderboard").EnumerateArray().ToArray();
+                break;
+            case "free-tiers": case "free-provider-rankings":
+                _free = (await Api.GetAsync("api/free-tiers")).GetProperty("providers").EnumerateArray().ToArray();
+                break;
+            case "chaos":
+                var c = await Api.GetAsync("api/chaos");
+                _errorPct = c.TryGetProperty("errorPct", out var e) ? e.GetInt32() : 0;
+                _latencyMs = c.TryGetProperty("latencyMs", out var l) ? l.GetInt32() : 0;
+                break;
+            case "memory": await LoadMemory(); break;
+            case "webhooks":
+                _hooks = (await Api.GetAsync("api/webhooks")).GetProperty("webhooks").EnumerateArray().ToArray();
+                break;
+            case "batch": case "batches":
+                _batches = (await Api.GetAsync("api/batches")).GetProperty("batches").EnumerateArray().ToArray();
+                break;
+            case "audit":
+                _audit = (await Api.GetAsync("api/audit")).GetProperty("events").EnumerateArray().ToArray();
+                break;
+        }
+    }
+
+    private async Task Scan() =>
+        _discovered = (await Api.GetAsync("api/discovery")).GetProperty("providers").EnumerateArray().ToArray();
+
+    private async Task SaveChaos() => await Api.PostAsync("api/chaos", new { errorPct = _errorPct, latencyMs = _latencyMs });
+
+    private async Task LoadMemory() =>
+        _memory = (await Api.GetAsync("api/memory" + (_memQ == "" ? "" : $"?q={Uri.EscapeDataString(_memQ)}")))
+            .GetProperty("items").EnumerateArray().ToArray();
+
+    private async Task AddMemory()
+    {
+        if (_memContent == "") return;
+        await Api.PostAsync("api/memory", new { content = _memContent, tags = _memTags });
+        _memContent = ""; await LoadMemory();
+    }
+
+    private async Task DelMemory(string id)
+    { await Api.PostAsync("api/memory", new { id }); await LoadMemory(); }
+
+    private async Task AddWebhook()
+    {
+        if (_whUrl == "") return;
+        await Api.PostAsync("api/webhooks", new { url = _whUrl, events = _whEvents.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) });
+        _whUrl = "";
+        _hooks = (await Api.GetAsync("api/webhooks")).GetProperty("webhooks").EnumerateArray().ToArray();
+    }
+
+    private async Task DelWebhook(string id)
+    {
+        await Api.PostAsync("api/webhooks", new { id });
+        _hooks = (await Api.GetAsync("api/webhooks")).GetProperty("webhooks").EnumerateArray().ToArray();
+    }
+}

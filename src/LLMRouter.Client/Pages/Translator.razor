@@ -1,0 +1,57 @@
+@page "/dashboard/translator"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("translator.title", "Translator")</h1>
+<p class="page-desc">@Loc.T("translator.subtitle", "Convert request/response bodies between OpenAI, Claude and Gemini formats")</p>
+
+<div class="card card-p" style="margin-bottom:14px">
+    <div class="flex" style="gap:12px;flex-wrap:wrap;align-items:end">
+        <label class="fld"><span class="muted">@Loc.T("translator.from", "From")</span>
+            <select class="input" @bind="_from">
+                <option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option>
+            </select></label>
+        <label class="fld"><span class="muted">@Loc.T("translator.to", "To")</span>
+            <select class="input" @bind="_to">
+                <option value="claude">Claude</option><option value="openai">OpenAI</option><option value="gemini">Gemini</option>
+            </select></label>
+        <label class="fld"><span class="muted">@Loc.T("translator.kind", "Kind")</span>
+            <select class="input" @bind="_kind">
+                <option value="request">request</option><option value="response">response</option>
+            </select></label>
+        <label class="fld"><span class="muted">@Loc.T("translator.model", "Model")</span>
+            <input class="input" @bind="_model" style="width:160px" /></label>
+        <button class="btn btn-primary btn-sm" @onclick="Run">@Loc.T("translator.convert", "Convert")</button>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 8px">@Loc.T("translator.input", "Input JSON")</h3>
+        <textarea class="input" style="width:100%;height:340px;font-family:var(--mono);font-size:12px" @bind="_input"></textarea>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 8px">@Loc.T("translator.output", "Output")</h3>
+        <pre class="code-block" style="height:340px;overflow:auto;font-size:12px">@_output</pre>
+    </div>
+</div>
+
+@code {
+    private string _from = "openai", _to = "claude", _kind = "request", _model = "gpt-4o";
+    private string _input = "{\n  \"model\": \"gpt-4o\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}],\n  \"max_tokens\": 100\n}";
+    private string _output = "";
+
+    private async Task Run()
+    {
+        try
+        {
+            var body = JsonSerializer.Deserialize<JsonElement>(_input);
+            var r = await Api.Raw.PostAsJsonAsync("api/translator",
+                new { from = _from, to = _to, kind = _kind, model = _model, body });
+            _output = r.IsSuccessStatusCode
+                ? JsonNode.Parse(await r.Content.ReadAsStringAsync())?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? ""
+                : $"error: {await r.Content.ReadAsStringAsync()}";
+        }
+        catch (Exception ex) { _output = $"error: {ex.Message}"; }
+    }
+}

@@ -70,6 +70,7 @@ app.UseStaticFiles();
 app.MapAuthEndpoints();
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
+app.MapQuotaProxyEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

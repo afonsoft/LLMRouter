@@ -1,0 +1,104 @@
+@page "/dashboard/proxy-pools"
+@page "/dashboard/system/proxy"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("proxyPools.title", "Proxy pools")</h1>
+<p class="page-desc">@Loc.T("proxyPools.subtitle", "Egress HTTP/SOCKS5 proxies — assign a pool to a connection to route its upstream traffic")</p>
+
+<div class="card card-p" style="margin-bottom:16px">
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <input class="input" style="width:200px" @bind="_newName" placeholder="pool name" />
+        <input class="input" style="flex:1;min-width:280px" @bind="_newProxies" placeholder="proxy urls, one per line or comma: http://h:port, socks5://h:port" />
+        <button class="btn btn-primary btn-sm" @onclick="Create" disabled="@(string.IsNullOrWhiteSpace(_newProxies))">@Loc.T("common.add", "Add")</button>
+    </div>
+</div>
+
+@if (_pools is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    @foreach (var p in _pools)
+    {
+        var pid = p.GetProperty("id").GetString()!;
+        var name = p.GetProperty("data").TryGetProperty("name", out var n) ? n.GetString() : pid;
+        <div class="card card-p" style="margin-bottom:12px">
+            <div class="flex between">
+                <h3 class="bold" style="margin:0">@name <span class="badge @(p.GetProperty("isActive").GetBoolean() ? "ok" : "err")">@(p.GetProperty("isActive").GetBoolean() ? "active" : "off")</span></h3>
+                <div class="flex" style="gap:8px">
+                    <button class="btn btn-sm" @onclick="() => Test(pid)">Test</button>
+                    <button class="btn btn-sm" @onclick="() => Toggle(p)">@(p.GetProperty("isActive").GetBoolean() ? "Disable" : "Enable")</button>
+                    <button class="btn btn-sm" style="color:var(--danger,#dc2626)" @onclick="() => Delete(pid)">Delete</button>
+                </div>
+            </div>
+            <table class="table" style="margin-top:10px">
+                <thead><tr><th>URL</th><th>Status</th><th>Latency</th><th>Fails</th></tr></thead>
+                <tbody>
+                    @foreach (var px in p.GetProperty("proxies").EnumerateArray())
+                    {
+                        <tr>
+                            <td class="mono sm">@px.GetProperty("url").GetString()</td>
+                            <td><span class="badge @(px.TryGetProperty("status", out var st) && st.GetString() == "ok" ? "ok" : "muted")">@(px.TryGetProperty("status", out var s2) ? s2.GetString() ?? "—" : "—")</span></td>
+                            <td class="mono sm">@(px.TryGetProperty("latencyMs", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt64() + "ms" : "—")</td>
+                            <td class="mono sm">@(px.TryGetProperty("failCount", out var f) ? f.GetInt32() : 0)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="sm muted mt-2">Assign via connection → data.proxyPoolId = <span class="mono">@pid</span></div>
+        </div>
+    }
+    @if (_pools.Count == 0) { <p class="muted">No pools yet.</p> }
+    @if (_msg is not null) { <p class="sm muted mt-2">@_msg</p> }
+}
+
+@code {
+    private List<JsonElement>? _pools;
+    private string _newName = "";
+    private string _newProxies = "";
+    private string? _msg;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/proxy-pools");
+        _pools = r.GetProperty("pools").EnumerateArray().Select(x => x.Clone()).ToList();
+    }
+
+    private async Task Create()
+    {
+        var urls = _newProxies.Split(new[] { '\n', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var proxies = urls.Select((u, i) => new Dictionary<string, object?>
+        {
+            ["id"] = Guid.NewGuid().ToString("N")[..8],
+            ["url"] = u, ["active"] = true, ["failCount"] = 0,
+        }).ToList();
+        var data = new { name = string.IsNullOrWhiteSpace(_newName) ? "pool" : _newName, proxies };
+        await Api.PostAsync("api/proxy-pools", new { data });
+        _newName = ""; _newProxies = "";
+        await Load();
+    }
+
+    private async Task Toggle(JsonElement p)
+    {
+        await Api.PutAsync($"api/proxy-pools/{p.GetProperty("id").GetString()}", new { isActive = !p.GetProperty("isActive").GetBoolean() });
+        await Load();
+    }
+
+    private async Task Delete(string id)
+    {
+        await Api.DeleteAsync($"api/proxy-pools/{id}");
+        await Load();
+    }
+
+    private async Task Test(string id)
+    {
+        _msg = "testing…";
+        await Api.PostAsync($"api/proxy-pools/{id}/test", new { });
+        _msg = "✓";
+        await Load();
+    }
+}

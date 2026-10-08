@@ -163,13 +163,14 @@ public static class GatewayEndpoints
             return;
         }
 
-        var client = httpFactory.CreateClient("upstream");
         var path = ctx.Request.Path.Value ?? "";
         var suffix = path[(path.IndexOf("/v1", StringComparison.Ordinal) + 3)..];
         foreach (var target in targets)
         {
             try
             {
+                var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
+                    ?? httpFactory.CreateClient("upstream");
                 var baseUrl = GatewayEngine.ConnectionBaseUrl(target.Connection, target.Provider);
                 var url = baseUrl + suffix + (ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : "");
                 var req = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), url);
@@ -259,6 +260,22 @@ public static class GatewayEndpoints
         try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
         catch { ctx.Response.StatusCode = 400; await WriteError(ctx, inbound, "invalid_request", "Malformed JSON body."); return; }
 
+        // SPEC-008 token saver: compress prompt text when enabled
+        var savedDetail = (JsonElement?)null;
+        var sdata = await Core.Usage.PricingService.SettingsDataAsync(db);
+        if (sdata.ValueKind == JsonValueKind.Object
+            && sdata.TryGetProperty("tokenSaver", out var tsv)
+            && tsv.ValueKind == JsonValueKind.Object
+            && tsv.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True)
+        {
+            var dedup = !tsv.TryGetProperty("dedup", out var dp) || dp.ValueKind != JsonValueKind.False;
+            var r = Core.Gateway.TokenSaver.Apply(body, dedup);
+            body = r.Body;
+            var savedTokens = Core.Gateway.TokenSaver.SavedTokens(r.SavedChars);
+            if (savedTokens > 0)
+                savedDetail = JsonSerializer.SerializeToElement(new { tokensSaved = savedTokens });
+        }
+
         var model = body.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "";
         if (inbound == "gemini" && string.IsNullOrEmpty(model))
         {
@@ -294,12 +311,13 @@ public static class GatewayEndpoints
             return;
         }
 
-        var client = httpFactory.CreateClient("upstream");
         Exception? lastError = null;
         foreach (var target in targets)
         {
             try
             {
+                var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
+                    ?? httpFactory.CreateClient("upstream");
                 var call = engine.BuildCall(target, inbound, body, stream);
                 var req = new HttpRequestMessage(HttpMethod.Post, call.Url);
                 foreach (var (k, v) in call.Headers)
@@ -337,7 +355,8 @@ public static class GatewayEndpoints
                     var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
-                        target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds);
+                        target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
+                        savedDetail);
                 }
                 else
                 {
@@ -348,7 +367,8 @@ public static class GatewayEndpoints
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
-                        target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds);
+                        target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
+                        savedDetail);
                 }
                 return;
             }
@@ -383,7 +403,9 @@ public static class GatewayEndpoints
         try
         {
             var call = engine.BuildCall(t, inbound, body, stream: false);
-            var client = factory.CreateClient("upstream");
+            var cdb = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
+            var client = await Core.Routing.ProxyPoolService.ClientForAsync(cdb, t.Connection)
+                ?? factory.CreateClient("upstream");
             var req = new HttpRequestMessage(HttpMethod.Post, call.Url)
             {
                 Content = new StringContent(call.Body, Encoding.UTF8, "application/json"),

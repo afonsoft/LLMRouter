@@ -844,6 +844,143 @@ public static class ManagementEndpoints
         });
     }
 
+    /// <summary>SPEC-008: quota, proxy pools, token-saver stats.</summary>
+    public static void MapQuotaProxyEndpoints(this WebApplication app)
+    {
+        var g = app.MapGroup("/api").RequireAuthorization();
+
+        g.MapGet("/quota", async (LlmRouterDbContext db) =>
+        {
+            var list = new List<object>();
+            foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync())
+            {
+                var st = await Core.Routing.QuotaTracker.StateAsync(db, c);
+                list.Add(new
+                {
+                    connectionId = c.Id, c.Provider, c.Name,
+                    daily = new { used = st.DailyUsed, limit = st.DailyLimit, exhausted = st.DailyExhausted },
+                    monthly = new { used = st.MonthlyUsed, limit = st.MonthlyLimit, exhausted = st.MonthlyExhausted },
+                });
+            }
+            return Results.Json(new { quota = list }, JsonOpts);
+        });
+
+        // ---- proxy pools ----
+        g.MapGet("/proxy-pools", async (LlmRouterDbContext db) =>
+        {
+            var pools = await db.ProxyPools.ToListAsync();
+            return Results.Json(new
+            {
+                pools = pools.Select(p => new
+                {
+                    p.Id, p.IsActive, p.TestStatus,
+                    data = JsonDocument.Parse(p.Data).RootElement,
+                    proxies = Core.Routing.ProxyPoolService.Proxies(p),
+                    p.CreatedAt, p.UpdatedAt,
+                }),
+            }, JsonOpts);
+        });
+
+        g.MapPost("/proxy-pools", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var data = b.TryGetProperty("data", out var d) ? d.GetRawText()
+                : JsonSerializer.Serialize(new { name = Get(b, "name") ?? "pool", proxies = b.TryGetProperty("proxies", out var px) ? px : JsonSerializer.SerializeToElement(Array.Empty<object>()) });
+            var p = new ProxyPool { Id = Guid.NewGuid().ToString("N")[..12], Data = data, CreatedAt = Now(), UpdatedAt = Now() };
+            db.ProxyPools.Add(p);
+            await db.SaveChangesAsync();
+            return Results.Json(new { pool = p }, JsonOpts);
+        });
+
+        g.MapPut("/proxy-pools/{id}", async (string id, HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var p = await db.ProxyPools.FindAsync(id);
+            if (p is null) return Results.NotFound();
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            if (b.TryGetProperty("isActive", out var a)) p.IsActive = a.GetBoolean();
+            if (b.TryGetProperty("data", out var d)) p.Data = d.GetRawText();
+            if (b.TryGetProperty("testStatus", out var ts)) p.TestStatus = ts.GetString();
+            p.UpdatedAt = Now();
+            await db.SaveChangesAsync();
+            return Results.Json(new { pool = p }, JsonOpts);
+        });
+
+        g.MapDelete("/proxy-pools/{id}", async (string id, LlmRouterDbContext db) =>
+        {
+            var p = await db.ProxyPools.FindAsync(id);
+            if (p is null) return Results.NotFound();
+            db.ProxyPools.Remove(p);
+            await db.SaveChangesAsync();
+            return Results.Json(new { success = true });
+        });
+
+        // test each proxy in the pool against a target URL, store latency/status
+        g.MapPost("/proxy-pools/{id}/test", async (string id, string? target, LlmRouterDbContext db) =>
+        {
+            var p = await db.ProxyPools.FindAsync(id);
+            if (p is null) return Results.NotFound();
+            var url = target ?? "https://api.ipify.org?format=json";
+            var results = new List<object>();
+            var proxies = Core.Routing.ProxyPoolService.Proxies(p).ToList();
+            var updated = false;
+            foreach (var px in proxies)
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                string status;
+                try
+                {
+                    var handler = new SocketsHttpHandler { Proxy = new System.Net.WebProxy(px.Url), UseProxy = true, ConnectTimeout = TimeSpan.FromSeconds(10) };
+                    using var c = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+                    using var r = await c.GetAsync(url);
+                    status = r.IsSuccessStatusCode ? "ok" : $"http {(int)r.StatusCode}";
+                }
+                catch (Exception ex) { status = ex.GetType().Name; }
+                sw.Stop();
+                updated = true;
+                results.Add(new { proxy = px, latencyMs = sw.ElapsedMilliseconds, status });
+            }
+            if (updated)
+            {
+                // persist latencies back into data.proxies
+                var d = JsonDocument.Parse(p.Data).RootElement;
+                var obj = d.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone());
+                var arr = proxies.Select(px =>
+                {
+                    var r = results.First(x => ((Core.Routing.ProxyPoolService.PoolProxy)x.GetType().GetProperty("proxy")!.GetValue(x)!).Id == px.Id);
+                    return new Dictionary<string, object?>
+                    {
+                        ["id"] = px.Id, ["url"] = px.Url, ["active"] = px.Active,
+                        ["failCount"] = px.FailCount, ["latencyMs"] = r.GetType().GetProperty("latencyMs")!.GetValue(r),
+                        ["status"] = r.GetType().GetProperty("status")!.GetValue(r),
+                    };
+                }).ToList();
+                obj["proxies"] = JsonSerializer.SerializeToElement(arr);
+                p.Data = JsonSerializer.Serialize(obj);
+                p.TestStatus = results.All(r => (string)r.GetType().GetProperty("status")!.GetValue(r)! == "ok") ? "ok" : "degraded";
+                p.UpdatedAt = Now();
+                await db.SaveChangesAsync();
+            }
+            return Results.Json(new { results }, JsonOpts);
+        });
+
+        // ---- token saver stats ----
+        g.MapGet("/token-saver/stats", async (LlmRouterDbContext db) =>
+        {
+            var saved = 0; var requests = 0;
+            foreach (var u in await db.UsageHistory.Where(x => x.Meta != null).ToListAsync())
+            {
+                try
+                {
+                    var m = JsonDocument.Parse(u.Meta!).RootElement;
+                    if (m.TryGetProperty("tokensSaved", out var t) && t.TryGetInt32(out var n))
+                    { saved += n; requests++; }
+                }
+                catch { }
+            }
+            return Results.Json(new { tokensSaved = saved, requestsCompressed = requests }, JsonOpts);
+        });
+    }
+
     private static string? Get(JsonElement el, string name) =>
         el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 

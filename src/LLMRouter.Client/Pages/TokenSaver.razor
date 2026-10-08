@@ -1,0 +1,73 @@
+@page "/dashboard/token-saver"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("tokenSaver.title", "Token saver")</h1>
+<p class="page-desc">@Loc.T("tokenSaver.subtitle", "Lightweight prompt compression before upstream calls")</p>
+
+@if (_data is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    <div class="grid grid-2">
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">@Loc.T("tokenSaver.settings", "Compression")</h3>
+            <div class="flex between">
+                <span class="sm">@Loc.T("tokenSaver.enabled", "Enable token saver")</span>
+                <input type="checkbox" checked="@Enabled" @onchange='e => Set("enabled", (bool)(e.Value ?? false))' />
+            </div>
+            <div class="flex between mt-3">
+                <span class="sm">@Loc.T("tokenSaver.whitespace", "Collapse whitespace runs")</span>
+                <input type="checkbox" checked="@Get("whitespace", true)" @onchange='e => Set("whitespace", (bool)(e.Value ?? false))' />
+            </div>
+            <div class="flex between mt-3">
+                <span class="sm">@Loc.T("tokenSaver.dedup", "Dedup consecutive identical lines")</span>
+                <input type="checkbox" checked="@Get("dedup", true)" @onchange='e => Set("dedup", (bool)(e.Value ?? false))' />
+            </div>
+            <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+            @if (_msg is not null) { <span class="sm muted" style="margin-left:8px">@_msg</span> }
+        </div>
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">@Loc.T("tokenSaver.stats", "Savings")</h3>
+            <div style="font-size:32px;font-weight:700;color:var(--primary)">@_tokensSaved</div>
+            <div class="sm text2">@Loc.T("tokenSaver.saved", "tokens saved")</div>
+            <div class="sm muted mt-3">@_requestsCompressed requests compressed</div>
+        </div>
+    </div>
+}
+
+@code {
+    private Dictionary<string, JsonElement>? _data;
+    private long _tokensSaved;
+    private int _requestsCompressed;
+    private string? _msg;
+
+    private bool Enabled => Get("enabled");
+    private bool Get(string k, bool def = false) =>
+        _data!.TryGetValue(k, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : def;
+    private void Set(string k, bool v) => _data![k] = JsonSerializer.SerializeToElement(v);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var s = await Api.GetAsync("api/settings");
+        if (s.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object
+            && d.TryGetProperty("tokenSaver", out var ts) && ts.ValueKind == JsonValueKind.Object)
+            _data = ts.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone());
+        _data ??= [];
+        try
+        {
+            var st = await Api.GetAsync("api/token-saver/stats");
+            _tokensSaved = st.GetProperty("tokensSaved").GetInt64();
+            _requestsCompressed = st.GetProperty("requestsCompressed").GetInt32();
+        }
+        catch { }
+    }
+
+    private async Task Save()
+    {
+        await Api.PutAsync("api/settings", new { tokenSaver = _data });
+        _msg = "✓";
+    }
+}

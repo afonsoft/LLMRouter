@@ -1,0 +1,47 @@
+@page "/docs"
+@page "/docs/{*Slug}"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("docs.title", "Docs")</h1>
+
+<div class="grid" style="grid-template-columns:240px 1fr;gap:14px">
+    <div class="card card-p" style="align-self:start">
+        @foreach (var f in _files)
+        {
+            <a href="/docs/@f" class="doc-link @(Slug == f ? "active" : "")">@f</a>
+        }
+        @if (_files.Count == 0) { <p class="muted">…</p> }
+    </div>
+    <div class="card card-p">
+        @if (_html is not null) { @((MarkupString)_html) }
+        else { <p class="muted">@Loc.T("docs.pick", "Pick a document on the left")</p> }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Slug { get; set; }
+    private List<string> _files = [];
+    private string? _html;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/docs");
+            _files = r.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).OrderBy(x => x).ToList();
+        }
+        catch { }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Slug is null) return;
+        try
+        {
+            var r = await Api.GetAsync($"api/docs/{Slug}");
+            _html = r.GetProperty("html").GetString();
+        }
+        catch { _html = "<p>not found</p>"; }
+    }
+}

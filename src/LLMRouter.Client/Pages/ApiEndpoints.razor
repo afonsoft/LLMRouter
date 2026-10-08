@@ -1,0 +1,57 @@
+@page "/dashboard/api-endpoints"
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("apiEndpoints.title", "API endpoints")</h1>
+<p class="page-desc">@Loc.T("apiEndpoints.subtitle", "Every route this router exposes")</p>
+
+<div class="card card-p" style="max-width:900px">
+    <table class="tbl">
+        <thead><tr><th>Path</th><th>Methods</th><th>@Loc.T("apiEndpoints.desc", "Description")</th></tr></thead>
+        <tbody>
+            @foreach (var e in _routes)
+            {
+                <tr><td><code>@e.Path</code></td><td>@e.Methods</td><td class="muted">@e.Desc</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private record R(string Path, string Methods, string Desc);
+    private static readonly R[] _routes =
+    [
+        new("/v1/chat/completions", "POST", "Chat — openai format"),
+        new("/v1/messages", "POST", "Chat — claude format"),
+        new("/v1/responses", "POST", "Chat — responses API"),
+        new("/v1/models", "GET", "Model catalog"),
+        new("/v1/{*path}", "GET/POST", "Passthrough (media: audio, images, embeddings, search, videos)"),
+        new("/v1beta/models/{m}:generateContent", "POST", "Gemini native"),
+        new("/mcp", "POST", "MCP JSON-RPC (initialize/tools/list/tools/call)"),
+        new("/a2a", "POST", "A2A tasks (tasks/send, message/send)"),
+        new("/.well-known/agent.json", "GET", "A2A agent card"),
+        new("/api/auth/login", "POST", "Dashboard login"),
+        new("/api/providers", "GET", "Provider registry"),
+        new("/api/provider-connections", "GET/POST/PUT/DELETE", "Connection CRUD + test + models"),
+        new("/api/provider-nodes", "GET/POST", "Custom provider nodes"),
+        new("/api/models", "GET", "Resolved model list"),
+        new("/api/combos", "GET/POST/PUT/DELETE", "Combo CRUD + sticky/mappings"),
+        new("/api/keys", "GET/POST/PUT/DELETE", "API keys"),
+        new("/api/usage/*", "GET", "Timeseries, provider-stats, pricing, budget"),
+        new("/api/logs/*", "GET/DELETE", "Request details, console, export"),
+        new("/api/settings", "GET/PUT", "settings.data merge + reset/export"),
+        new("/api/quota", "GET", "Per-connection quota state"),
+        new("/api/proxy-pools[/{id}]", "GET/POST/PUT/DELETE", "Egress proxy pools + /test"),
+        new("/api/token-saver/stats", "GET", "Token saver stats"),
+        new("/api/cli-tools[/{id}/config]", "GET", "CLI manifest + env blocks"),
+        new("/api/translator", "POST", "Format converter playground"),
+        new("/api/skills[/{name}/toggle|/install]", "GET/POST", "SKILL.md modules"),
+        new("/api/media-providers", "GET", "Connections grouped by media kind"),
+        new("/api/oauth/*", "GET/POST", "OAuth start/poll/callback"),
+        new("/api/token-health[/{id}/refresh]", "GET/POST", "OAuth token health + refresh"),
+        new("/api/conversations[/{id}]", "GET/PUT/DELETE", "Saved playground conversations"),
+        new("/api/conductor/*", "GET/PUT/POST", "Workflows + run"),
+        new("/api/mcp-servers[/{name}]", "GET/PUT/DELETE", "External MCP registry"),
+        new("/api/docs[/{*path}]", "GET", "Markdown docs from repo"),
+        new("/api/status", "GET", "Public status"),
+    ];
+}

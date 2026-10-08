@@ -24,7 +24,7 @@ Status: ✅ done · 🟡 partial · ⬜ planned (spec)
 | Media providers (tts/stt/image/video/etc) | `/dashboard/media-providers` | 010 | 🟡 |
 | OAuth flows + token health | `src/lib/oauth`, modals | 011 | 🟡 |
 | MCP/A2A/conductor/orchestration | `/dashboard/{mcp,a2a,conductor}` | 012 | 🟡 |
-| Landing/docs/error pages/PWA/onboarding | `src/app/*` | 013 | ⬜ |
+| Landing/docs/error pages/PWA/onboarding | `src/app/*` | 013 | 🟡 |
 | MITM relay + traffic inspector + pxpipe | `src/mitm`, pages | 014 | ⬜ |
 | Gamification/radar/discovery/free-tiers/batch/etc | various | 015 | ⬜ |
 | CLI + Docker + release CI | `bin/`, Dockerfile | 016 | ⬜ |

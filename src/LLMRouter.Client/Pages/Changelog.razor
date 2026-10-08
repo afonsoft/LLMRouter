@@ -1,0 +1,35 @@
+@page "/dashboard/changelog"
+@page "/changelog"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("changelog.title", "Changelog")</h1>
+
+<div class="card card-p" style="max-width:860px">
+    @if (_html is not null) { @((MarkupString)_html) }
+    else { <p class="muted">…</p> }
+</div>
+
+@code {
+    private string? _html;
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/docs/../CHANGELOG.md");
+            _html = r.GetProperty("html").GetString();
+        }
+        catch
+        {
+            try
+            {
+                // changelog may live at repo root outside docs/ — try direct fetch of bundled copy
+                var r = await Api.Raw.GetAsync("CHANGELOG.md");
+                if (r.IsSuccessStatusCode)
+                    _html = $"<pre class='code-block'>{System.Net.WebUtility.HtmlEncode(await r.Content.ReadAsStringAsync())}</pre>";
+            }
+            catch { }
+            _html ??= "<p>No changelog yet.</p>";
+        }
+    }
+}

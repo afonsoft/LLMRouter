@@ -1,0 +1,31 @@
+@page "/landing"
+@layout AuthLayout
+@inject Loc Loc
+
+<div class="landing">
+    <section class="hero">
+        <img src="icon-192.png" alt="LLMRouter" style="width:72px;height:72px;border-radius:18px" />
+        <h1>LLMRouter</h1>
+        <p class="page-desc" style="font-size:17px">@Loc.T("landing.tagline", "One endpoint. Every LLM provider. Automatic fallback.")</p>
+        <div class="flex" style="gap:10px;justify-content:center">
+            <a class="btn btn-primary" href="/dashboard">@Loc.T("landing.openDashboard", "Open dashboard")</a>
+            <a class="btn" href="/docs">@Loc.T("landing.docs", "Docs")</a>
+        </div>
+    </section>
+    <section class="grid grid-3" style="max-width:960px;margin:48px auto 0;padding:0 20px">
+        <div class="card card-p"><span class="material-symbols-outlined" style="color:var(--accent)">hub</span><h3>288 providers</h3><p class="muted">@Loc.T("landing.f1", "OpenAI, Claude, Gemini and 285 more behind one API.")</p></div>
+        <div class="card card-p"><span class="material-symbols-outlined" style="color:var(--primary)">electric_bolt</span><h3>@Loc.T("landing.combos", "Combos")</h3><p class="muted">@Loc.T("landing.f2", "Cascade, round-robin and sticky fallback chains.")</p></div>
+        <div class="card card-p"><span class="material-symbols-outlined" style="color:var(--success)">translate</span><h3>@Loc.T("landing.translators", "Translators")</h3><p class="muted">@Loc.T("landing.f3", "OpenAI ↔ Claude ↔ Gemini formats, streaming included.")</p></div>
+        <div class="card card-p"><span class="material-symbols-outlined" style="color:var(--accent)">monitoring</span><h3>@Loc.T("landing.analytics", "Usage & costs")</h3><p class="muted">@Loc.T("landing.f4", "Per-connection analytics, pricing and budgets.")</p></div>
+        <div class="card card-p"><span class="material-symbols-outlined" style="color:var(--primary)">shield</span><h3>@Loc.T("landing.resilience", "Resilience")</h3><p class="muted">@Loc.T("landing.f5", "Cooldowns, quotas, proxy pools and circuit breaking.")</p></div>
+        <div class="card card-p"><span class="material-symbols-outlined" style="color:var(--success)">extension</span><h3>MCP / A2A</h3><p class="muted">@Loc.T("landing.f6", "Mount the router as an MCP server or A2A agent.")</p></div>
+    </section>
+</div>
+
+<style>
+    .landing { text-align: center; padding: 64px 20px 40px; }
+    .hero h1 { font-size: 44px; margin: 14px 0 6px; }
+    .hero .btn { padding: 10px 22px; border-radius: 10px; font-weight: 600; }
+    .landing h3 { margin: 8px 0 4px; }
+    .landing .material-symbols-outlined { font-size: 30px; }
+</style>

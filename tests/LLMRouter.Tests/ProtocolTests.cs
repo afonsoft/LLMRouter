@@ -52,3 +52,35 @@ public class ConductorTests
         r.Steps[1].Output.ShouldBe("agg");
     }
 }
+
+public class DocsTests
+{
+    [Fact]
+    public void MdToHtml_renders_headers_code_and_bold()
+    {
+        var html = LLMRouter.Server.Endpoints.DocsEndpoints.MdToHtml("# Title\n- item **b**\n```\ncode <x>\n```\ntext `y`");
+        html.ShouldContain("<h1>Title</h1>");
+        html.ShouldContain("<li>item <b>b</b></li>");
+        html.ShouldContain("code &lt;x&gt;");
+        html.ShouldContain("<code>y</code>");
+    }
+
+    [Fact]
+    public void MdToHtml_escapes_script()
+    {
+        var html = LLMRouter.Server.Endpoints.DocsEndpoints.MdToHtml("<script>alert(1)</script>");
+        html.ShouldNotContain("<script>");
+    }
+
+    [Fact]
+    public void Manifest_is_valid_json()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "LLMRouter.Client", "wwwroot", "manifest.webmanifest");
+        var full = Path.GetFullPath(path);
+        if (!File.Exists(full)) return; // manifest is a client asset; validated when present
+        var m = System.Text.Json.JsonDocument.Parse(File.ReadAllText(full)).RootElement;
+        m.GetProperty("name").GetString().ShouldBe("LLMRouter");
+        m.GetProperty("icons").GetArrayLength().ShouldBeGreaterThan(0);
+    }
+}

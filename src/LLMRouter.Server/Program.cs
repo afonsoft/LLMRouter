@@ -66,6 +66,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
+app.UseStatusCodePagesWithReExecute("/error/{0}");
 
 app.MapAuthEndpoints();
 app.MapGatewayEndpoints();
@@ -74,6 +75,7 @@ app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();
 app.MapProtocolEndpoints();
+app.MapDocsEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

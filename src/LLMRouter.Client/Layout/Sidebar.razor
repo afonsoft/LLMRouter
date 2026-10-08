@@ -3,6 +3,9 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
+<button class="sidebar-mobile-btn" @onclick="() => _mobileOpen = true" title="Menu">
+    <span class="material-symbols-outlined">menu</span>
+</button>
 <div class="sidebar-mobile-overlay @(_mobileOpen ? "show" : "")" @onclick="() => _mobileOpen = false"></div>
 <aside class="sidebar @(_collapsed ? "collapsed" : "") @(_mobileOpen ? "mobile-open" : "")">
     <div class="sidebar-head">

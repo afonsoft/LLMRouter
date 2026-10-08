@@ -39,8 +39,9 @@ public static class AuthEndpoints
                 await ctx.SignInAsync("cookie",
                     new ClaimsPrincipal(new ClaimsIdentity(claims, "cookie")));
                 // mark setup complete on first successful login
-                if (s is not null && !GetBool(data, "setupComplete", false))
+                if (!GetBool(data, "setupComplete", false))
                 {
+                    s ??= db.Settings.Add(new LLMRouter.Core.Data.SettingRow { Id = 1, Data = "{}" }).Entity;
                     var d = data.Deserialize<Dictionary<string, JsonElement>>() ?? [];
                     d["setupComplete"] = JsonSerializer.SerializeToElement(true);
                     s.Data = JsonSerializer.Serialize(d);

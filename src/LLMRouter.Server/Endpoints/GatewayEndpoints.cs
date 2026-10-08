@@ -5,6 +5,7 @@ using System.Text.Json;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Gateway;
 using LLMRouter.Core.Registry;
+using LLMRouter.Core.Routing;
 using LLMRouter.Core.Translation;
 using Microsoft.EntityFrameworkCore;
 
@@ -268,7 +269,23 @@ public static class GatewayEndpoints
         if (inbound == "gemini" && ctx.Request.Path.Value?.Contains("streamGenerateContent") == true)
             stream = true;
 
+        // vision-adapter combo: stage-1 imageToText call rewrites the image into
+        // a text description, then the remaining combo models serve the request
+        var comboEntity = await db.Combos.FirstOrDefaultAsync(c => c.Name == model);
+        if (comboEntity?.Kind == "vision-adapter"
+            && ComboPlanner.DetectRequiredCapabilities(body).Contains("vision"))
+        {
+            var rewritten = await VisionAdapterAsync(ctx, engine, httpFactory, comboEntity, body, inbound, model);
+            if (rewritten is { } rw) body = rw;
+        }
+
         var targets = await engine.ResolveAsync(model, body);
+        if (comboEntity?.Kind == "vision-adapter")
+        {
+            var models = JsonSerializer.Deserialize<List<string>>(comboEntity.Models) ?? [];
+            if (models.Count > 0)
+                targets = targets.Where(t => $"{t.Provider.Id}/{t.UpstreamModel}" != models[0]).ToList();
+        }
         if (targets.Count == 0)
         {
             ctx.Response.StatusCode = 400;
@@ -344,6 +361,96 @@ public static class GatewayEndpoints
             lastError?.Message ?? "All upstream targets failed.");
         await engine.LogUsageAsync(model, model, null, apiKey, inbound, 0, 0, "502",
             lastError?.Message, sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// Vision-adapter stage 1: send the image-bearing request to the combo's
+    /// first model (imageToText), get a text description back, rewrite the body
+    /// replacing image content with the description.
+    /// </summary>
+    private static async Task<JsonElement?> VisionAdapterAsync(
+        HttpContext ctx, GatewayEngine engine, IHttpClientFactory factory,
+        Combo combo, JsonElement body, string inbound, string model)
+    {
+        var models = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+        if (models.Count < 2) return null;
+        var stage1 = await engine.ResolveAsync(models[0], body);
+        var t = stage1.FirstOrDefault();
+        if (t is null) return null;
+        try
+        {
+            var call = engine.BuildCall(t, inbound, body, stream: false);
+            var client = factory.CreateClient("upstream");
+            var req = new HttpRequestMessage(HttpMethod.Post, call.Url)
+            {
+                Content = new StringContent(call.Body, Encoding.UTF8, "application/json"),
+            };
+            foreach (var (k, v) in call.Headers) req.Headers.TryAddWithoutValidation(k, v);
+            using var resp = await client.SendAsync(req, ctx.RequestAborted);
+            if (!resp.IsSuccessStatusCode) return null;
+            var up = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ctx.RequestAborted);
+            var translated = Translators.TranslateResponse(up, call.OutboundFormat, inbound, model);
+            var desc = ResponseText(translated, inbound);
+            if (string.IsNullOrEmpty(desc)) return null;
+            return InjectImageDescription(body, desc);
+        }
+        catch { return null; }
+    }
+
+    private static string? ResponseText(System.Text.Json.Nodes.JsonNode node, string inbound)
+    {
+        var el = JsonDocument.Parse(node.ToJsonString()).RootElement;
+        if (inbound == "claude")
+            return el.TryGetProperty("content", out var c)
+                ? string.Concat(c.EnumerateArray()
+                    .Where(b => b.TryGetProperty("type", out var t) && t.GetString() == "text")
+                    .Select(b => b.TryGetProperty("text", out var t2) ? t2.GetString() : "")) : null;
+        if (inbound == "gemini")
+            return el.TryGetProperty("candidates", out var cands)
+                ? string.Concat(cands.EnumerateArray().SelectMany(cd =>
+                    cd.TryGetProperty("content", out var cc) && cc.TryGetProperty("parts", out var pp)
+                        ? pp.EnumerateArray().Select(p => p.TryGetProperty("text", out var t) ? t.GetString() : "")
+                        : [])) : null;
+        return el.TryGetProperty("choices", out var ch)
+            ? ch.EnumerateArray().FirstOrDefault().TryGetProperty("message", out var m)
+                && m.TryGetProperty("content", out var ct) ? ct.GetString() : null
+            : el.TryGetProperty("output_text", out var ot) ? ot.GetString() : null;
+    }
+
+    /// <summary>Replace image content blocks with the extracted text description.</summary>
+    private static JsonElement InjectImageDescription(JsonElement body, string description)
+    {
+        var doc = System.Text.Json.Nodes.JsonNode.Parse(body.GetRawText())!.AsObject();
+        bool IsImageBlock(System.Text.Json.Nodes.JsonNode? b)
+            => b?["type"]?.GetValue<string>() is "image_url" or "image" or "input_image"
+               || b?["inlineData"] is not null || b?["fileData"] is not null;
+        var descBlock = new System.Text.Json.Nodes.JsonObject { ["type"] = "text", ["text"] = $"[Image description]: {description}" };
+
+        // openai/claude messages[] / responses input[] / gemini contents[]
+        foreach (var prop in new[] { "messages", "input", "contents" })
+        {
+            if (doc[prop] is not System.Text.Json.Nodes.JsonArray arr) continue;
+            System.Text.Json.Nodes.JsonObject? lastUser = null;
+            foreach (var m in arr)
+            {
+                var role = m?["role"]?.GetValue<string>();
+                if (role is "user") lastUser = m as System.Text.Json.Nodes.JsonObject;
+                var contentProp = prop == "contents" ? "parts" : "content";
+                if (m?[contentProp] is System.Text.Json.Nodes.JsonArray blocks)
+                    for (var i = blocks.Count - 1; i >= 0; i--)
+                        if (IsImageBlock(blocks[i])) blocks.RemoveAt(i);
+            }
+            if (lastUser is not null)
+            {
+                var contentProp = prop == "contents" ? "parts" : "content";
+                if (lastUser[contentProp] is System.Text.Json.Nodes.JsonArray ub)
+                    ub.Add(descBlock.DeepClone());
+                else if (lastUser[contentProp] is System.Text.Json.Nodes.JsonValue v
+                         && v.TryGetValue<string>(out var s))
+                    lastUser[contentProp] = s + $"\n[Image description]: {description}";
+            }
+        }
+        return JsonDocument.Parse(doc.ToJsonString()).RootElement;
     }
 
     private static bool ShouldCascade(HttpStatusCode s) =>

@@ -94,4 +94,30 @@ public class ApiRoundTripTests : IDisposable
         var resp = await _client.GetAsync("/api/provider-connections");
         resp.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
+
+[Fact]
+    public async Task Model_aliases_and_combo_mappings_round_trip()
+    {
+        await LoginAsync();
+        // alias: foo → openai/gpt-4o
+        var put = await _client.PutAsJsonAsync("/api/model-aliases",
+            new { aliases = new Dictionary<string, string> { ["foo"] = "openai/gpt-4o" } });
+        put.EnsureSuccessStatusCode();
+        var aliases = await _client.GetFromJsonAsync<JsonElement>("/api/model-aliases");
+        aliases.GetProperty("aliases").GetProperty("foo").GetString().ShouldBe("openai/gpt-4o");
+        // mapping: gpt-4 → combo name
+        var combo = await _client.PostAsJsonAsync("/api/combos",
+            new { name = "mycombo", kind = "round-robin", stickyLimit = 2, models = new[] { "openai/gpt-4o" } });
+        combo.EnsureSuccessStatusCode();
+        var map = await _client.PostAsJsonAsync("/api/model-combo-mappings",
+            new { model = "gpt-4", combo = "mycombo" });
+        map.EnsureSuccessStatusCode();
+        var mappings = await _client.GetFromJsonAsync<JsonElement>("/api/model-combo-mappings");
+        mappings.GetProperty("mappings").GetProperty("gpt-4").GetString().ShouldBe("mycombo");
+        // combo list exposes stickyLimit
+        var combos = await _client.GetFromJsonAsync<JsonElement>("/api/combos");
+        var c = combos.GetProperty("combos").EnumerateArray().First(x => x.GetProperty("name").GetString() == "mycombo");
+        c.GetProperty("kind").GetString().ShouldBe("round-robin");
+        c.GetProperty("stickyLimit").GetInt32().ShouldBe(2);
+    }
 }

@@ -86,6 +86,8 @@ public class Combo
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Kind { get; set; }
+    /// <summary>Round-robin: consecutive requests served by the same model before rotating.</summary>
+    public int StickyLimit { get; set; } = 1;
     /// <summary>JSON array of "provider/model" strings.</summary>
     public string Models { get; set; } = "[]";
     public string CreatedAt { get; set; } = "";

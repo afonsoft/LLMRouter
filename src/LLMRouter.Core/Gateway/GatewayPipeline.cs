@@ -49,13 +49,20 @@ public sealed class GatewayEngine(
         var settings = await db.Settings.FirstOrDefaultAsync(ct);
         var aliases = LoadAliases(settings?.Data ?? "{}");
 
-        var combo = await db.Combos.FirstOrDefaultAsync(c => c.Name == model, ct);
+        // model-combo mappings: upstream-facing model name → combo name (auto-wrap)
+        var mapping = await db.Kv
+            .Where(k => k.Scope == "modelComboMappings" && k.Key == model)
+            .Select(k => k.Value).FirstOrDefaultAsync(ct);
+        var effectiveModel = mapping ?? model;
+
+        var combo = await db.Combos.FirstOrDefaultAsync(c => c.Name == effectiveModel, ct);
         List<string> models;
         if (combo is not null)
         {
             var list = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
             var rr = string.Equals(combo.Kind, "round-robin", StringComparison.OrdinalIgnoreCase);
-            models = ComboPlanner.GetRotatedModels(list, combo.Name, rr ? "round-robin" : "fallback");
+            models = ComboPlanner.GetRotatedModels(list, combo.Name,
+                rr ? "round-robin" : "fallback", combo.StickyLimit);
         }
         else
         {

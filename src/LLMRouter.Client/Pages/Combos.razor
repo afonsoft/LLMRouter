@@ -13,36 +13,90 @@
     </button>
 </div>
 
-<div class="grid grid-2 mt-6">
-    @foreach (var c in _combos)
-    {
-        <div class="card card-p">
-            <div class="flex between">
-                <div>
-                    <div class="bold" style="font-size:15px">@c.Name</div>
-                    <span class="badge info mt-2">@c.Kind</span>
-                </div>
-                <div class="flex gap-2">
-                    <button class="btn btn-sm" @onclick="() => _editing = c">Edit</button>
-                    <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id)">Delete</button>
-                </div>
-            </div>
-            <div class="col gap-2 mt-4">
-                @foreach (var (m, i) in c.ModelsList.Select((x, i) => (x, i)))
-                {
-                    <div class="flex gap-2">
-                        <span class="badge">@(i + 1)</span>
-                        <span class="mono sm">@m</span>
-                    </div>
-                }
-            </div>
-        </div>
-    }
-    @if (_combos.Count == 0)
-    {
-        <div class="card"><div class="empty"><span class="material-symbols-outlined">layers</span>@Loc.T("combos.empty", "No combos yet")</div></div>
-    }
+<div class="flex gap-2 mt-6">
+    <button class="tab @(_tab == "combos" ? "on" : "")" @onclick='() => _tab = "combos"'>Combos</button>
+    <button class="tab @(_tab == "aliases" ? "on" : "")" @onclick='() => _tab = "aliases"'>@Loc.T("combos.aliases", "Model aliases")</button>
+    <button class="tab @(_tab == "mappings" ? "on" : "")" @onclick='() => _tab = "mappings"'>@Loc.T("combos.mappings", "Model → combo mappings")</button>
 </div>
+
+@if (_tab == "combos")
+{
+    <div class="grid grid-2 mt-4">
+        @foreach (var c in _combos)
+        {
+            <div class="card card-p">
+                <div class="flex between">
+                    <div>
+                        <div class="bold" style="font-size:15px">@c.Name</div>
+                        <span class="badge info mt-2">@c.Kind</span>
+                        @if (c.Kind == "round-robin" && c.StickyLimit > 1)
+                        {
+                            <span class="badge mt-2">sticky ×@c.StickyLimit</span>
+                        }
+                    </div>
+                    <div class="flex gap-2">
+                        <a class="btn btn-sm" href="/dashboard/combos/live?id=@c.Id">Live</a>
+                        <button class="btn btn-sm" @onclick="() => _editing = c">Edit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id!)">Delete</button>
+                    </div>
+                </div>
+                <div class="col gap-2 mt-4">
+                    @foreach (var (m, i) in c.ModelsList.Select((x, i) => (x, i)))
+                    {
+                        <div class="flex gap-2">
+                            <span class="badge">@(i + 1)</span>
+                            <span class="mono sm">@m</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        @if (_combos.Count == 0)
+        {
+            <div class="card"><div class="empty"><span class="material-symbols-outlined">layers</span>@Loc.T("combos.empty", "No combos yet")</div></div>
+        }
+    </div>
+}
+else if (_tab == "aliases")
+{
+    <div class="card card-p mt-4">
+        <div class="flex between">
+            <div class="bold">@Loc.T("combos.aliases", "Model aliases")</div>
+            <button class="btn btn-sm btn-primary" @onclick='() => _aliases.Add(new())'>+ Add</button>
+        </div>
+        <p class="dim sm mt-2">foo → provider/model — alias resolves through the gateway.</p>
+        @foreach (var a in _aliases)
+        {
+            <div class="flex gap-2 mt-3">
+                <input class="input mono" style="flex:1" @bind="a.Name" placeholder="alias" />
+                <input class="input mono" style="flex:2" @bind="a.Target" placeholder="provider/model" />
+                <button class="btn btn-sm btn-danger" @onclick="() => _aliases.Remove(a)">×</button>
+            </div>
+        }
+        <div class="mt-4"><button class="btn btn-primary" @onclick="SaveAliases">@Loc.T("common.save", "Save")</button></div>
+    </div>
+}
+else
+{
+    <div class="card card-p mt-4">
+        <div class="flex between">
+            <div class="bold">@Loc.T("combos.mappings", "Model → combo mappings")</div>
+            <button class="btn btn-sm btn-primary" @onclick='() => _mappings.Add(new())'>+ Add</button>
+        </div>
+        <p class="dim sm mt-2">Upstream-facing model name routed to a combo automatically.</p>
+        @foreach (var mp in _mappings)
+        {
+            <div class="flex gap-2 mt-3">
+                <input class="input mono" style="flex:1" @bind="mp.Model" placeholder="gpt-4" />
+                <select class="input" style="flex:2" @bind="mp.Combo">
+                    @foreach (var c in _combos) { <option value="@c.Name">@c.Name</option> }
+                </select>
+                <button class="btn btn-sm btn-danger" @onclick="() => DeleteMapping(mp.Model)">×</button>
+            </div>
+        }
+        <div class="mt-4"><button class="btn btn-primary" @onclick="SaveMappings">@Loc.T("common.save", "Save")</button></div>
+    </div>
+}
 
 @if (_editing is not null)
 {
@@ -59,11 +113,23 @@
                     <select class="input" @bind="_editing.Kind">
                         <option value="fallback">fallback (ordered)</option>
                         <option value="round-robin">round-robin</option>
+                        <option value="vision-adapter">vision-adapter (imageToText → llm)</option>
                     </select>
                 </div>
+                @if (_editing.Kind == "round-robin")
+                {
+                    <div class="mt-4">
+                        <label class="lbl">Sticky limit (requests per model before rotating)</label>
+                        <input class="input" type="number" min="1" @bind="_editing.StickyLimit" />
+                    </div>
+                }
                 <div class="mt-4">
                     <label class="lbl">@Loc.T("combos.models", "Models (provider/model, one per line, in order)")</label>
                     <textarea class="input mono" rows="6" @bind="_modelsText" placeholder="openai/gpt-4o&#10;anthropic/claude-sonnet-4"></textarea>
+                    @if (_editing.Kind == "vision-adapter")
+                    {
+                        <p class="dim sm mt-2">vision-adapter: first model describes the image, remaining models answer.</p>
+                    }
                 </div>
             </div>
             <div class="modal-foot">
@@ -78,9 +144,16 @@
     private sealed class ComboVm
     {
         public string? Id; public string Name = ""; public string Kind = "fallback";
+        public int StickyLimit = 1;
         public List<string> ModelsList = [];
     }
+    private sealed class AliasVm { public string Name = ""; public string Target = ""; }
+    private sealed class MappingVm { public string Model = ""; public string Combo = ""; }
+
+    private string _tab = "combos";
     private List<ComboVm> _combos = [];
+    private List<AliasVm> _aliases = [];
+    private List<MappingVm> _mappings = [];
     private ComboVm? _editing;
     private string _modelsText = "";
 
@@ -94,29 +167,54 @@
             Id = c.GetProperty("id").GetString(),
             Name = c.GetProperty("name").GetString() ?? "",
             Kind = c.TryGetProperty("kind", out var k) ? k.GetString() ?? "fallback" : "fallback",
+            StickyLimit = c.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number ? sl.GetInt32() : 1,
             ModelsList = c.TryGetProperty("models", out var m)
                 ? JsonSerializer.Deserialize<List<string>>(m.GetRawText()) ?? [] : [],
         }).ToList();
+        var ar = await Api.GetAsync("api/model-aliases");
+        _aliases = ar.GetProperty("aliases").EnumerateObject()
+            .Select(kv => new AliasVm { Name = kv.Name, Target = kv.Value.GetString() ?? "" }).ToList();
+        var mr = await Api.GetAsync("api/model-combo-mappings");
+        _mappings = mr.GetProperty("mappings").EnumerateObject()
+            .Select(kv => new MappingVm { Model = kv.Name, Combo = kv.Value.GetString() ?? "" }).ToList();
     }
-
-    protected override void OnParametersSet() { }
 
     private void EditOpened() { _modelsText = string.Join("\n", _editing?.ModelsList ?? []); }
 
     private async Task Save()
     {
         var models = _modelsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        var payload = new { name = _editing!.Name, kind = _editing.Kind, stickyLimit = _editing.StickyLimit, models };
         if (_editing!.Id is null)
-            await Api.PostAsync("api/combos", new { name = _editing.Name, kind = _editing.Kind, models });
+            await Api.PostAsync("api/combos", payload);
         else
-            await Api.PutAsync($"api/combos/{_editing.Id}", new { name = _editing.Name, kind = _editing.Kind, models });
+            await Api.PutAsync($"api/combos/{_editing.Id}", payload);
         _editing = null;
         await Load();
     }
 
     private async Task Delete(string id) { await Api.DeleteAsync($"api/combos/{id}"); await Load(); }
 
-    protected override bool ShouldRender() => true;
+    private async Task SaveAliases()
+    {
+        var map = _aliases.Where(a => !string.IsNullOrWhiteSpace(a.Name))
+            .ToDictionary(a => a.Name, a => a.Target);
+        await Api.PutAsync("api/model-aliases", new { aliases = map });
+        await Load();
+    }
+
+    private async Task SaveMappings()
+    {
+        foreach (var mp in _mappings.Where(m => !string.IsNullOrWhiteSpace(m.Model) && !string.IsNullOrWhiteSpace(m.Combo)))
+            await Api.PostAsync("api/model-combo-mappings", new { model = mp.Model, combo = mp.Combo });
+        await Load();
+    }
+
+    private async Task DeleteMapping(string model)
+    {
+        await Api.DeleteAsync($"api/model-combo-mappings/{Uri.EscapeDataString(model)}");
+        _mappings.RemoveAll(m => m.Model == model);
+    }
 
     private ComboVm? _prev;
     protected override void OnAfterRender(bool first) { if (_editing != _prev) { _prev = _editing; EditOpened(); } }

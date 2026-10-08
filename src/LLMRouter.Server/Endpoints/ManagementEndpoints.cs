@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Registry;
 using LLMRouter.Core.Routing;
@@ -326,6 +327,8 @@ public static class ManagementEndpoints
                 Id = Guid.NewGuid().ToString("N")[..12],
                 Name = b.GetProperty("name").GetString()!,
                 Kind = Get(b, "kind") ?? "fallback",
+                StickyLimit = b.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number
+                    ? Math.Max(1, sl.GetInt32()) : 1,
                 Models = b.TryGetProperty("models", out var m) ? m.GetRawText() : "[]",
                 CreatedAt = Now(), UpdatedAt = Now(),
             };
@@ -341,7 +344,11 @@ public static class ManagementEndpoints
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             if (b.TryGetProperty("name", out _)) c.Name = Get(b, "name") ?? c.Name;
             if (b.TryGetProperty("kind", out _)) c.Kind = Get(b, "kind");
+            if (b.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number)
+                c.StickyLimit = Math.Max(1, sl.GetInt32());
             if (b.TryGetProperty("models", out var m)) c.Models = m.GetRawText();
+            // strategy change resets the rotation cursor
+            ComboPlanner.ResetRotation(c.Name);
             c.UpdatedAt = Now();
             await db.SaveChangesAsync();
             return Results.Json(new { combo = c }, JsonOpts);
@@ -353,6 +360,92 @@ public static class ManagementEndpoints
             if (c is null) return Results.NotFound();
             db.Combos.Remove(c);
             await db.SaveChangesAsync();
+            return Results.Json(new { success = true });
+        });
+
+        // combo live stats (Combo Studio): which model served recent requests,
+        // rotation index, per-model success rate — from usageHistory/requestDetails
+        g.MapGet("/combos/{id}/live", async (string id, LlmRouterDbContext db) =>
+        {
+            var c = await db.Combos.FindAsync(id);
+            if (c is null) return Results.NotFound();
+            var models = JsonSerializer.Deserialize<List<string>>(c.Models) ?? [];
+            var modelIds = models.Select(m => m.Contains('/') ? m[(m.IndexOf('/') + 1)..] : m).ToHashSet();
+            var rows = await db.UsageHistory
+                .Where(u => u.Model != null && modelIds.Contains(u.Model))
+                .OrderByDescending(u => u.Timestamp).Take(200).ToListAsync();
+            var perModel = models.Select(m => new
+            {
+                model = m,
+                requests = rows.Count(r => (r.Provider + "/" + r.Model) == m || r.Model == m),
+                successes = rows.Count(r => ((r.Provider + "/" + r.Model) == m || r.Model == m)
+                    && r.Status == "200"),
+                lastUsed = rows.Where(r => (r.Provider + "/" + r.Model) == m || r.Model == m)
+                    .Select(r => r.Timestamp).FirstOrDefault(),
+            });
+            var recent = rows.Take(20).Select(r => new
+            {
+                r.Timestamp, provider = r.Provider, r.Model, r.Status,
+            });
+            return Results.Json(new { combo = c, perModel, recent }, JsonOpts);
+        });
+
+        // ---- model aliases (settings.data.modelAliases) ----
+        g.MapGet("/model-aliases", async (LlmRouterDbContext db) =>
+        {
+            var s = await db.Settings.FirstOrDefaultAsync();
+            var map = new Dictionary<string, string>();
+            if (s is not null)
+            {
+                var el = JsonDocument.Parse(s.Data).RootElement;
+                if (el.TryGetProperty("modelAliases", out var a))
+                    foreach (var kv in a.EnumerateObject())
+                        map[kv.Name] = kv.Value.GetString() ?? "";
+            }
+            return Results.Json(new { aliases = map }, JsonOpts);
+        });
+
+        g.MapPut("/model-aliases", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var s = await db.Settings.FirstOrDefaultAsync();
+            if (s is null) { s = new SettingRow { Data = "{}" }; db.Settings.Add(s); }
+            var data = JsonNode.Parse(s.Data)!.AsObject();
+            var aliases = new JsonObject();
+            if (b.TryGetProperty("aliases", out var a))
+                foreach (var kv in a.EnumerateObject())
+                    aliases[kv.Name] = kv.Value.GetString();
+            data["modelAliases"] = aliases;
+            s.Data = data.ToJsonString();
+            await db.SaveChangesAsync();
+            return Results.Json(new { success = true });
+        });
+
+        // ---- model-combo mappings (kv scope modelComboMappings) ----
+        g.MapGet("/model-combo-mappings", async (LlmRouterDbContext db) =>
+        {
+            var rows = await db.Kv.Where(k => k.Scope == "modelComboMappings").ToListAsync();
+            return Results.Json(new { mappings = rows.ToDictionary(k => k.Key, k => k.Value) }, JsonOpts);
+        });
+
+        g.MapPost("/model-combo-mappings", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var model = b.GetProperty("model").GetString()!;
+            var combo = b.GetProperty("combo").GetString()!;
+            var existing = await db.Kv.FindAsync("modelComboMappings", model);
+            if (existing is null)
+                db.Kv.Add(new KvEntry { Scope = "modelComboMappings", Key = model, Value = combo });
+            else
+                existing.Value = combo;
+            await db.SaveChangesAsync();
+            return Results.Json(new { success = true });
+        });
+
+        g.MapDelete("/model-combo-mappings/{model}", async (string model, LlmRouterDbContext db) =>
+        {
+            var e = await db.Kv.FindAsync("modelComboMappings", model);
+            if (e is not null) { db.Kv.Remove(e); await db.SaveChangesAsync(); }
             return Results.Json(new { success = true });
         });
 

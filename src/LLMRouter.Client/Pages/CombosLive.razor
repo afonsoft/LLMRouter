@@ -1,0 +1,78 @@
+@page "/dashboard/combos/live"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">Combo Studio</h1>
+        <p class="page-desc">Live routing — which model served recent requests</p>
+    </div>
+    <select class="input" style="width:220px" @onchange="OnPick">
+        <option value="">— pick a combo —</option>
+        @foreach (var c in _combos) { <option value="@c" selected="@(c == _id)">@c</option> }
+    </select>
+</div>
+
+@if (_live is not null)
+{
+    <div class="grid grid-2 mt-6">
+        @foreach (var m in _live.Value.GetProperty("perModel").EnumerateArray())
+        {
+            var reqs = m.GetProperty("requests").GetInt32();
+            var succ = m.GetProperty("successes").GetInt32();
+            <div class="card card-p">
+                <div class="mono bold">@m.GetProperty("model").GetString()</div>
+                <div class="flex gap-4 mt-3">
+                    <span class="dim sm">@reqs requests</span>
+                    <span class="dim sm">@(reqs > 0 ? $"{100 * succ / reqs}% ok" : "—")</span>
+                </div>
+                <div class="dim sm mt-1">last: @(m.GetProperty("lastUsed").ValueKind == JsonValueKind.String ? m.GetProperty("lastUsed").GetString() : "never")</div>
+            </div>
+        }
+    </div>
+    <div class="card card-p mt-6">
+        <div class="bold mb-3">Recent requests</div>
+        <table class="tbl">
+            <thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Status</th></tr></thead>
+            <tbody>
+                @foreach (var r in _live.Value.GetProperty("recent").EnumerateArray())
+                {
+                    <tr>
+                        <td class="mono sm">@r.GetProperty("timestamp").GetString()</td>
+                        <td>@r.GetProperty("provider").GetString()</td>
+                        <td class="mono sm">@r.GetProperty("model").GetString()</td>
+                        <td><span class="badge @(r.GetProperty("status").GetString() == "200" ? "ok" : "err")">@r.GetProperty("status").GetString()</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Id { get; set; }
+    private List<string> _combos = [];
+    private string? _id;
+    private JsonElement? _live;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/combos");
+        _combos = r.GetProperty("combos").EnumerateArray()
+            .Select(c => c.GetProperty("id").GetString() ?? "").ToList();
+        _id = Id ?? _combos.FirstOrDefault();
+        if (_id is not null) await LoadLive();
+    }
+
+    private async Task OnPick(ChangeEventArgs e)
+    {
+        _id = e.Value?.ToString();
+        await LoadLive();
+    }
+
+    private async Task LoadLive()
+    {
+        if (_id is null) return;
+        _live = await Api.GetAsync($"api/combos/{_id}/live");
+    }
+}

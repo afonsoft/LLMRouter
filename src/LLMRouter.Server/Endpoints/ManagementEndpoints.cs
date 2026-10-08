@@ -313,7 +313,7 @@ public static class ManagementEndpoints
         // ---- combos ----
         static object ComboDto(Combo c) => new
         {
-            c.Id, c.Name, c.Kind, c.CreatedAt, c.UpdatedAt,
+            c.Id, c.Name, c.Kind, c.StickyLimit, c.CreatedAt, c.UpdatedAt,
             models = JsonDocument.Parse(c.Models).RootElement.Clone(),
         };
         g.MapGet("/combos", async (LlmRouterDbContext db) =>

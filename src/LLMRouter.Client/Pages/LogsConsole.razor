@@ -1,0 +1,32 @@
+@page "/dashboard/logs/console"
+@inject Api Api
+@inject Loc Loc
+@implements IDisposable
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("consoleLogs", "Console")</h1>
+        <p class="page-desc">Live server log tail (polls every 2s)</p>
+    </div>
+    <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span></button>
+</div>
+
+<div class="card card-p mt-6">
+    <pre class="mono sm" style="white-space:pre-wrap;max-height:60vh;overflow-y:auto;margin:0">@_text</pre>
+</div>
+
+@code {
+    private string _text = "";
+    private System.Threading.Timer? _timer;
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        _timer = new(async _ => { await Load(); await InvokeAsync(StateHasChanged); }, null, 2000, 2000);
+    }
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/console?tail=300");
+        _text = string.Join('\n', r.GetProperty("lines").EnumerateArray().Select(l => l.GetString()));
+    }
+    public void Dispose() => _timer?.Dispose();
+}

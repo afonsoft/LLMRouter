@@ -1,0 +1,47 @@
+@page "/dashboard/logs/timeline"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("logsTimeline", "Request timeline")</h1>
+    <p class="page-desc">Latency waterfall of recent requests</p>
+</div>
+
+<div class="card card-p mt-6">
+    @foreach (var l in _rows)
+    {
+        var w = _max == 0 ? 0 : 100.0 * l.Latency / _max;
+        <div class="flex gap-3" style="align-items:center;margin-top:8px">
+            <span class="mono sm" style="width:170px;overflow:hidden;text-overflow:ellipsis">@l.Model</span>
+            <div style="flex:1;height:14px;background:var(--border);border-radius:4px">
+                <div style="height:14px;width:@(w.ToString("F1"))%;border-radius:4px;background:@(l.Status == "200" ? "var(--accent)" : "var(--primary)")"></div>
+            </div>
+            <span class="mono sm" style="width:80px;text-align:right">@l.Latency ms</span>
+            <span class="badge @(l.Status == "200" ? "ok" : "err")">@l.Status</span>
+        </div>
+    }
+    @if (_rows.Count == 0) { <div class="empty"><span class="material-symbols-outlined">view_timeline</span>No requests</div> }
+</div>
+
+@code {
+    private record Row(string Model, string Status, long Latency);
+    private List<Row> _rows = [];
+    private long _max;
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/logs?limit=50");
+        _rows = r.GetProperty("logs").EnumerateArray().Select(l =>
+        {
+            long lat = 0;
+            if (l.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.String)
+                try
+                {
+                    var j = JsonDocument.Parse(d.GetString()!).RootElement;
+                    if (j.TryGetProperty("latencyMs", out var lm)) lat = lm.GetInt64();
+                }
+                catch { }
+            return new Row(l.GetProperty("model").GetString() ?? "?", l.GetProperty("status").GetString() ?? "", lat);
+        }).ToList();
+        _max = _rows.Count == 0 ? 0 : _rows.Max(x => x.Latency);
+    }
+}

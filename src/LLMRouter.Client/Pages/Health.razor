@@ -1,0 +1,78 @@
+@page "/dashboard/health"
+@page "/dashboard/resilience/connections"
+@page "/dashboard/resilience/cooldowns"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<div>
+    <h1 class="page-title">@(IsCooldowns ? "Cooldowns" : "Connection health")</h1>
+    <p class="page-desc">@(IsCooldowns ? "Connections skipped by the circuit breaker" : "Last test result and cooldown state per connection")</p>
+</div>
+
+@if (IsCooldowns)
+{
+    <div class="card card-p mt-6">
+        <table class="tbl">
+            <thead><tr><th>Connection</th><th>Failures</th><th>Cooling</th><th>Until</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var c in _cooldowns)
+                {
+                    <tr>
+                        <td class="mono sm">@c.GetProperty("connectionId").GetString()</td>
+                        <td>@c.GetProperty("failures").GetInt32()</td>
+                        <td><span class="badge @(c.GetProperty("cooling").GetBoolean() ? "err" : "ok")">@(c.GetProperty("cooling").GetBoolean() ? "cooling" : "ok")</span></td>
+                        <td class="mono sm">@(c.GetProperty("cooldownUntil").ValueKind == JsonValueKind.String ? c.GetProperty("cooldownUntil").GetString() : "—")</td>
+                        <td><button class="btn btn-sm" @onclick='() => Clear(c.GetProperty("connectionId").GetString()!)'>Clear</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_cooldowns.Count == 0) { <div class="empty"><span class="material-symbols-outlined">timer_off</span>No cooldowns</div> }
+    </div>
+}
+else
+{
+    <div class="card card-p mt-6">
+        <table class="tbl">
+            <thead><tr><th>Provider</th><th>Connection</th><th>Active</th><th>Last test</th><th>Cooldown</th><th>Error</th></tr></thead>
+            <tbody>
+                @foreach (var c in _conns)
+                {
+                    var ts = c.TryGetProperty("testStatus", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : "never";
+                    var cooling = c.TryGetProperty("cooldown", out var cd) && cd.ValueKind == JsonValueKind.Object;
+                    <tr>
+                        <td class="mono sm">@c.GetProperty("provider").GetString()</td>
+                        <td class="mono sm">@c.GetProperty("name").GetString()</td>
+                        <td><span class="badge @(c.GetProperty("isActive").GetBoolean() ? "ok" : "")">@(c.GetProperty("isActive").GetBoolean() ? "on" : "off")</span></td>
+                        <td><span class="badge @(ts == "ok" ? "ok" : ts == "never" ? "" : "err")">@ts</span></td>
+                        <td>@(cooling ? "🧊" : "—")</td>
+                        <td class="dim sm" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">@(c.TryGetProperty("lastError", out var le) && le.ValueKind == JsonValueKind.String ? le.GetString() : "")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_conns.Count == 0) { <div class="empty"><span class="material-symbols-outlined">health_and_safety</span>No connections</div> }
+    </div>
+}
+
+@code {
+    private bool IsCooldowns => Nav.Uri.Contains("/cooldowns");
+    private List<JsonElement> _conns = [];
+    private List<JsonElement> _cooldowns = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/health/connections");
+        _conns = r.GetProperty("connections").EnumerateArray().ToList();
+        var cd = await Api.GetAsync("api/resilience/cooldowns");
+        _cooldowns = cd.GetProperty("cooldowns").EnumerateArray().ToList();
+    }
+
+    private async Task Clear(string id)
+    {
+        await Api.DeleteAsync($"api/resilience/cooldowns/{id}");
+        var cd = await Api.GetAsync("api/resilience/cooldowns");
+        _cooldowns = cd.GetProperty("cooldowns").EnumerateArray().ToList();
+    }
+}

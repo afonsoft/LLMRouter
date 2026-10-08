@@ -88,7 +88,7 @@ public sealed class GatewayEngine(
                 .Where(c => c.Provider == provider.Id && c.IsActive)
                 .OrderBy(c => c.Priority).ThenBy(c => c.Name)
                 .ToListAsync(ct);
-            foreach (var c in conns)
+            foreach (var c in conns.Where(c => !Resilience.CooldownTracker.IsCooling(c.Id)))
                 targets.Add(new ResolvedTarget(provider, c, upstreamModel, combo?.Name));
         }
         return targets;

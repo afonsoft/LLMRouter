@@ -617,10 +617,14 @@ public static class ManagementEndpoints
             return Results.Json(new { events = rows }, JsonOpts);
         });
 
-        g.MapGet("/logs", async (LlmRouterDbContext db, int? limit, int? offset, string? status) =>
+        g.MapGet("/logs", async (LlmRouterDbContext db, int? limit, int? offset,
+            string? status, string? provider, string? model, string? since) =>
         {
             var q = db.RequestDetails.AsQueryable();
             if (status is not null) q = q.Where(x => x.Status == status);
+            if (provider is not null) q = q.Where(x => x.Provider == provider);
+            if (model is not null) q = q.Where(x => x.Model == model);
+            if (since is not null) q = q.Where(x => string.Compare(x.Timestamp, since) >= 0);
             var total = await q.CountAsync();
             var rows = await q.OrderByDescending(x => x.Timestamp)
                 .Skip(offset ?? 0).Take(Math.Min(limit ?? 50, 200)).ToListAsync();
@@ -630,6 +634,101 @@ public static class ManagementEndpoints
         g.MapGet("/logs/{id}", async (string id, LlmRouterDbContext db) =>
             await db.RequestDetails.FindAsync(id) is { } r
                 ? Results.Json(new { log = r }, JsonOpts) : Results.NotFound());
+
+        // SPEC-006: console ring buffer + SSE live tail
+        g.MapGet("/console", (int? tail) =>
+            Results.Json(new { lines = Services.ConsoleLogBuffer.Instance.Recent(tail ?? 200) }, JsonOpts));
+
+        g.MapGet("/logs/stream", async (HttpContext ctx) =>
+        {
+            ctx.Response.ContentType = "text/event-stream";
+            ctx.Response.Headers.CacheControl = "no-cache";
+            var reader = Services.ConsoleLogBuffer.Instance.Stream;
+            while (!ctx.RequestAborted.IsCancellationRequested)
+            {
+                if (await reader.WaitToReadAsync(ctx.RequestAborted))
+                    while (reader.TryRead(out var line))
+                        await ctx.Response.WriteAsync($"data: {line}\n\n", ctx.RequestAborted);
+            }
+        });
+
+        // SPEC-006: log export (jsonl | csv)
+        g.MapGet("/log-export", async (LlmRouterDbContext db, string? fmt, int? limit) =>
+        {
+            var rows = await db.RequestDetails.OrderByDescending(x => x.Timestamp)
+                .Take(Math.Min(limit ?? 1000, 10000)).ToListAsync();
+            if (fmt == "csv")
+            {
+                var sb = new System.Text.StringBuilder("id,timestamp,provider,model,status\n");
+                foreach (var r in rows)
+                    sb.AppendLine($"{r.Id},{r.Timestamp},{r.Provider},{r.Model},{r.Status}");
+                return Results.Text(sb.ToString(), "text/csv");
+            }
+            var lines = string.Join('\n', rows.Select(r => JsonSerializer.Serialize(r, JsonOpts)));
+            return Results.Text(lines, "application/x-ndjson");
+        });
+
+        // SPEC-006: per-connection health (last test + cooldown state)
+        g.MapGet("/health/connections", async (LlmRouterDbContext db) =>
+        {
+            var conns = await db.ProviderConnections.ToListAsync();
+            var cooling = Core.Resilience.CooldownTracker.Snapshot()
+                .ToDictionary(x => x.ConnectionId, x => x);
+            return Results.Json(new
+            {
+                connections = conns.Select(c =>
+                {
+                    var data = JsonDocument.Parse(c.Data).RootElement;
+                    cooling.TryGetValue(c.Id, out var cd);
+                    return new
+                    {
+                        c.Id, c.Provider, c.Name, c.IsActive,
+                        testStatus = data.TryGetProperty("testStatus", out var ts) ? ts.GetString() : null,
+                        lastError = data.TryGetProperty("lastError", out var le) ? le.GetString() : null,
+                        cooldown = cd,
+                    };
+                }),
+            }, JsonOpts);
+        });
+
+        // SPEC-006: runtime info
+        g.MapGet("/runtime", (LlmRouterDbContext db, IWebHostEnvironment env) =>
+        {
+            var dbPath = db.Database.GetDbConnection().DataSource;
+            return Results.Json(new
+            {
+                version = "0.1.0",
+                started = System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime().ToString("o"),
+                uptimeSeconds = (DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
+                dbSizeBytes = File.Exists(dbPath) ? new FileInfo(dbPath).Length : 0,
+                gcMemoryMb = Math.Round(GC.GetTotalMemory(false) / 1e6, 1),
+                environment = env.EnvironmentName,
+            }, JsonOpts);
+        });
+
+        // SPEC-006: resilience — cooldown list + clear
+        g.MapGet("/resilience/cooldowns", () =>
+            Results.Json(new { cooldowns = Core.Resilience.CooldownTracker.Snapshot() }, JsonOpts));
+
+        g.MapDelete("/resilience/cooldowns/{id}", (string id) =>
+        {
+            Core.Resilience.CooldownTracker.Clear(id);
+            return Results.Json(new { ok = true });
+        });
+
+        // SPEC-006: retention — prune requestDetails beyond cap
+        g.MapPost("/logs/prune", async (LlmRouterDbContext db, int? keep) =>
+        {
+            var keepN = keep ?? 5000;
+            var stale = await db.RequestDetails.OrderByDescending(x => x.Timestamp)
+                .Skip(keepN).ToListAsync();
+            db.RequestDetails.RemoveRange(stale);
+            var staleUsage = await db.UsageHistory.OrderByDescending(x => x.Timestamp)
+                .Skip(keepN * 4).ToListAsync();
+            db.UsageHistory.RemoveRange(staleUsage);
+            await db.SaveChangesAsync();
+            return Results.Json(new { removed = stale.Count + staleUsage.Count });
+        });
 
         // ---- models (aggregated catalog; ?live=true fetches upstream model lists) ----
         g.MapGet("/models", async (LlmRouterDbContext db, ProviderRegistry r, bool live,

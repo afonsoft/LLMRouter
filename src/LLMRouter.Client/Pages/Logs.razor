@@ -7,7 +7,16 @@
         <h1 class="page-title">@Loc.T("logs.title", "Request logs")</h1>
         <p class="page-desc">@Loc.T("logs.subtitle", "Every request through the gateway")</p>
     </div>
-    <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span>@Loc.T("logs.refresh", "Refresh")</button>
+    <div class="flex gap-2">
+        <select class="input" style="width:130px" @bind="_status" @bind:after="Load">
+            <option value="">All status</option><option value="200">200</option><option value="err">errors</option>
+        </select>
+        <input class="input mono" style="width:150px" placeholder="provider" @bind="_provider" @bind:after="Load" />
+        <input class="input mono" style="width:150px" placeholder="model" @bind="_model" @bind:after="Load" />
+        <a class="btn btn-sm" href="/api/log-export?fmt=csv" target="_blank">CSV</a>
+        <a class="btn btn-sm" href="/api/log-export" target="_blank">JSONL</a>
+        <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span>@Loc.T("logs.refresh", "Refresh")</button>
+    </div>
 </div>
 
 <div class="card mt-6 scroll-x">
@@ -37,21 +46,28 @@
 </div>
 
 @code {
-    private record L(string Timestamp, string Provider, string Model, string Status, string? Data);
+    private record L(string Timestamp, string Provider, string Model, string Status, string? Data, long? LatencyMs, string? Endpoint);
     private List<L> _logs = [];
     private L? _detail;
+    private string _status = "", _provider = "", _model = "";
 
     protected override async Task OnInitializedAsync() => await Load();
 
     private async Task Load()
     {
-        var r = await Api.GetAsync("api/logs?limit=100");
+        var qs = "api/logs?limit=100";
+        if (!string.IsNullOrEmpty(_status)) qs += $"&status={Uri.EscapeDataString(_status == "err" ? "" : _status)}";
+        if (_status == "err") qs += "&status=500"; // rough: show server errors
+        if (!string.IsNullOrEmpty(_provider)) qs += $"&provider={Uri.EscapeDataString(_provider)}";
+        if (!string.IsNullOrEmpty(_model)) qs += $"&model={Uri.EscapeDataString(_model)}";
+        var r = await Api.GetAsync(qs);
         _logs = r.GetProperty("logs").EnumerateArray().Select(l => new L(
             l.GetProperty("timestamp").GetString() ?? "",
             l.GetProperty("provider").GetString() ?? "",
             l.GetProperty("model").GetString() ?? "",
             l.GetProperty("status").GetString() ?? "",
-            l.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.String ? Pretty(d.GetString()!) : null)).ToList();
+            l.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.String ? Pretty(d.GetString()!) : null,
+            null, null)).ToList();
     }
 
     private static string Pretty(string s)

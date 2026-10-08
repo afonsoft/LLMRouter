@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Registry;
+using LLMRouter.Core.Routing;
 using LLMRouter.Core.Translation;
 using Microsoft.EntityFrameworkCore;
 
@@ -155,6 +156,18 @@ public static class ToolsEndpoints
                 Directory.Move(Path.GetDirectoryName(tmp)!, dest);
             }
             return Results.Json(new { success = true, name = n, description = desc }, JsonOpts);
+        });
+
+        // ---- media providers (SPEC-010): connections grouped by declared media kind ----
+        g.MapGet("/media-providers", async (LlmRouterDbContext db) =>
+        {
+            var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync();
+            var byKind = MediaKinds.Visible.ToDictionary(k => k, _ => new List<object>());
+            foreach (var c in conns)
+                foreach (var k in MediaKinds.KindsOf(c))
+                    if (byKind.TryGetValue(k, out var list))
+                        list.Add(new { c.Id, c.Name, c.Provider, kinds = MediaKinds.KindsOf(c).ToArray() });
+            return Results.Json(new { kinds = MediaKinds.Visible, connections = byKind }, JsonOpts);
         });
     }
 }

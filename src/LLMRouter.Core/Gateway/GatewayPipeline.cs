@@ -177,6 +177,9 @@ public sealed class GatewayEngine(
         string status, string? error, long latencyMs, JsonElement? detail = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+        var cost = Usage.PricingService.ComputeCost(
+            await Usage.PricingService.SettingsDataAsync(db), registry,
+            provider, model, promptTokens, completionTokens) ?? 0;
         db.UsageHistory.Add(new UsageRecord
         {
             Timestamp = now,
@@ -189,6 +192,8 @@ public sealed class GatewayEngine(
             CompletionTokens = completionTokens,
             Tokens = (promptTokens + completionTokens).ToString(),
             Status = status,
+            Cost = cost,
+            LatencyMs = latencyMs,
             Meta = detail?.GetRawText() ?? error,
         });
         db.RequestDetails.Add(new RequestDetail

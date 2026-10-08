@@ -1,0 +1,53 @@
+@page "/dashboard/provider-stats"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("providerStats", "Provider stats")</h1>
+        <p class="page-desc">Latency, errors and cost per provider</p>
+    </div>
+    <select class="input" style="width:150px" @bind="_range" @bind:after="Load">
+        <option value="today">Today</option>
+        <option value="week">7 days</option>
+        <option value="month">30 days</option>
+        <option value="all">All</option>
+    </select>
+</div>
+
+<div class="card card-p mt-6">
+    <table class="tbl">
+        <thead><tr>
+            <th>Provider</th><th>Requests</th><th>Errors</th><th>Error %</th>
+            <th>p50</th><th>p95</th><th>Avg</th><th>Cost</th>
+        </tr></thead>
+        <tbody>
+            @foreach (var p in _rows)
+            {
+                <tr>
+                    <td class="mono sm">@p.GetProperty("provider").GetString()</td>
+                    <td>@p.GetProperty("requests").GetInt64()</td>
+                    <td>@p.GetProperty("errors").GetInt64()</td>
+                    <td><span class="badge @(p.GetProperty("errorRate").GetDouble() > 10 ? "err" : "ok")">@p.GetProperty("errorRate").GetDouble()%</span></td>
+                    <td class="mono sm">@Fmt(p.GetProperty("p50").GetDouble())</td>
+                    <td class="mono sm">@Fmt(p.GetProperty("p95").GetDouble())</td>
+                    <td class="mono sm">@Fmt(p.GetProperty("avgLatencyMs").GetDouble())</td>
+                    <td class="mono sm">$@p.GetProperty("cost").GetDouble().ToString("F4")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_rows.Count == 0) { <div class="empty"><span class="material-symbols-outlined">speed</span>No traffic yet</div> }
+</div>
+
+@code {
+    private string _range = "week";
+    private List<JsonElement> _rows = [];
+    protected override async Task OnInitializedAsync() => await Load();
+    private async Task Load()
+    {
+        var r = await Api.GetAsync($"api/provider-stats?range={_range}");
+        _rows = r.GetProperty("providers").EnumerateArray().ToList();
+    }
+    private static string Fmt(double ms) => ms <= 0 ? "—" : $"{ms:N0} ms";
+}

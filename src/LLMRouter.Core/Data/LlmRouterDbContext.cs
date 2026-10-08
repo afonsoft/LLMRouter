@@ -34,5 +34,19 @@ public class LlmRouterDbContext : DbContext
     }
 
     /// <summary>Creates the schema (single-file embedded DB, mirroring the upstream bootstrap).</summary>
-    public void EnsureCreated() => Database.EnsureCreated();
+    public void EnsureCreated()
+    {
+        Database.EnsureCreated();
+        // Lightweight column migration for DBs created before the column existed.
+        var conn = Database.GetDbConnection();
+        var opened = conn.State != System.Data.ConnectionState.Open;
+        if (opened) conn.Open();
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "ALTER TABLE usageHistory ADD COLUMN LatencyMs INTEGER NOT NULL DEFAULT 0";
+            try { cmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+        }
+        finally { if (opened) conn.Close(); }
+    }
 }

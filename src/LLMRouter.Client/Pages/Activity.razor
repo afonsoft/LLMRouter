@@ -1,0 +1,43 @@
+@page "/dashboard/activity"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("activity", "Activity")</h1>
+    <p class="page-desc">Live request feed through the gateway</p>
+</div>
+
+<div class="card card-p mt-6">
+    <table class="tbl">
+        <thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Status</th></tr></thead>
+        <tbody>
+            @foreach (var e in _events)
+            {
+                var st = e.TryGetProperty("status", out var s) ? s.GetString() : "";
+                <tr>
+                    <td class="mono sm">@e.GetProperty("timestamp").GetString()</td>
+                    <td>@e.GetProperty("provider").GetString()</td>
+                    <td class="mono sm">@e.GetProperty("model").GetString()</td>
+                    <td><span class="badge @(st == "200" ? "ok" : "err")">@st</span></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_events.Count == 0) { <div class="empty"><span class="material-symbols-outlined">timeline</span>No requests yet</div> }
+</div>
+
+@code {
+    private List<JsonElement> _events = [];
+    private System.Threading.Timer? _timer;
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        _timer = new(async _ => { await Load(); await InvokeAsync(StateHasChanged); }, null, 5000, 5000);
+    }
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/activity?limit=50");
+        _events = r.GetProperty("events").EnumerateArray().ToList();
+    }
+    public void Dispose() => _timer?.Dispose();
+}

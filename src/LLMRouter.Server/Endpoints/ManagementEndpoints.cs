@@ -2,6 +2,7 @@ using System.Text.Json;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Registry;
 using LLMRouter.Core.Routing;
+using LLMRouter.Core.Usage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -367,6 +368,149 @@ public static class ManagementEndpoints
 
         g.MapGet("/usage/daily", async (LlmRouterDbContext db) =>
             Results.Json(new { days = await db.UsageDaily.OrderBy(x => x.DateKey).ToListAsync() }, JsonOpts));
+
+        // SPEC-005: timeseries (per-hour today / per-day week+month+all)
+        g.MapGet("/usage/timeseries", async (LlmRouterDbContext db, string? range) =>
+        {
+            var (since, hourly) = range == "today"
+                ? (DateTime.UtcNow.Date, true)
+                : (range == "week" ? DateTime.UtcNow.Date.AddDays(-7)
+                    : range == "month" ? DateTime.UtcNow.Date.AddDays(-30)
+                    : DateTime.MinValue, false);
+            var s = since.ToString("yyyy-MM-dd HH:mm:ss");
+            var rows = await db.UsageHistory.Where(u => string.Compare(u.Timestamp, s) >= 0).ToListAsync();
+            var buckets = rows
+                .GroupBy(r => hourly ? r.Timestamp[..13] : r.Timestamp[..10])
+                .OrderBy(x => x.Key)
+                .Select(x => new
+                {
+                    bucket = x.Key,
+                    requests = x.Count(),
+                    tokens = x.Sum(r => long.TryParse(r.Tokens, out var t) ? t : r.PromptTokens + r.CompletionTokens),
+                    cost = x.Sum(r => r.Cost),
+                    errors = x.Count(r => r.Status != "200"),
+                });
+            return Results.Json(new { hourly, buckets }, JsonOpts);
+        });
+
+        // SPEC-005: per-provider stats incl. p50/p95 latency and error rate
+        g.MapGet("/provider-stats", async (LlmRouterDbContext db, string? range) =>
+        {
+            var since = range == "today" ? DateTime.UtcNow.Date
+                : range == "week" ? DateTime.UtcNow.Date.AddDays(-7)
+                : range == "month" ? DateTime.UtcNow.Date.AddDays(-30)
+                : DateTime.MinValue;
+            var s = since.ToString("yyyy-MM-dd HH:mm:ss");
+            var rows = await db.UsageHistory.Where(u => string.Compare(u.Timestamp, s) >= 0).ToListAsync();
+            static double P(List<long> v, double q) => v.Count == 0 ? 0
+                : v.Order().ElementAt(Math.Min(v.Count - 1, (int)Math.Ceiling(q * v.Count) - 1));
+            return Results.Json(new
+            {
+                providers = rows.GroupBy(r => r.Provider ?? "?").Select(x =>
+                {
+                    var lat = x.Select(r => r.LatencyMs).Where(l => l > 0).ToList();
+                    var errs = x.Count(r => r.Status != "200");
+                    return new
+                    {
+                        provider = x.Key,
+                        requests = x.Count(),
+                        errors = errs,
+                        errorRate = x.Count() == 0 ? 0 : Math.Round(100.0 * errs / x.Count(), 1),
+                        p50 = P(lat, 0.5), p95 = P(lat, 0.95),
+                        avgLatencyMs = lat.Count == 0 ? 0 : Math.Round(lat.Average()),
+                        cost = x.Sum(r => r.Cost),
+                    };
+                }),
+            }, JsonOpts);
+        });
+
+        // SPEC-005: pricing catalog (registry + user overrides)
+        g.MapGet("/pricing", async (LlmRouterDbContext db, ProviderRegistry r) =>
+        {
+            var sd = await PricingService.SettingsDataAsync(db);
+            var overrides = new Dictionary<string, object>();
+            if (sd.ValueKind == JsonValueKind.Object
+                && sd.TryGetProperty(PricingService.OverridesKey, out var ov)
+                && ov.ValueKind == JsonValueKind.Object)
+                foreach (var kv in ov.EnumerateObject())
+                    overrides[kv.Name] = kv.Value;
+            var catalog = r.UiProviders().SelectMany(t =>
+                (r.GetProvider(t.Entry.Id)?.Models ?? []).Select(m => new
+                {
+                    provider = t.Entry.Id, model = m.Id,
+                    price = m.Pricing is null ? null : m.Pricing,
+                    hasOverride = overrides.ContainsKey($"{t.Entry.Id}/{m.Id}"),
+                }));
+            return Results.Json(new { catalog, overrides }, JsonOpts);
+        });
+
+        g.MapPut("/pricing/{provider}/{model}", async (string provider, string model,
+            HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var sd = await PricingService.SettingsDataAsync(db);
+            var root = sd.ValueKind == JsonValueKind.Object
+                ? sd.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                : new Dictionary<string, JsonElement>();
+            var ov = root.TryGetValue(PricingService.OverridesKey, out var o) && o.ValueKind == JsonValueKind.Object
+                ? o.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                : new Dictionary<string, JsonElement>();
+            var key = $"{provider}/{model}";
+            if (body.ValueKind == JsonValueKind.Null || (body.ValueKind == JsonValueKind.Object && !body.EnumerateObject().Any()))
+                ov.Remove(key); // empty body = clear override
+            else
+                ov[key] = body.Clone();
+            root[PricingService.OverridesKey] = JsonSerializer.SerializeToElement(ov);
+            var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            row.Data = JsonSerializer.Serialize(root);
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true, key });
+        });
+
+        // SPEC-005: costs summary + monthly budget
+        g.MapGet("/costs", async (LlmRouterDbContext db) =>
+        {
+            var monthStart = DateTime.UtcNow.Date.AddDays(1 - DateTime.UtcNow.Day).ToString("yyyy-MM-dd");
+            var rows = await db.UsageHistory.Where(u => string.Compare(u.Timestamp, monthStart) >= 0).ToListAsync();
+            var sd = await PricingService.SettingsDataAsync(db);
+            double budget = sd.ValueKind == JsonValueKind.Object
+                && sd.TryGetProperty("monthlyBudget", out var b) && b.ValueKind == JsonValueKind.Number
+                ? b.GetDouble() : 0;
+            return Results.Json(new
+            {
+                monthCost = rows.Sum(r => r.Cost),
+                monthTokens = rows.Sum(r => r.PromptTokens + r.CompletionTokens),
+                monthRequests = rows.Count,
+                byProvider = rows.GroupBy(r => r.Provider).Select(x => new
+                { provider = x.Key, cost = x.Sum(r => r.Cost), requests = x.Count() }),
+                byModel = rows.GroupBy(r => (r.Provider ?? "") + "/" + (r.Model ?? "")).Select(x => new
+                { model = x.Key, cost = x.Sum(r => r.Cost), requests = x.Count() })
+                    .OrderByDescending(x => x.cost).Take(20),
+                budget,
+            }, JsonOpts);
+        });
+
+        g.MapPut("/costs/budget", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var sd = await PricingService.SettingsDataAsync(db);
+            var root = sd.ValueKind == JsonValueKind.Object
+                ? sd.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                : new Dictionary<string, JsonElement>();
+            root["monthlyBudget"] = body.TryGetProperty("budget", out var b) ? b.Clone() : JsonSerializer.SerializeToElement(0);
+            var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            row.Data = JsonSerializer.Serialize(root);
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true });
+        });
+
+        // SPEC-005: activity feed = recent requestDetails
+        g.MapGet("/activity", async (LlmRouterDbContext db, int? limit) =>
+        {
+            var rows = await db.RequestDetails.OrderByDescending(x => x.Timestamp)
+                .Take(Math.Min(limit ?? 50, 200)).ToListAsync();
+            return Results.Json(new { events = rows }, JsonOpts);
+        });
 
         g.MapGet("/logs", async (LlmRouterDbContext db, int? limit, int? offset, string? status) =>
         {

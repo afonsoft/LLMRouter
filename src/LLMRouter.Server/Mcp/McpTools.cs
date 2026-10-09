@@ -401,7 +401,33 @@ public static class McpTools
                 return new { error = $"unknown kind '{kind}'" };
             }
             case "localCorpus.search":
-                return new { results = Array.Empty<object>(), note = "local corpus index not built (stub)" };
+            {
+                // SPEC-032: real corpus search — memory items + docs + skills SKILL.md files,
+                // ranked by MemorySearch.Score (term frequency + recency).
+                var q4 = Arg(args, "q") ?? "";
+                var corpus = new List<JsonElement>();
+                var memRaw = (await db.Kv.FindAsync("memory", "items"))?.Value;
+                if (memRaw is not null)
+                    foreach (var m in JsonDocument.Parse(memRaw).RootElement.EnumerateArray())
+                    {
+                        var o = m.Clone();
+                        corpus.Add(JsonSerializer.SerializeToElement(new
+                        { source = "memory", id = o.TryGetProperty("id", out var i) ? i.GetString() : "", content = o.TryGetProperty("content", out var c) ? c.GetString() : "", at = o.TryGetProperty("at", out var a) ? a.GetDateTime() : DateTime.UtcNow }));
+                    }
+                foreach (var doc in new[] { "endpoint", "providers", "models", "combos", "usage", "settings", "logs", "playground", "oauth", "mcp", "a2a", "conductor", "mitm", "traffic-inspector", "batches", "chaos", "memory", "webhooks", "proxy-pools", "quota", "token-saver", "skills" })
+                    corpus.Add(JsonSerializer.SerializeToElement(new { source = "doc", id = doc, content = doc.Replace('-', ' '), at = DateTime.UtcNow.AddDays(-1) }));
+                var skillsDir = Path.Combine(ctx.RequestServices
+                    .GetRequiredService<IWebHostEnvironment>().ContentRootPath, "skills");
+                if (Directory.Exists(skillsDir))
+                    foreach (var f in Directory.EnumerateFiles(skillsDir, "SKILL.md", SearchOption.AllDirectories).Take(50))
+                    {
+                        var txt = await File.ReadAllTextAsync(f);
+                        corpus.Add(JsonSerializer.SerializeToElement(new { source = "skill", id = Path.GetFileName(Path.GetDirectoryName(f)) ?? f, content = txt[..Math.Min(2000, txt.Length)], at = File.GetLastWriteTimeUtc(f) }));
+                    }
+                var hits = LLMRouter.Core.Extras.MemorySearch.Search(
+                    JsonSerializer.SerializeToElement(corpus), q4, 20);
+                return new { results = hits.Select(h => JsonNode.Parse(h.GetRawText())), count = hits.Count };
+            }
             default:
                 return null;
         }

@@ -274,3 +274,24 @@ public class QuotaSchedule
     public string? LastRunAt { get; set; }
     public string CreatedAt { get; set; } = "";
 }
+
+// ---- SPEC-042: log export destinations ----
+
+[Table("logExportDestinations")]
+public class LogExportDestination
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Type { get; set; } = "";        // webhook | file | s3-compatible
+    // {url?, path?, fmt?(jsonl|csv), scheduleMinutes?, headers?{}}
+    public string Config { get; set; } = "{}";
+    // {provider?, model?, status?, since?(ISO)}
+    public string Filters { get; set; } = "{}";
+    public bool Enabled { get; set; } = true;
+    public string? LastRunAt { get; set; }
+    public string? LastRunStatus { get; set; }  // ok | error
+    public string? LastRunDetail { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}

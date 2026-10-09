@@ -34,6 +34,7 @@ builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.UsagePruneJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.DbBackupJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.QuotaSchedulesJob());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.LogExportJob());
     return sched;
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Jobs.JobScheduler>());
@@ -59,6 +60,7 @@ builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddScoped<GatewayEngine>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("batches");
+builder.Services.AddHttpClient("logexport");
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(10);
@@ -135,6 +137,7 @@ JobsEndpoints.Map(app);
 RateLimitEndpoints.Map(app);
 FileEndpoints.Map(app);
 KeysQuotaEndpoints.Map(app);
+LogExportEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

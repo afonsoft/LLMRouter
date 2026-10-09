@@ -1,0 +1,139 @@
+@page "/dashboard/log-export"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("logExport.title", "Log export")</h1>
+        <p class="page-desc">@Loc.T("logExport.subtitle", "Ship call logs out — webhook, file, s3-compatible")</p>
+    </div>
+    <a class="btn ghost sm" href="api/log-export?fmt=jsonl&limit=500" download="logs.jsonl">@Loc.T("logExport.quick", "Quick export (jsonl)")</a>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 style="margin:0 0 8px">@Loc.T("logExport.new", "New destination")</h3>
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+        <div><label class="muted sm">@Loc.T("keys.name", "Name")</label><input class="input" style="width:150px" @bind="_n.Name" /></div>
+        <div>
+            <label class="muted sm">type</label>
+            <select class="input" @bind="_n.Type">
+                <option value="webhook">webhook</option>
+                <option value="file">file</option>
+                <option value="s3-compatible">s3-compatible</option>
+            </select>
+        </div>
+        <div><label class="muted sm">@( _n.Type == "file" ? "path" : "url" )</label><input class="input" style="width:230px" @bind="_n.Target" /></div>
+        <div><label class="muted sm">fmt</label>
+            <select class="input" @bind="_n.Fmt"><option>jsonl</option><option>csv</option></select></div>
+        <div><label class="muted sm">schedule (min)</label><input class="input" style="width:90px" type="number" @bind="_n.ScheduleMinutes" /></div>
+        <button class="btn btn-sm btn-primary" @onclick="Create">@Loc.T("keys.new", "New")</button>
+    </div>
+    <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
+        <input class="input" style="width:130px" placeholder="provider (filter)" @bind="_n.Provider" />
+        <input class="input" style="width:130px" placeholder="model (filter)" @bind="_n.Model" />
+        <input class="input" style="width:100px" placeholder="status" @bind="_n.Status" />
+    </div>
+</div>
+
+<div class="card card-p mt-4">
+    @if (_dests.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">cloud_upload</span>@Loc.T("logExport.none", "No destinations yet")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>@Loc.T("keys.name", "Name")</th><th>type</th><th>@Loc.T("logExport.lastRun", "Last run")</th>
+                <th>@Loc.T("keys.status", "Status")</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var d in _dests)
+            {
+                <tr>
+                    <td>@d.Name</td>
+                    <td><span class="chip">@d.Type</span></td>
+                    <td class="sm muted">@(d.LastRunAt ?? "—")</td>
+                    <td>
+                        @if (d.LastRunStatus is not null)
+                        {
+                            <span class="badge @(d.LastRunStatus == "ok" ? "ok" : "err")">@d.LastRunStatus</span>
+                            <span class="sm muted" title="@d.LastRunDetail"> @Short(d.LastRunDetail)</span>
+                        }
+                    </td>
+                    <td>
+                        <div class="flex gap-1" style="flex-wrap:wrap">
+                            <button class="btn ghost sm" @onclick="() => Toggle(d)">@(d.Enabled ? "Disable" : "Enable")</button>
+                            <button class="btn ghost sm" @onclick="() => Run(d)">@Loc.T("logExport.run", "Run")</button>
+                            <button class="btn ghost sm" @onclick="() => Test(d)">@Loc.T("logExport.test", "Test")</button>
+                            <button class="btn ghost sm" @onclick="() => Delete(d)">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                @if (_sample?.TryGetValue(d.Id, out var s) == true)
+                {
+                    <tr><td colspan="5"><pre class="mono sm" style="max-height:120px;overflow:auto;margin:4px 0">@s</pre></td></tr>
+                }
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private sealed class N
+    {
+        public string Name = "", Type = "webhook", Target = "", Fmt = "jsonl";
+        public string Provider = "", Model = "", Status = "";
+        public int ScheduleMinutes;
+    }
+    private sealed record D(string Id, string Name, string Type, bool Enabled,
+        string? LastRunAt, string? LastRunStatus, string? LastRunDetail);
+
+    private N _n = new();
+    private List<D> _dests = [];
+    private Dictionary<string, string>? _sample;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private static string Short(string? s) => s is null ? "" : s.Length <= 60 ? s : s[..60] + "…";
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/log-export/destinations");
+        _dests = r.TryGetProperty("destinations", out var a)
+            ? a.EnumerateArray().Select(x => new D(
+                x.GetProperty("id").GetString() ?? "",
+                x.GetProperty("name").GetString() ?? "",
+                x.GetProperty("type").GetString() ?? "",
+                x.GetProperty("enabled").GetBoolean(),
+                x.TryGetProperty("lastRunAt", out var l1) ? l1.GetString() : null,
+                x.TryGetProperty("lastRunStatus", out var l2) ? l2.GetString() : null,
+                x.TryGetProperty("lastRunDetail", out var l3) ? l3.GetString() : null)).ToList() : [];
+    }
+
+    private async Task Create()
+    {
+        var config = new Dictionary<string, object> { ["fmt"] = _n.Fmt };
+        if (_n.Type == "file") config["path"] = _n.Target; else config["url"] = _n.Target;
+        if (_n.ScheduleMinutes > 0) config["scheduleMinutes"] = _n.ScheduleMinutes;
+        var filters = new Dictionary<string, string>();
+        if (_n.Provider.Length > 0) filters["provider"] = _n.Provider;
+        if (_n.Model.Length > 0) filters["model"] = _n.Model;
+        if (_n.Status.Length > 0) filters["status"] = _n.Status;
+        await Api.PostAsync("api/log-export/destinations", new { name = _n.Name, type = _n.Type, config, filters });
+        _n = new();
+        await Load();
+    }
+
+    private async Task Toggle(D d) { await Api.PutAsync($"api/log-export/destinations/{d.Id}", new { enabled = !d.Enabled }); await Load(); }
+    private async Task Run(D d) { await Api.PostAsync($"api/log-export/destinations/{d.Id}/run", new { }); await Load(); }
+    private async Task Delete(D d) { await Api.DeleteAsync($"api/log-export/destinations/{d.Id}"); await Load(); }
+
+    private async Task Test(D d)
+    {
+        var r = await Api.PostAsync($"api/log-export/destinations/{d.Id}/test", new { });
+        _sample ??= new();
+        _sample[d.Id] = r.TryGetProperty("sample", out var s) ? s.GetString() ?? "" : "";
+    }
+}

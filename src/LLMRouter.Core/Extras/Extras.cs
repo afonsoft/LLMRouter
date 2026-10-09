@@ -20,7 +20,12 @@ public static class Extras
         await db.SaveChangesAsync();
     }
 
-    public static async Task<int?> ChaosDelayAsync(LlmRouterDbContext db)
+    /// <summary>
+    /// Chaos injection. Global {errorPct, latencyMs} plus per-route rules:
+    /// {rules: [{match: "provider/model" | "provider/*" | "*", errorPct, latencyMs}]}.
+    /// A matching rule's values override the global ones for that model.
+    /// </summary>
+    public static async Task<int?> ChaosDelayAsync(LlmRouterDbContext db, string? model = null)
     {
         var raw = await KvGet(db, "chaos", "config");
         if (raw is null) return null;
@@ -28,12 +33,32 @@ public static class Extras
         {
             var e = JsonDocument.Parse(raw).RootElement;
             var latency = e.TryGetProperty("latencyMs", out var l) ? l.GetInt32() : 0;
-            if (latency > 0) await Task.Delay(latency);
             var pct = e.TryGetProperty("errorPct", out var p) ? p.GetInt32() : 0;
+            if (model is not null
+                && e.TryGetProperty("rules", out var rules) && rules.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var r in rules.EnumerateArray())
+                {
+                    var match = r.TryGetProperty("match", out var mm) ? mm.GetString() ?? "*" : "*";
+                    if (match != "*" && !MatchGlob(match, model)) continue;
+                    if (r.TryGetProperty("latencyMs", out var rl)) latency = rl.GetInt32();
+                    if (r.TryGetProperty("errorPct", out var rp)) pct = rp.GetInt32();
+                    break; // first matching rule wins
+                }
+            }
+            if (latency > 0) await Task.Delay(latency);
             if (pct > 0 && Random.Shared.Next(100) < pct) return 503;
             return null;
         }
         catch { return null; }
+    }
+
+    /// <summary>Minimal glob: "*" matches all, "p/*" prefix, else exact (case-insensitive).</summary>
+    private static bool MatchGlob(string pattern, string value)
+    {
+        if (pattern.EndsWith('*'))
+            return value.StartsWith(pattern[..^1], StringComparison.OrdinalIgnoreCase);
+        return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Fire-and-forget POST to every webhook subscribed to <paramref name="evt"/>.</summary>

@@ -155,8 +155,8 @@ public static class GatewayEndpoints
         }
         model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
 
-        // SPEC-015: chaos fault injection (latency + random 5xx)
-        if (await Core.Extras.Extras.ChaosDelayAsync(db) is { } chaosStatus)
+        // SPEC-015: chaos fault injection (latency + random 5xx, rules per route)
+        if (await Core.Extras.Extras.ChaosDelayAsync(db, model) is { } chaosStatus)
         {
             ctx.Response.StatusCode = chaosStatus;
             await WriteError(ctx, "openai", "chaos", "Injected fault (chaos mode).");
@@ -286,9 +286,51 @@ public static class GatewayEndpoints
         try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
         catch { ctx.Response.StatusCode = 400; await WriteError(ctx, inbound, "invalid_request", "Malformed JSON body."); return; }
 
+        // SPEC-023: body validation — model + a message container are required
+        var hasMsgs = body.TryGetProperty("messages", out var mm) && mm.ValueKind == JsonValueKind.Array && mm.GetArrayLength() > 0
+            || body.TryGetProperty("input", out var ii) && ii.ValueKind is JsonValueKind.Array or JsonValueKind.String
+            || body.TryGetProperty("contents", out var cc) && cc.ValueKind == JsonValueKind.Array;
+        if (!hasMsgs && inbound != "gemini")
+        {
+            ctx.Response.StatusCode = 400;
+            await WriteError(ctx, inbound, "invalid_request", "Request must include messages/input/contents.");
+            return;
+        }
+
+        // SPEC-023: prompt-injection guard — settings.guardrails or env:
+        // INPUT_SANITIZER_ENABLED (default true), _MODE (block|warn|log), _BLOCK_THRESHOLD (low|medium|high)
+        var sdata = await Core.Usage.PricingService.SettingsDataAsync(db);
+        string? S(string k) => sdata.ValueKind == JsonValueKind.Object
+            && sdata.TryGetProperty("guardrails", out var g) && g.ValueKind == JsonValueKind.Object
+            && g.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        var gmode = S("mode")
+            ?? Environment.GetEnvironmentVariable("INPUT_SANITIZER_MODE")
+            ?? Environment.GetEnvironmentVariable("INJECTION_GUARD_MODE") ?? "warn";
+        var genabled = (S("enabled") ?? "") is not "false"
+            && Environment.GetEnvironmentVariable("INPUT_SANITIZER_ENABLED") is not "0" and not "false";
+        if (genabled)
+        {
+            var hits = Core.Guardrails.PromptGuard.Detect(Core.Guardrails.PromptGuard.ScanText(body));
+            if (hits.Count > 0)
+            {
+                var threshold = S("threshold")
+                    ?? Environment.GetEnvironmentVariable("INPUT_SANITIZER_BLOCK_THRESHOLD") ?? "high";
+                var block = gmode == "block"
+                    && Core.Guardrails.PromptGuard.ShouldBlock(hits, threshold);
+                _ = Core.Extras.Extras.AuditAsync(db, block ? "guardrail.block" : "guardrail.flag",
+                    $"{inbound}: {string.Join(",", hits.Select(h => h.Name))}");
+                if (block)
+                {
+                    ctx.Response.StatusCode = 400;
+                    await WriteError(ctx, inbound, "prompt_injection_blocked",
+                        $"Blocked by prompt-injection guard: {string.Join(", ", hits.Select(h => h.Name))}");
+                    return;
+                }
+            }
+        }
+
         // SPEC-008 token saver: compress prompt text when enabled
         var savedDetail = (JsonElement?)null;
-        var sdata = await Core.Usage.PricingService.SettingsDataAsync(db);
         if (sdata.ValueKind == JsonValueKind.Object
             && sdata.TryGetProperty("tokenSaver", out var tsv)
             && tsv.ValueKind == JsonValueKind.Object
@@ -308,9 +350,38 @@ public static class GatewayEndpoints
             var routeModel = ctx.Request.RouteValues["model"]?.ToString() ?? "";
             model = routeModel.Contains(':') ? routeModel[..routeModel.IndexOf(':')] : routeModel;
         }
+        // SPEC-023: API key policy — restricted keys only reach AccessAllow providers/models
+        if (model.Length > 0 && apiKey != "dashboard")
+        {
+            var keyRow = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == apiKey);
+            if (keyRow is { AccessRestricted: true })
+            {
+                var allow = (keyRow.AccessAllow ?? "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var ok = allow.Any(a => a.EndsWith('*')
+                    ? model.StartsWith(a[..^1], StringComparison.OrdinalIgnoreCase)
+                    : string.Equals(a, model, StringComparison.OrdinalIgnoreCase));
+                if (!ok)
+                {
+                    ctx.Response.StatusCode = 403;
+                    await WriteError(ctx, inbound, "model_not_allowed",
+                        $"API key is not allowed to use '{model}'.");
+                    return;
+                }
+            }
+        }
+
         var stream = body.TryGetProperty("stream", out var s) && s.ValueKind == JsonValueKind.True;
         if (inbound == "gemini" && ctx.Request.Path.Value?.Contains("streamGenerateContent") == true)
             stream = true;
+
+        // SPEC-015/023: chaos fault injection (rules match provider/model)
+        if (await Core.Extras.Extras.ChaosDelayAsync(db, model) is { } chatChaos)
+        {
+            ctx.Response.StatusCode = chatChaos;
+            await WriteError(ctx, inbound, "chaos", "Injected fault (chaos mode).");
+            return;
+        }
 
         // vision-adapter combo: stage-1 imageToText call rewrites the image into
         // a text description, then the remaining combo models serve the request

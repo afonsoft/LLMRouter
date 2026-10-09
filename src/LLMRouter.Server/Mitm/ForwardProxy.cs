@@ -41,6 +41,26 @@ public static class ForwardProxy
             return;
         }
 
+        // SPEC-023: when apiKeys exist, proxy traffic must authenticate via
+        // Proxy-Authorization (Basic user:sk-... — password carries the key —
+        // or Bearer sk-...)
+        var db = ctx.RequestServices.GetService<LLMRouter.Core.Data.LlmRouterDbContext>();
+        if (db is not null && await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                .AnyAsync(db.ApiKeys, k => k.IsActive))
+        {
+            var cred = ExtractProxyKey(ctx.Request.Headers.ProxyAuthorization);
+            var valid = cred is not null && await Microsoft.EntityFrameworkCore
+                .EntityFrameworkQueryableExtensions
+                .AnyAsync(db.ApiKeys, k => k.Key == cred && k.IsActive);
+            if (!valid)
+            {
+                ctx.Response.StatusCode = 407;
+                ctx.Response.Headers.ProxyAuthenticate = "Basic realm=llmrouter";
+                await ctx.Response.WriteAsync("Proxy authentication required");
+                return;
+            }
+        }
+
         var target = ctx.Features
             .Get<Microsoft.AspNetCore.Http.Features.IHttpRequestFeature>()?.RawTarget
             ?? ctx.Request.Path.Value!;
@@ -84,6 +104,25 @@ public static class ForwardProxy
                     string.Join("\n", ctx.Request.Headers.Select(h => $"{h.Key}: {h.Value}")), null,
                     "", ex.Message));
         }
+    }
+
+    private static string? ExtractProxyKey(string? header)
+    {
+        if (string.IsNullOrEmpty(header)) return null;
+        if (header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            return header[7..].Trim();
+        if (header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(header[6..]));
+                var idx = decoded.IndexOf(':');
+                // Basic user:pass — the password carries the API key
+                return idx >= 0 ? decoded[(idx + 1)..] : decoded;
+            }
+            catch { return null; }
+        }
+        return header;
     }
 
     private static void Capture(HttpContext ctx, string target, HttpRequestMessage req,

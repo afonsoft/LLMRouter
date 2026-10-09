@@ -8,6 +8,7 @@ using Shouldly;
 namespace LLMRouter.Tests;
 
 /// <summary>SPEC-007: settings.data round-trip, reset, export, resilience wiring.</summary>
+[Collection("StaticState")]
 public class SettingsTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");

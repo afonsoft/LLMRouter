@@ -16,7 +16,10 @@ public class UsageAnalyticsTests : IClassFixture<WebApplicationFactory<Program>>
 
     public UsageAnalyticsTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        var dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");
+        _factory = factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, c) =>
+                c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = dbPath })));
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
     }
 

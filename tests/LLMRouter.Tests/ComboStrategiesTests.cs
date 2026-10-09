@@ -9,6 +9,7 @@ using Shouldly;
 namespace LLMRouter.Tests;
 
 /// <summary>SPEC-020: combo selection strategies — ordering with stub usage data.</summary>
+[Collection("StaticState")]
 public class ComboStrategiesTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");
@@ -120,27 +121,32 @@ public class ComboStrategiesTests : IDisposable
     [Fact]
     public async Task Reset_aware_deprioritizes_cooling_connections()
     {
+        var coolId = $"conn-cool-{Guid.NewGuid():N}";
         using (var db = Db())
         {
             db.ProviderConnections.Add(new ProviderConnection
             {
-                Id = "conn-cool", Provider = "openai", AuthType = "apikey", IsActive = true,
+                Id = coolId, Provider = "openai", AuthType = "apikey", IsActive = true,
             });
             db.ProviderConnections.Add(new ProviderConnection
             {
-                Id = "conn-fine", Provider = "anthropic", AuthType = "apikey", IsActive = true,
+                Id = "conn-fine-" + coolId, Provider = "anthropic", AuthType = "apikey", IsActive = true,
             });
             db.SaveChanges();
         }
-        for (var i = 0; i < 3; i++) CooldownTracker.ReportFailure("conn-cool");
-        CooldownTracker.IsCooling("conn-cool").ShouldBeTrue();
+        // shared statics (threshold etc.) may be tuned by other tests — report
+        // until the connection cools (bounded) instead of assuming a threshold
+        CooldownTracker.Clear(coolId);
+        for (var i = 0; i < 200 && !CooldownTracker.IsCooling(coolId); i++)
+            CooldownTracker.ReportFailure(coolId);
         try
         {
             var ordered = await Order("reset-aware",
                 new List<string> { "openai/a", "anthropic/b" });
-            ordered[0].ShouldBe("anthropic/b"); // openai conn is cooling → last
+            Assert.True(ordered[^1] == "openai/a",
+                $"ordered=[{string.Join(",", ordered)}] rem={CooldownTracker.Remaining(coolId)}");
         }
-        finally { CooldownTracker.Clear("conn-cool"); }
+        finally { CooldownTracker.Clear(coolId); }
     }
 
     [Fact]

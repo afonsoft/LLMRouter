@@ -28,6 +28,7 @@ public class LlmRouterDbContext : DbContext
     public DbSet<QuotaPlan> QuotaPlans => Set<QuotaPlan>();
     public DbSet<QuotaSchedule> QuotaSchedules => Set<QuotaSchedule>();
     public DbSet<LogExportDestination> LogExportDestinations => Set<LogExportDestination>();
+    public DbSet<PlaygroundPreset> PlaygroundPresets => Set<PlaygroundPreset>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -79,6 +80,7 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS keyGroups (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, KeysJson TEXT NOT NULL DEFAULT '[]', CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS quotaPlans (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, LimitsJson TEXT NOT NULL DEFAULT '{}', Price REAL, CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS quotaSchedules (Id TEXT NOT NULL PRIMARY KEY, Target TEXT NOT NULL DEFAULT 'all', Window TEXT NOT NULL DEFAULT 'daily', LastRunAt TEXT, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS playgroundPresets (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Model TEXT NOT NULL, ParamsJson TEXT NOT NULL DEFAULT '{}', CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS logExportDestinations (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Type TEXT NOT NULL, Config TEXT NOT NULL DEFAULT '{}', Filters TEXT NOT NULL DEFAULT '{}', Enabled INTEGER NOT NULL DEFAULT 1, LastRunAt TEXT, LastRunStatus TEXT, LastRunDetail TEXT, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
             })
             {

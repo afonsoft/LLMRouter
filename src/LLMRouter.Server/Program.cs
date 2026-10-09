@@ -138,6 +138,7 @@ RateLimitEndpoints.Map(app);
 FileEndpoints.Map(app);
 KeysQuotaEndpoints.Map(app);
 LogExportEndpoints.Map(app);
+PlaygroundEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

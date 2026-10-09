@@ -295,3 +295,17 @@ public class LogExportDestination
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
 }
+
+// ---- SPEC-043: playground presets ----
+
+[Table("playgroundPresets")]
+public class PlaygroundPreset
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Model { get; set; } = "";
+    // {system?, temperature?, maxTokens?, stream?}
+    public string ParamsJson { get; set; } = "{}";
+    public string CreatedAt { get; set; } = "";
+}

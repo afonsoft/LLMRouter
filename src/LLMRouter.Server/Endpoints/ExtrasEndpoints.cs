@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Extras;
 using Microsoft.EntityFrameworkCore;
@@ -300,17 +301,58 @@ public static class ExtrasEndpoints
                 : Results.Json(JsonDocument.Parse(row.Value).RootElement.Clone(), JsonOpts);
         });
 
-        // ---- plugins (bundled skills + mcp servers as installed plugins) ----
+        // ---- plugins (bundled skills + mcp servers + registered plugin hooks) ----
         g.MapGet("/plugins", async (LlmRouterDbContext db) =>
         {
             var skillsRaw = (await db.Kv.FindAsync("skills", "disabled"))?.Value;
             var mcpRaw = (await db.Kv.FindAsync("mcpServers", "list"))?.Value;
+            var registered = await PluginHooks.RegisteredAsync(db);
             return Results.Json(new
             {
                 skills = new[] { "token-saver", "combo-builder" },
                 disabledSkills = skillsRaw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(skillsRaw).RootElement.Clone(),
                 mcpServers = mcpRaw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(mcpRaw).RootElement.Clone(),
+                registered,
             }, JsonOpts);
+        });
+
+        // SPEC-031: plugin registry CRUD — upsert {name,enabled,hooks[]} into kv plugins/registered
+        g.MapPost("/plugins", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var doc = await JsonDocument.ParseAsync(ctx.Request.Body);
+            var r = doc.RootElement;
+            var plugins = await PluginHooks.RegisteredAsync(db);
+            var id = r.TryGetProperty("id", out var idv) && idv.ValueKind == JsonValueKind.String
+                ? idv.GetString()! : $"plg-{Guid.NewGuid():N}"[..14];
+            JsonObject? existing = null;
+            foreach (var p in plugins)
+                if (p?["id"]?.GetValue<string>() == id) existing = p as JsonObject;
+            var plugin = existing ?? new JsonObject { ["id"] = id };
+            plugin["name"] = r.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
+                ? n.GetString()! : plugin["name"]?.GetValue<string>() ?? id;
+            if (r.TryGetProperty("enabled", out var e))
+                plugin["enabled"] = e.ValueKind == JsonValueKind.True;
+            else if (plugin["enabled"] is null) plugin["enabled"] = true;
+            if (r.TryGetProperty("hooks", out var h) && h.ValueKind == JsonValueKind.Array)
+                plugin["hooks"] = JsonNode.Parse(h.GetRawText());
+            if (existing is null) plugins.Add(plugin);
+            var row = await db.Kv.FindAsync("plugins", "registered");
+            if (row is null) db.Kv.Add(new KvEntry { Scope = "plugins", Key = "registered", Value = plugins.ToJsonString() });
+            else row.Value = plugins.ToJsonString();
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true, plugin }, JsonOpts);
+        });
+
+        g.MapDelete("/plugins/{id}", async (string id, LlmRouterDbContext db) =>
+        {
+            var plugins = await PluginHooks.RegisteredAsync(db);
+            var next = new JsonArray(plugins.Where(p => p?["id"]?.GetValue<string>() != id)
+                .Select(p => JsonNode.Parse(p!.ToJsonString())!).ToArray());
+            var row = await db.Kv.FindAsync("plugins", "registered");
+            if (row is null) db.Kv.Add(new KvEntry { Scope = "plugins", Key = "registered", Value = next.ToJsonString() });
+            else row.Value = next.ToJsonString();
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true }, JsonOpts);
         });
 
         // ---- search-tools index ----
@@ -331,6 +373,49 @@ public static class ExtrasEndpoints
                 new { name = "a2a", endpoint = "POST /a2a", desc = "Agent-to-agent tasks" },
             },
         }, JsonOpts));
+
+        // SPEC-031: search-tools registry — kv searchTools/list of {id,kind,url,enabled}
+        g.MapGet("/search-tools/registered", async (LlmRouterDbContext db) =>
+        {
+            var raw = (await db.Kv.FindAsync("searchTools", "list"))?.Value;
+            JsonNode tools; try { tools = raw is null ? new JsonArray() : JsonNode.Parse(raw)!; } catch { tools = new JsonArray(); }
+            return Results.Json(new { tools }, JsonOpts);
+        });
+
+        g.MapPost("/search-tools", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var r = (await JsonDocument.ParseAsync(ctx.Request.Body)).RootElement;
+            var raw = (await db.Kv.FindAsync("searchTools", "list"))?.Value;
+            var tools = raw is null ? new JsonArray() : JsonNode.Parse(raw)!.AsArray();
+            var id = r.TryGetProperty("id", out var idv) && idv.ValueKind == JsonValueKind.String
+                ? idv.GetString()! : $"st-{Guid.NewGuid():N}"[..14];
+            JsonObject? tool = tools.FirstOrDefault(t => t?["id"]?.GetValue<string>() == id) as JsonObject;
+            tool ??= new JsonObject { ["id"] = id };
+            tool["name"] = r.TryGetProperty("name", out var n) ? n.GetString() : tool["name"]?.GetValue<string>() ?? id;
+            tool["kind"] = r.TryGetProperty("kind", out var k) ? k.GetString() : tool["kind"]?.GetValue<string>() ?? "webFetch";
+            if (r.TryGetProperty("url", out var u)) tool["url"] = u.GetString();
+            if (r.TryGetProperty("enabled", out var e)) tool["enabled"] = e.ValueKind == JsonValueKind.True;
+            else if (tool["enabled"] is null) tool["enabled"] = true;
+            if (!tools.Any(t => t?["id"]?.GetValue<string>() == id)) tools.Add(tool);
+            var row = await db.Kv.FindAsync("searchTools", "list");
+            if (row is null) db.Kv.Add(new KvEntry { Scope = "searchTools", Key = "list", Value = tools.ToJsonString() });
+            else row.Value = tools.ToJsonString();
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true, tool }, JsonOpts);
+        });
+
+        g.MapDelete("/search-tools/{id}", async (string id, LlmRouterDbContext db) =>
+        {
+            var raw = (await db.Kv.FindAsync("searchTools", "list"))?.Value;
+            var tools = raw is null ? new JsonArray() : JsonNode.Parse(raw)!.AsArray();
+            var next = new JsonArray(tools.Where(t => t?["id"]?.GetValue<string>() != id)
+                .Select(t => JsonNode.Parse(t!.ToJsonString())!).ToArray());
+            var row = await db.Kv.FindAsync("searchTools", "list");
+            if (row is null) db.Kv.Add(new KvEntry { Scope = "searchTools", Key = "list", Value = next.ToJsonString() });
+            else row.Value = next.ToJsonString();
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true }, JsonOpts);
+        });
 
         // ---- audit ----
         g.MapGet("/audit", async (LlmRouterDbContext db) =>

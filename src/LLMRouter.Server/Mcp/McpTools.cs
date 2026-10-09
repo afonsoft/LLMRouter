@@ -62,6 +62,7 @@ public static class McpTools
         new("plugins.list", "List registered plugins", Schema()),
         new("plugins.toggle", "Enable/disable a plugin", Schema(("id", "string", true), ("enabled", "boolean", true))),
         new("searchTools.list", "Web search/fetch tool connections", Schema()),
+        new("searchTools.run", "Run a registered search tool (webFetch fetches url, search proxies a connection)", Schema(("id", "string", true), ("url", "string", false), ("q", "string", false))),
         new("localCorpus.search", "Search local corpus (stub: returns empty index)", Schema(("q", "string", true))),
     };
 
@@ -357,11 +358,47 @@ public static class McpTools
             case "searchTools.list":
             {
                 var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync();
-                var tools = conns.Where(c =>
+                var connTools = conns.Where(c =>
                         (c.Data ?? "").Contains("\"search\"", StringComparison.OrdinalIgnoreCase)
                         || (c.Data ?? "").Contains("\"fetch\"", StringComparison.OrdinalIgnoreCase))
-                    .Select(c => new { c.Id, c.Provider, c.Name });
-                return new { tools };
+                    .Select(c => new { id = c.Id, c.Provider, c.Name, kind = "connection" });
+                var raw = (await db.Kv.FindAsync("searchTools", "list"))?.Value;
+                System.Text.Json.Nodes.JsonNode registered;
+                try { registered = raw is null ? new System.Text.Json.Nodes.JsonArray() : System.Text.Json.Nodes.JsonNode.Parse(raw)!; }
+                catch { registered = new System.Text.Json.Nodes.JsonArray(); }
+                return new { tools = connTools, registered };
+            }
+            case "searchTools.run":
+            {
+                var id = Arg(args, "id") ?? "";
+                var raw = (await db.Kv.FindAsync("searchTools", "list"))?.Value;
+                System.Text.Json.Nodes.JsonObject? tool = null;
+                if (raw is not null)
+                    foreach (var t in System.Text.Json.Nodes.JsonNode.Parse(raw)!.AsArray())
+                        if (t?["id"]?.GetValue<string>() == id) tool = t as System.Text.Json.Nodes.JsonObject;
+                if (tool is null) return new { error = $"search tool '{id}' not found" };
+                if (tool["enabled"]?.GetValue<bool>() == false) return new { error = $"search tool '{id}' is disabled" };
+                var kind = tool["kind"]?.GetValue<string>() ?? "webFetch";
+                if (kind == "webFetch")
+                {
+                    var url = Arg(args, "url") ?? tool["url"]?.GetValue<string>();
+                    if (url is null) return new { error = "no url provided" };
+                    var http = hf.CreateClient("upstream");
+                    var resp = await http.GetAsync(url, ctx.RequestAborted);
+                    var text = await resp.Content.ReadAsStringAsync(ctx.RequestAborted);
+                    return new { ok = resp.IsSuccessStatusCode, status = (int)resp.StatusCode, url, content = text[..Math.Min(4000, text.Length)] };
+                }
+                if (kind == "search")
+                {
+                    var q = Arg(args, "q") ?? "";
+                    var baseUrl = tool["url"]?.GetValue<string>();
+                    if (baseUrl is null) return new { error = "search tool has no url" };
+                    var http = hf.CreateClient("upstream");
+                    var resp = await http.GetAsync($"{baseUrl.TrimEnd('/')}/search?q={Uri.EscapeDataString(q)}", ctx.RequestAborted);
+                    var text = await resp.Content.ReadAsStringAsync(ctx.RequestAborted);
+                    return new { ok = resp.IsSuccessStatusCode, status = (int)resp.StatusCode, q, content = text[..Math.Min(4000, text.Length)] };
+                }
+                return new { error = $"unknown kind '{kind}'" };
             }
             case "localCorpus.search":
                 return new { results = Array.Empty<object>(), note = "local corpus index not built (stub)" };

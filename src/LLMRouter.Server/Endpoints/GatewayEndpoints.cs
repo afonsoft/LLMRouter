@@ -155,6 +155,23 @@ public static class GatewayEndpoints
         }
         model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
 
+        // SPEC-031: plugin onRequest hooks (setModel/addHeaders) before resolution
+        if (body.ValueKind == JsonValueKind.Object && rawBody is not null)
+        {
+            var bj = JsonNode.Parse(rawBody)!.AsObject();
+            var plugins = await Core.Extras.PluginHooks.RegisteredAsync(db);
+            var pluginHeaders = await Core.Extras.PluginHooks.ApplyRequestAsync(db, bj, plugins);
+            if (pluginHeaders.Count > 0) ctx.Items["pluginHeaders"] = pluginHeaders;
+            ctx.Items["plugins"] = plugins;
+            var newRaw = JsonSerializer.SerializeToUtf8Bytes(bj);
+            if (!newRaw.SequenceEqual(rawBody))
+            {
+                rawBody = newRaw;
+                body = JsonDocument.Parse(newRaw).RootElement;
+                if (body.TryGetProperty("model", out var pm)) model = pm.GetString() ?? model;
+            }
+        }
+
         // SPEC-015: chaos fault injection (latency + random 5xx, rules per route)
         if (await Core.Extras.Extras.ChaosDelayAsync(db, model) is { } chaosStatus)
         {
@@ -197,6 +214,7 @@ public static class GatewayEndpoints
                 }
                 if (target.Provider.Headers is { } extra)
                     foreach (var kv in extra) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                MergePluginHeaders(ctx, req);
                 if (rawBody is not null)
                 {
                     req.Content = new ByteArrayContent(rawBody);
@@ -439,6 +457,18 @@ public static class GatewayEndpoints
             return;
         }
 
+        // SPEC-031: plugin onRequest hooks before resolution
+        if (body.ValueKind == JsonValueKind.Object)
+        {
+            var bj = JsonNode.Parse(body.GetRawText())!.AsObject();
+            var plugins = await Core.Extras.PluginHooks.RegisteredAsync(db);
+            var pluginHeaders = await Core.Extras.PluginHooks.ApplyRequestAsync(db, bj, plugins);
+            if (pluginHeaders.Count > 0) ctx.Items["pluginHeaders"] = pluginHeaders;
+            ctx.Items["plugins"] = plugins;
+            body = JsonDocument.Parse(bj.ToJsonString()).RootElement;
+            if (body.TryGetProperty("model", out var pm)) model = pm.GetString() ?? model;
+        }
+
         var targets = await engine.ResolveAsync(model, body);
         if (comboEntity?.Kind == "vision-adapter")
         {
@@ -465,6 +495,7 @@ public static class GatewayEndpoints
                 var req = new HttpRequestMessage(HttpMethod.Post, call.Url);
                 foreach (var (k, v) in call.Headers)
                     req.Headers.TryAddWithoutValidation(k, v);
+                MergePluginHeaders(ctx, req);
                 // gemini streaming needs alt=sse
                 if (call.OutboundFormat == "gemini" && stream)
                     req.RequestUri = new Uri(call.Url.Replace(":generateContent", ":streamGenerateContent") +
@@ -515,6 +546,9 @@ public static class GatewayEndpoints
                 {
                     var upstream = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ctx.RequestAborted);
                     var translated = Translators.TranslateResponse(upstream, call.OutboundFormat, inbound, model);
+                    if (ctx.Items["plugins"] is System.Text.Json.Nodes.JsonArray plArr
+                        && translated is JsonObject tj)
+                        Core.Extras.PluginHooks.ApplyResponse(plArr, tj);
                     var (pt, ct) = ExtractUsage(translated, inbound);
                     ctx.Response.ContentType = "application/json";
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
@@ -911,6 +945,13 @@ public static class GatewayEndpoints
         if (string.IsNullOrEmpty(key)) return ("", false);
         var found = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == key && k.IsActive);
         return (key, found is not null);
+    }
+
+    /// <summary>SPEC-031: merge plugin addHeaders into the upstream request.</summary>
+    private static void MergePluginHeaders(HttpContext ctx, HttpRequestMessage req)
+    {
+        if (ctx.Items["pluginHeaders"] is Dictionary<string, string> h)
+            foreach (var kv in h) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
     }
 
     private static async Task WriteError(HttpContext ctx, string inbound, string type, string message)

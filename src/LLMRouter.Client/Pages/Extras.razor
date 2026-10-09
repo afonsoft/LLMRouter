@@ -176,6 +176,28 @@ else if (section is "plugins")
         {
             <div class="card card-p" style="margin-bottom:6px"><code class="xs">@m.ToString()</code></div>
         }
+        <h3 class="bold" style="margin-top:16px">Registered plugins</h3>
+        <p class="muted xs">Gateway hooks: <code>{"on":"onRequest|onResponse","action":"setModel|addHeaders|annotate","value":…}</code></p>
+        @if (_plugins.Value.TryGetProperty("registered", out var reg))
+        {
+            <table class="tbl"><tbody>
+            @foreach (var p in reg.EnumerateArray())
+            {
+                <tr>
+                    <td class="bold">@p.GetProperty("name").GetString()</td>
+                    <td class="mono xs muted">@p.GetProperty("id").GetString()</td>
+                    <td><button class="btn xs" @onclick='() => TogglePlugin(p)'>@(p.TryGetProperty("enabled", out var en) && en.GetBoolean() ? "on" : "off")</button></td>
+                    <td><button class="btn xs danger" @onclick='() => DelPlugin(p.GetProperty("id").GetString()!)'>×</button></td>
+                </tr>
+                <tr><td colspan="4" class="mono xs muted" style="padding-top:0">@p.GetProperty("hooks").ToString()</td></tr>
+            }
+            </tbody></table>
+        }
+        <div class="card card-p" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <input class="inp xs" placeholder="name" @bind="_plName" style="width:140px" />
+            <input class="inp xs mono" placeholder='hooks JSON [{"on":"onRequest","action":"annotate"}]' @bind="_plHooks" style="flex:1;min-width:220px" />
+            <button class="btn xs" @onclick="AddPlugin">Add plugin</button>
+        </div>
     }
 }
 else if (section is "search-tools")
@@ -190,6 +212,28 @@ else if (section is "search-tools")
         }
     }
     </tbody></table>
+    <h3 class="bold" style="margin-top:16px">Registered tools</h3>
+    @if (_regTools is not null)
+    {
+        <table class="tbl"><tbody>
+        @foreach (var t in _regTools)
+        {
+            <tr>
+                <td class="bold">@t.GetProperty("name").GetString()</td>
+                <td class="xs">@t.GetProperty("kind").GetString()</td>
+                <td class="mono xs muted">@(t.TryGetProperty("url", out var u) ? u.GetString() : "")</td>
+                <td><button class="btn xs" @onclick='() => ToggleRegTool(t)'>@(t.TryGetProperty("enabled", out var en) && en.GetBoolean() ? "on" : "off")</button></td>
+                <td><button class="btn xs danger" @onclick='() => DelRegTool(t.GetProperty("id").GetString()!)'>×</button></td>
+            </tr>
+        }
+        </tbody></table>
+    }
+    <div class="card card-p" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input class="inp xs" placeholder="name" @bind="_stName" style="width:120px" />
+        <select class="inp xs" @bind="_stKind"><option value="webFetch">webFetch</option><option value="search">search</option></select>
+        <input class="inp xs mono" placeholder="url" @bind="_stUrl" style="flex:1;min-width:160px" />
+        <button class="btn xs" @onclick="AddRegTool">Add tool</button>
+    </div>
 }
 else
 {
@@ -202,6 +246,8 @@ else
     private JsonElement? _gam, _plugins;
     private int _errorPct, _latencyMs;
     private string _memContent = "", _memTags = "", _memQ = "", _whUrl = "", _whEvents = "*";
+    private string _plName = "", _plHooks = "", _stName = "", _stKind = "webFetch", _stUrl = "";
+    private JsonElement[]? _regTools;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -237,6 +283,7 @@ else
                 break;
             case "search-tools":
                 _tools = (await Api.GetAsync("api/search-tools")).GetProperty("tools").EnumerateArray().ToArray();
+                await LoadRegTools();
                 break;
         }
     }
@@ -273,4 +320,37 @@ else
         await Api.PostAsync("api/webhooks", new { id });
         _hooks = (await Api.GetAsync("api/webhooks")).GetProperty("webhooks").EnumerateArray().ToArray();
     }
+
+    private async Task AddPlugin()
+    {
+        if (_plName == "") return;
+        object? hooks = null;
+        if (_plHooks.Trim() != "")
+        { try { hooks = JsonDocument.Parse(_plHooks).RootElement.Clone(); } catch { return; } }
+        await Api.PostAsync("api/plugins", new { name = _plName, enabled = true, hooks });
+        _plName = ""; _plHooks = "";
+        _plugins = await Api.GetAsync("api/plugins");
+    }
+
+    private async Task TogglePlugin(JsonElement p) =>
+        await Api.PostAsync("api/plugins", new { id = p.GetProperty("id").GetString(), enabled = !(p.TryGetProperty("enabled", out var e) && e.GetBoolean()) });
+
+    private async Task DelPlugin(string id)
+    { await Api.DeleteAsync($"api/plugins/{id}"); _plugins = await Api.GetAsync("api/plugins"); }
+
+    private async Task LoadRegTools() =>
+        _regTools = (await Api.GetAsync("api/search-tools/registered")).GetProperty("tools").EnumerateArray().ToArray();
+
+    private async Task AddRegTool()
+    {
+        if (_stName == "" || _stUrl == "") return;
+        await Api.PostAsync("api/search-tools", new { name = _stName, kind = _stKind, url = _stUrl, enabled = true });
+        _stName = ""; _stUrl = ""; await LoadRegTools();
+    }
+
+    private async Task ToggleRegTool(JsonElement t)
+    { await Api.PostAsync("api/search-tools", new { id = t.GetProperty("id").GetString(), enabled = !(t.TryGetProperty("enabled", out var e) && e.GetBoolean()) }); await LoadRegTools(); }
+
+    private async Task DelRegTool(string id)
+    { await Api.DeleteAsync($"api/search-tools/{id}"); await LoadRegTools(); }
 }

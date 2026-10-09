@@ -1,0 +1,118 @@
+@page "/dashboard/batch/files"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("batchFiles.title", "Files")</h1>
+    <p class="page-desc">@Loc.T("batchFiles.subtitle", "Uploads for batches and assistants — OpenAI-compatible /v1/files")</p>
+</div>
+
+<div class="card card-p mt-6">
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+        <div>
+            <label class="dim" style="font-size:12px">@Loc.T("batchFiles.file", "File")</label>
+            <InputFile OnChange="Pick" />
+        </div>
+        <div>
+            <label class="dim" style="font-size:12px">@Loc.T("batchFiles.purpose", "Purpose")</label>
+            <select class="input" @bind="_purpose">
+                <option value="batch">batch</option>
+                <option value="assistants">assistants</option>
+                <option value="fine-tune">fine-tune</option>
+            </select>
+        </div>
+        <button class="btn primary" @onclick="Upload" disabled="@(_busy || _file is null)">@Loc.T("batchFiles.upload", "Upload")</button>
+    </div>
+    @if (_error is not null) { <div class="dim mt-2" style="color:var(--danger,#e5484d)">@_error</div> }
+</div>
+
+<div class="card card-p mt-4">
+    @if (_files.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">folder</span>@Loc.T("batchFiles.none", "No files yet")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>@Loc.T("batchFiles.name", "Filename")</th><th>Id</th>
+                <th>@Loc.T("batchFiles.purpose", "Purpose")</th><th>@Loc.T("batchFiles.size", "Size")</th>
+                <th>@Loc.T("batchFiles.created", "Created")</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var f in _files)
+            {
+                <tr>
+                    <td class="mono">@f.Filename</td>
+                    <td class="mono dim" style="font-size:11px">@f.Id</td>
+                    <td><span class="chip">@f.Purpose</span></td>
+                    <td>@Fmt(f.Bytes)</td>
+                    <td class="dim mono">@f.CreatedAt</td>
+                    <td>
+                        <div class="flex gap-1">
+                            <a class="btn ghost sm" href="api/files/@f.Id/content" download="@f.Filename">@Loc.T("batchFiles.download", "Download")</a>
+                            <button class="btn ghost sm" @onclick="() => Delete(f)">@Loc.T("batchFiles.delete", "Delete")</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private bool _busy;
+    private string? _error;
+    private string _purpose = "batch";
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _file;
+    private List<F> _files = new();
+
+    private sealed record F(string Id, string Filename, string Purpose, long Bytes, string CreatedAt);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private void Pick(InputFileChangeEventArgs e) => _file = e.File;
+
+    private static string Fmt(long b) => b >= 1048576 ? $"{b / 1048576.0:0.#} MB"
+        : b >= 1024 ? $"{b / 1024.0:0.#} KB" : $"{b} B";
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/files");
+        _files = new();
+        if (r.TryGetProperty("data", out var arr))
+            foreach (var x in arr.EnumerateArray())
+                _files.Add(new F(
+                    x.GetProperty("id").GetString() ?? "",
+                    x.GetProperty("filename").GetString() ?? "",
+                    x.GetProperty("purpose").GetString() ?? "",
+                    x.GetProperty("bytes").GetInt64(),
+                    x.TryGetProperty("created_at", out var c) ? c.GetRawText() : ""));
+    }
+
+    private async Task Upload()
+    {
+        if (_file is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = _file.OpenReadStream(50 * 1024 * 1024);
+            content.Add(new StreamContent(stream), "file", _file.Name);
+            content.Add(new StringContent(_purpose), "purpose");
+            var resp = await Api.Raw.PostAsync("api/files", content);
+            if (!resp.IsSuccessStatusCode) _error = await resp.Content.ReadAsStringAsync();
+            else _file = null;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        _busy = false;
+        await Load();
+    }
+
+    private async Task Delete(F f)
+    {
+        await Api.Raw.DeleteAsync($"api/files/{f.Id}");
+        await Load();
+    }
+}

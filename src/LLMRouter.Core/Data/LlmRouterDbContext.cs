@@ -23,6 +23,7 @@ public class LlmRouterDbContext : DbContext
     public DbSet<JobState> JobStates => Set<JobState>();
     public DbSet<JobRun> JobRuns => Set<JobRun>();
     public DbSet<RateLimit> RateLimits => Set<RateLimit>();
+    public DbSet<FileEntry> Files => Set<FileEntry>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -70,6 +71,7 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS jobStates (Id TEXT NOT NULL PRIMARY KEY, Enabled INTEGER NOT NULL DEFAULT 1, LastRun TEXT NULL, NextRun TEXT NULL, LastStatus TEXT NULL, LastError TEXT NULL, LastDurationMs INTEGER NOT NULL DEFAULT 0)""",
                 """CREATE TABLE IF NOT EXISTS jobRuns (Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, JobId TEXT NOT NULL, StartedAt TEXT NOT NULL, DurationMs INTEGER NOT NULL, Status TEXT NOT NULL, Output TEXT NULL)""",
                 """CREATE TABLE IF NOT EXISTS rateLimits (Id TEXT NOT NULL PRIMARY KEY, Scope TEXT NOT NULL, ScopeValue TEXT NOT NULL, Rpm INTEGER NOT NULL DEFAULT 0, Tpm INTEGER NOT NULL DEFAULT 0, Burst INTEGER NOT NULL DEFAULT 0, Enabled INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS files (Id TEXT NOT NULL PRIMARY KEY, Filename TEXT NOT NULL, Bytes INTEGER NOT NULL DEFAULT 0, Purpose TEXT NOT NULL, Mime TEXT NOT NULL, CreatedAt TEXT NOT NULL)""",
             })
             {
                 cmd.CommandText = ddl;

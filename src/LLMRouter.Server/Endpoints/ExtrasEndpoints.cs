@@ -262,11 +262,37 @@ public static class ExtrasEndpoints
         });
 
         // ---- batches (sequential chat jobs with lifecycle) ----
-        g.MapPost("/batches", async (LlmRouterDbContext db, HttpContext ctx, IServiceScopeFactory scopeFactory) =>
+        g.MapPost("/batches", async (LlmRouterDbContext db, HttpContext ctx, IServiceScopeFactory scopeFactory, IConfiguration cfg) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var items = b.GetProperty("requests").EnumerateArray()
-                .Select(x => x.GetRawText()).ToList();
+            List<string> items;
+            if (b.TryGetProperty("input_file_id", out var fidEl))
+            {
+                // SPEC-040: batch input from an uploaded JSONL file (OpenAI shape:
+                // each line {custom_id, method, url, body}; the body is posted)
+                var fid = fidEl.GetString() ?? "";
+                var fe = await db.Files.FindAsync(fid);
+                var fpath = fe is null ? null : FileEndpoints.PathFor(cfg, fe.Id);
+                if (fpath is null || !File.Exists(fpath))
+                    return Results.Json(new { error = "input_file_id not found" }, JsonOpts, statusCode: 400);
+                items = File.ReadLines(fpath)
+                    .Where(l => l.Trim().Length > 0)
+                    .Select(l =>
+                    {
+                        try
+                        {
+                            var j = JsonDocument.Parse(l).RootElement;
+                            return j.TryGetProperty("body", out var bb) ? bb.GetRawText() : l;
+                        }
+                        catch { return l; }
+                    })
+                    .ToList();
+            }
+            else
+            {
+                items = b.GetProperty("requests").EnumerateArray()
+                    .Select(x => x.GetRawText()).ToList();
+            }
             var id = Guid.NewGuid().ToString("N")[..10];
             var auth = ctx.Request.Headers.Authorization.ToString();
             var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
@@ -283,7 +309,7 @@ public static class ExtrasEndpoints
                     await using var sc = scopeFactory.CreateAsyncScope();
                     var db2 = sc.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
                     var hf2 = sc.ServiceProvider.GetRequiredService<IHttpClientFactory>();
-                    var http = hf2.CreateClient();
+                    var http = hf2.CreateClient("batches");
                     http.Timeout = TimeSpan.FromMinutes(10);
                     http.BaseAddress = new Uri(baseUrl);
                     await UpdateJob(db2, id, "running", items.Count, 0, results);

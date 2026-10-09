@@ -1,0 +1,76 @@
+@namespace LLMRouter.Client.Pages
+@inject Api Api
+@inject Loc Loc
+
+@* SPEC-035: scan local CLI tools for stored credentials and import as provider connections. *@
+
+<div class="card card-p">
+    <div class="flex between">
+        <h3 class="bold" style="margin:0">@Loc.T("cliImport.title", "Import credentials from CLI tools")</h3>
+        <button class="btn btn-sm" @onclick="Scan" disabled="@_loading">
+            @(_loading ? "…" : Loc.T("cliImport.scan", "Scan"))
+        </button>
+    </div>
+    <p class="xs muted" style="margin:6px 0 0">
+        @Loc.T("cliImport.desc", "Detects API keys/tokens saved by claude, codex, cursor, kiro, trae, zed, agy, command-code, opencode, gemini, qwen and grok CLIs on this machine.")
+    </p>
+    @if (_scanned && _findings is not null)
+    {
+        @if (_findings.Length == 0)
+        {
+            <p class="sm muted mt-3">@Loc.T("cliImport.none", "No credentials found in known CLI config paths.")</p>
+        }
+        else
+        {
+            @foreach (var f in _findings)
+            {
+                <div class="flex between mt-2">
+                    <span class="sm">
+                        <input type="checkbox" checked="@_selected.Contains(IdOf(f))"
+                            @onchange="e => Toggle(f, (bool)(e.Value ?? false))" />
+                        <b>@f.GetProperty("tool").GetString()</b>
+                        <span class="muted">→ @f.GetProperty("provider").GetString() · @f.GetProperty("type").GetString()</span>
+                        <span class="mono xs muted">@f.GetProperty("masked").GetString()</span>
+                    </span>
+                </div>
+            }
+            <button class="btn btn-primary btn-sm mt-3" @onclick="Import" disabled="@(_selected.Count == 0)">
+                @Loc.T("cliImport.import", "Import selected") (@_selected.Count)
+            </button>
+        }
+    }
+    @if (_result is not null) { <p class="sm mt-2" style="color:var(--primary)">@_result</p> }
+    @if (_errors is not null) { <p class="xs mt-1" style="color:#e74c3c">@_errors</p> }
+</div>
+
+@code {
+    private JsonElement[]? _findings;
+    private HashSet<string> _selected = new();
+    private bool _loading, _scanned;
+    private string? _result, _errors;
+
+    private string IdOf(JsonElement f) => f.GetProperty("id").GetString()!;
+    private void Toggle(JsonElement f, bool on) { var id = IdOf(f); if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private async Task Scan()
+    {
+        _loading = true; _result = _errors = null;
+        try
+        {
+            var r = await Api.GetAsync("api/cli-credentials/scan");
+            _findings = r.GetProperty("findings").EnumerateArray().ToArray();
+            _selected = _findings.Select(f => f.GetProperty("id").GetString()!).ToHashSet();
+        }
+        catch { _findings = []; }
+        _loading = false; _scanned = true;
+    }
+
+    private async Task Import()
+    {
+        var r = await Api.PostAsync("api/cli-credentials/import", new { ids = _selected.ToArray() });
+        _result = $"✓ {r.GetProperty("imported").GetInt32()} imported" +
+            (r.GetProperty("skipped").GetInt32() > 0 ? $" · {r.GetProperty("skipped").GetInt32()} already existed" : "");
+        _errors = r.TryGetProperty("errors", out var e) && e.GetArrayLength() > 0
+            ? string.Join("; ", e.EnumerateArray().Select(x => x.GetString())) : null;
+    }
+}

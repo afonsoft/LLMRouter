@@ -26,6 +26,7 @@
         <input class="input" style="width:100%" @bind="_apiKey" placeholder="api key" />
         <button class="btn btn-primary" style="margin-top:10px" @onclick="AddProvider" disabled="@(string.IsNullOrWhiteSpace(_provider))">@Loc.T("onboard.next", "Next")</button>
         <button class="btn btn-sm" style="margin-top:10px;margin-left:6px" @onclick="() => _step = 2">@Loc.T("onboard.skip", "Skip")</button>
+        <div class="mt-4"><CliImportCard /></div>
     }
     else if (_step == 2)
     {

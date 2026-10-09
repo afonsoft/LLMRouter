@@ -116,6 +116,7 @@ app.MapAuthEndpoints();
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);
+CliEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

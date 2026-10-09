@@ -85,6 +85,35 @@ using (var scope = app.Services.CreateScope())
 
 app.UseAuthentication();
 app.UseAuthorization();
+// .NET 10 static-asset fingerprinting: index.html references assets as
+// "name#{.[fingerprint]}.ext" — the browser drops everything after '#', so the
+// request arrives as "/_framework/name" (or "name.ext" that only exists
+// fingerprinted). MapStaticAssets() is unavailable for this hosted-WASM setup,
+// so rewrite the stem to the real fingerprinted file name BEFORE the blazor
+// framework/static-files middleware (which then serves it normally).
+app.Use(async (ctx, next) =>
+{
+    var p = ctx.Request.Path.Value ?? "";
+    if (ctx.Request.Method == "GET" && p.StartsWith("/_framework/", StringComparison.OrdinalIgnoreCase))
+    {
+        var name = Path.GetFileName(p).Split('#')[0];
+        var dir = FrameworkDir(ctx.RequestServices.GetRequiredService<IWebHostEnvironment>());
+        if (dir != null)
+        {
+            var ext = Path.GetExtension(name);
+            // try "name.*" first (e.g. blazor.webassembly → blazor.webassembly.<fp>.js),
+            // then "stem.*ext" (e.g. foo.js → foo.<fp>.js)
+            var hit = new[] { name + ".*", ext.Length > 0 ? name[..^ext.Length] + ".*" + ext : null }
+                .Where(p => p != null)
+                .SelectMany(p => Directory.EnumerateFiles(dir, p!))
+                .Where(f => !f.EndsWith(".br") && !f.EndsWith(".gz"))
+                .OrderBy(f => f.Length).FirstOrDefault();
+            if (hit != null && !File.Exists(Path.Combine(dir, name)))
+                ctx.Request.Path = "/_framework/" + Path.GetFileName(hit);
+        }
+    }
+    await next();
+});
 app.UseBlazorFrameworkFiles();
 app.Use(ForwardProxy.Invoke);
 app.UseStaticFiles();
@@ -104,5 +133,20 @@ app.MapVersionEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();
+
+// locate the real _framework dir: publish wwwroot, else the client bin tree in dev.
+static string? FrameworkDir(IWebHostEnvironment env)
+{
+    var pub = Path.Combine(env.WebRootPath ?? "", "_framework");
+    if (Directory.Exists(pub)) return pub;
+    for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+    {
+        var client = Path.Combine(d.FullName, "LLMRouter.Client");
+        if (Directory.Exists(client))
+            return Directory.EnumerateDirectories(client, "_framework", SearchOption.AllDirectories)
+                .OrderByDescending(x => x).FirstOrDefault();
+    }
+    return null;
+}
 
 public partial class Program { }

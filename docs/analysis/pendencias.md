@@ -22,7 +22,7 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 13. **Conversations** — CRUD existe e o playground consome; falta página viewer dedicada (`/dashboard/conversations` lista mas não há tela de detalhe/busca). ✅ SPEC-024
 14. **Skills** — scan de `skills/**/SKILL.md` + toggle/install ok; falta execução real de skills no pipeline (upstream injeta no system prompt/tooling). ✅ SPEC-026
 15. **Docs viewer** — `MdToHtml` é parser mínimo (sem tabelas GFM, listas aninhadas, TOC). ✅ SPEC-024
-16. **PWA** — cache-first básico; sem offline real para chamadas `/api`.
+16. **PWA** — cache-first básico; sem offline real para chamadas `/api`. ✅ SPEC-030
 
 ## Baixa prioridade (nice-to-have / fora de escopo anotado)
 
@@ -32,9 +32,9 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 20. **Context compression/token-saver** — config existe; falta pipeline real de compressão de contexto no chat. ✅ SPEC-026
 21. **Chaos** — só errorPct+latency global; upstream injeta por rota/modelo. ✅ SPEC-023
 22. **Proxy pools** — CRUD + uso no gateway ok; falta health check agendado/rotatividade automática. ✅ SPEC-027
-23. **Cobertura de testes** — 137 testes unit/integration; zero E2E de UI (Playwright) no CI.
+23. **Cobertura de testes** — 137 testes unit/integration; zero E2E de UI (Playwright) no CI. ✅ SPEC-030
 24. **Health dashboards** — uptime/status básicos; falta monitoramento por-provider em tempo real como o upstream. ✅ SPEC-02x ✅ SPEC-027
-25. **Porta padrão** — docs citam 20128 (Docker), dev usa 5159 (launchSettings) — alinhar/documentar.
+25. **Porta padrão** — 20128 alinhado em dev (launchSettings), docker e README. ✅ SPEC-030
 
 ## Bugs/estruturais conhecidos
 

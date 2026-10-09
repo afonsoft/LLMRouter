@@ -18,7 +18,7 @@ LLMRouter é um proxy/roteador de LLM self-hosted: você conecta providers (Open
 ## Executando
 
 ```bash
-dotnet run --project src/LLMRouter.Server          # dev → http://localhost:5159
+dotnet run --project src/LLMRouter.Server          # dev → http://localhost:20128
 ```
 
 ### Binário / CLI
@@ -47,7 +47,7 @@ docker compose up -d llmrouter-image               # usa a imagem publicada ghcr
 
 ```bash
 dotnet run --project src/LLMRouter.Server
-# dashboard em http://localhost:5000
+# dashboard em http://localhost:20128
 ```
 
 O banco SQLite é criado em `%LOCALAPPDATA%/LLMRouter/llmrouter.db` (ou `LLMROUTER_DB_PATH`).
@@ -56,7 +56,7 @@ O banco SQLite é criado em `%LOCALAPPDATA%/LLMRouter/llmrouter.db` (ou `LLMROUT
 
 ```bash
 # 1. No dashboard: crie uma conexão de provider e uma API key
-curl -X POST http://localhost:5000/v1/chat/completions \
+curl -X POST http://localhost:20128/v1/chat/completions \
   -H "Authorization: Bearer sk-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"Olá"}]}'

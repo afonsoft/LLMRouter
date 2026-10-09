@@ -1069,6 +1069,33 @@ public static class ManagementEndpoints
             }
             return Results.Json(new { tokensSaved = saved, requestsCompressed = requests }, JsonOpts);
         });
+
+        // SPEC-033: RTK filter catalog + token-saver filter config
+        g.MapGet("/token-saver/filters", () => Results.Json(new
+        {
+            filters = Core.Extras.RtkFilters.Catalog.Select(f => new { name = f.Name, desc = f.Desc }),
+        }, JsonOpts));
+
+        g.MapPost("/token-saver/filters", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var row = await db.Settings.FindAsync(1)
+                ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var data = JsonNode.Parse(row.Data)!.AsObject();
+            data["tokenSaver"] ??= new JsonObject();
+            var ts = data["tokenSaver"]!.AsObject();
+            if (b.TryGetProperty("filters", out var f) && f.ValueKind == JsonValueKind.Array)
+                ts["filters"] = JsonNode.Parse(f.GetRawText());
+            foreach (var k in new[] { "skipRules", "preservePatterns", "compressRoles" })
+                if (b.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Array)
+                    ts[k] = JsonNode.Parse(v.GetRawText());
+            if (b.TryGetProperty("maxLineLength", out var m) && m.TryGetInt32(out var mi))
+                ts["maxLineLength"] = mi;
+            row.Data = data.ToJsonString();
+            await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "settings.token-saver-filters", ts.ToJsonString()[..Math.Min(200, ts.ToJsonString().Length)]);
+            return Results.Json(new { ok = true }, JsonOpts);
+        });
     }
 
     private static string? Get(JsonElement el, string name) =>

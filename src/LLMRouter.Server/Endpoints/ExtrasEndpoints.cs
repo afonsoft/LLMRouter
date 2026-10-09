@@ -142,41 +142,78 @@ public static class ExtrasEndpoints
             return Results.Json(new { ok = true }, JsonOpts);
         });
 
-        // ---- memory store (kv 'memory') ----
-        g.MapGet("/memory", async (LlmRouterDbContext db, string? q) =>
+        // ---- memory store (SPEC-033: pluggable backends kv/obsidian/notion) ----
+        g.MapGet("/memory", async (LlmRouterDbContext db, IHttpClientFactory hf, string? q) =>
         {
-            var raw = (await db.Kv.FindAsync("memory", "items"))?.Value;
-            var arr = raw is null ? JsonDocument.Parse("[]").RootElement
-                : JsonDocument.Parse(raw).RootElement;
-            // SPEC-026: scored/ranked search (term freq + recency) via MemorySearch
-            var items = Core.Extras.MemorySearch.Search(arr, q);
-            return Results.Json(new { items }, JsonOpts);
+            var settings = await SettingsEl(db);
+            var backend = Core.Extras.MemoryStore.Backend(settings);
+            var items = (await Core.Extras.MemoryStore.ListAsync(db, hf, settings))
+                .Select(i => JsonSerializer.SerializeToElement(
+                    new { id = i.Id, at = i.At, content = i.Content, tags = i.Tags, backend }))
+                .ToArray();
+            var arr = JsonSerializer.SerializeToElement(items);
+            var ranked = Core.Extras.MemorySearch.Search(arr, q);
+            return Results.Json(new { items = ranked }, JsonOpts);
         });
-        g.MapPost("/memory", async (LlmRouterDbContext db, HttpContext ctx) =>
+        g.MapPost("/memory", async (LlmRouterDbContext db, HttpContext ctx, IHttpClientFactory hf) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var row = await db.Kv.FindAsync("memory", "items")
-                ?? db.Kv.Add(new KvEntry { Scope = "memory", Key = "items", Value = "[]" }).Entity;
-            var items = JsonDocument.Parse(row.Value).RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
+            var settings = await SettingsEl(db);
             if (b.TryGetProperty("id", out var id)) // delete
             {
-                items.RemoveAll(x => x.TryGetProperty("id", out var i) && i.GetString() == id.GetString());
+                await Core.Extras.MemoryStore.RemoveAsync(db, hf, settings, id.GetString()!);
                 await Core.Extras.KvIndex.RemoveAsync(db, "memory", id.GetString()!);
+                return Results.Json(new { ok = true }, JsonOpts);
             }
-            else
+            var item = await Core.Extras.MemoryStore.AddAsync(db, hf, settings,
+                b.GetProperty("content").GetString()!,
+                b.TryGetProperty("tags", out var t) ? t.GetString() ?? "" : "");
+            await Core.Extras.KvIndex.UpsertAsync(db, "memory", item.Id,
+                JsonSerializer.SerializeToElement(item));
+            return Results.Json(new { ok = true, item }, JsonOpts);
+        });
+
+        // ---- memory backend settings (SPEC-033) ----
+        g.MapGet("/memory/backend", async (LlmRouterDbContext db) =>
+        {
+            var s = await SettingsEl(db);
+            var backend = Core.Extras.MemoryStore.Backend(s);
+            string? vault = null, parent = null; var hasToken = false;
+            if (s is { ValueKind: JsonValueKind.Object } o)
             {
-                var item = JsonDocument.Parse(JsonSerializer.Serialize(new
-                {
-                    id = Guid.NewGuid().ToString("N")[..8],
-                    at = DateTime.UtcNow,
-                    content = b.GetProperty("content").GetString(),
-                    tags = b.TryGetProperty("tags", out var t) ? t.GetString() : "",
-                })).RootElement.Clone();
-                items.Add(item);
-                await Core.Extras.KvIndex.UpsertAsync(db, "memory", item.GetProperty("id").GetString()!, item);
+                if (o.TryGetProperty("obsidian", out var ob)) vault = ob.TryGetProperty("vaultPath", out var v) ? v.GetString() : null;
+                if (o.TryGetProperty("notion", out var n))
+                { parent = n.TryGetProperty("parentId", out var p) ? p.GetString() : null;
+                  hasToken = n.TryGetProperty("token", out var t) && t.GetString() is { Length: > 0 }; }
             }
-            row.Value = JsonSerializer.Serialize(items);
+            return Results.Json(new { backend, obsidian = new { vaultPath = vault }, notion = new { parentId = parent, hasToken } }, JsonOpts);
+        });
+
+        g.MapPost("/memory/backend", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var row = await db.Settings.FindAsync(1)
+                ?? db.Settings.Add(new LLMRouter.Core.Data.SettingRow { Id = 1, Data = "{}" }).Entity;
+            var data = JsonNode.Parse(row.Data)!.AsObject();
+            data["memory"] ??= new JsonObject();
+            var mem = data["memory"]!.AsObject();
+            if (b.TryGetProperty("backend", out var be)) mem["backend"] = be.GetString();
+            if (b.TryGetProperty("obsidian", out var ob))
+            {
+                data["obsidian"] ??= new JsonObject();
+                var obs = data["obsidian"]!.AsObject();
+                if (ob.TryGetProperty("vaultPath", out var v)) obs["vaultPath"] = v.GetString();
+            }
+            if (b.TryGetProperty("notion", out var no))
+            {
+                data["notion"] ??= new JsonObject();
+                var not = data["notion"]!.AsObject();
+                if (no.TryGetProperty("token", out var t) && t.GetString() is { Length: > 0 }) not["token"] = t.GetString();
+                if (no.TryGetProperty("parentId", out var p)) not["parentId"] = p.GetString();
+            }
+            row.Data = data.ToJsonString();
             await db.SaveChangesAsync();
+            await Extras.AuditAsync(db, "settings.memory-backend", row.Data[..Math.Min(200, row.Data.Length)]);
             return Results.Json(new { ok = true }, JsonOpts);
         });
 
@@ -423,5 +460,13 @@ public static class ExtrasEndpoints
             var raw = (await db.Kv.FindAsync("audit", "log"))?.Value;
             return Results.Json(new { events = raw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(raw).RootElement.Clone() }, JsonOpts);
         });
+    }
+
+    /// <summary>settings row 1 .Data parsed as JsonElement ({} when absent).</summary>
+    private static async Task<JsonElement> SettingsEl(LlmRouterDbContext db)
+    {
+        var s = await db.Settings.FindAsync(1);
+        return s is null ? JsonDocument.Parse("{}").RootElement
+            : JsonDocument.Parse(s.Data).RootElement.Clone();
     }
 }

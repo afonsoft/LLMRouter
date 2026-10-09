@@ -18,7 +18,7 @@ public static class ProxyPoolService
     private static readonly ConcurrentDictionary<string, HttpClient> Clients = new();
     private static readonly ConcurrentDictionary<string, int> FailCounts = new();
 
-    public sealed record PoolProxy(string Id, string Url, bool Active, int FailCount, long? LatencyMs);
+    public sealed record PoolProxy(string Id, string Url, bool Active, int FailCount, long? LatencyMs, string? LastStatus = null, string? CheckedAt = null, string? LastError = null);
 
     public static string? PoolIdOf(ProviderConnection conn) =>
         Data(conn).TryGetProperty("proxyPoolId", out var p) && p.ValueKind == JsonValueKind.String
@@ -42,7 +42,10 @@ public static class ProxyPoolService
                 e.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "",
                 !e.TryGetProperty("active", out var a) || a.ValueKind != JsonValueKind.False,
                 e.TryGetProperty("failCount", out var f) && f.TryGetInt32(out var n) ? n : 0,
-                e.TryGetProperty("latencyMs", out var l) && l.TryGetInt64(out var lm) ? lm : null))
+                e.TryGetProperty("latencyMs", out var l) && l.TryGetInt64(out var lm) ? lm : null,
+                e.TryGetProperty("lastStatus", out var ls) ? ls.GetString() : null,
+                e.TryGetProperty("checkedAt", out var ca) ? ca.GetString() : null,
+                e.TryGetProperty("lastError", out var le) ? le.GetString() : null))
                 .Where(x => x.Url != "").ToList();
         }
         catch { return []; }

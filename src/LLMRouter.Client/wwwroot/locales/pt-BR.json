@@ -14943,5 +14943,95 @@
     "title": "Changelog"
   },
   "consoleLogs": "Console",
-  "costsOverview": "Visão geral de custos"
+  "costsOverview": "Visão geral de custos",
+  "login": {
+    "subtitle": "Entre no seu router",
+    "firstRun": "Primeira execução — defina sua senha de admin.",
+    "password": "Senha",
+    "confirm": "Confirmar senha"
+  },
+  "logsTimeline": "Linha do tempo de requests",
+  "mcp": {
+    "title": "MCP",
+    "subtitle": "Monte este router como servidor MCP e registre servidores MCP externos",
+    "endpoint": "Router como servidor MCP",
+    "add": "Registrar servidor externo"
+  },
+  "models": {
+    "title": "Models & Combos",
+    "subtitle": "Todos os modelos alcançáveis pelas suas conexões",
+    "search": "Buscar modelos…",
+    "fetchLive": "Buscar ao vivo",
+    "model": "Modelo",
+    "context": "Contexto",
+    "capabilities": "Capacidades",
+    "empty": "Nenhum modelo — adicione uma conexão de provider primeiro"
+  },
+  "onboard": {
+    "title": "Bem-vindo — vamos configurar",
+    "welcome": "Bem-vindo ao LLMRouter",
+    "welcomeDesc": "Roteie todos os providers de LLM por uma única API key com fallback automático.",
+    "next": "Próximo",
+    "provider": "Adicione seu primeiro provider",
+    "skip": "Pular",
+    "apikey": "Crie uma API key",
+    "done": "Tudo pronto",
+    "doneDesc": "Aponte seus apps para /v1 com sua nova key.",
+    "finish": "Ir para o dashboard"
+  },
+  "placeholder": {
+    "message": "Esta seção está planejada em uma spec posterior — veja .specs/ no repositório."
+  },
+  "proxyPools": {
+    "title": "Proxy pools",
+    "subtitle": "Proxies de saída HTTP/SOCKS5 — atribua um pool a uma conexão para rotear o tráfego upstream"
+  },
+  "pxpipe": {
+    "title": "pxpipe",
+    "subtitle": "Pipeline de mídia — conexões de provider por tipo de serviço",
+    "connections": "conexões",
+    "empty": "Nenhuma conexão declara este media kind — defina data.mediaKinds na conexão."
+  },
+  "quota": {
+    "title": "Quota de provider",
+    "subtitle": "Limites de tokens por conexão — conexões esgotadas são puladas pelo cascade"
+  },
+  "services": {
+    "title": "Serviços embutidos",
+    "subtitle": "Entradas do catálogo que expõem tipos de serviço extras (embeddings, TTS, busca, imagens…)",
+    "kinds": "Tipos de serviço",
+    "open": "Abrir",
+    "empty": "Nenhum serviço embutido"
+  },
+  "status": {
+    "title": "Status",
+    "status": "Status",
+    "version": "Versão",
+    "uptime": "Uptime",
+    "providers": "Conexões ativas"
+  },
+  "tokenSaver": {
+    "title": "Token saver",
+    "subtitle": "Compressão leve de prompt antes das chamadas upstream",
+    "settings": "Compressão",
+    "enabled": "Ativar token saver",
+    "whitespace": "Colapsar sequências de espaços",
+    "dedup": "Deduplicar linhas idênticas consecutivas",
+    "stats": "Economia",
+    "saved": "tokens economizados"
+  },
+  "tokens": {
+    "status": "Status",
+    "title": "Tokens OAuth",
+    "subtitle": "Conexões OAuth — iniciar fluxos, monitorar expiração, renovar",
+    "start": "Iniciar OAuth",
+    "connect": "Conectar",
+    "code": "Código",
+    "check": "Verificar",
+    "env": "Variáveis de ambiente OAuth",
+    "envHint": "Credenciais de cliente resolvem de variáveis de ambiente — defina antes de iniciar um fluxo.",
+    "refresh": "Renovar",
+    "empty": "Nenhuma conexão OAuth ainda",
+    "waiting": "Aguardando autorização…"
+  }
 }

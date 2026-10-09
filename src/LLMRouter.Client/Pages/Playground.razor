@@ -40,6 +40,18 @@
             <input type="checkbox" @bind="_stream" />
         </div>
         <div class="mt-4">
+            <label class="lbl">@Loc.T("playground.preset", "Preset")</label>
+            <div class="flex gap-2">
+                <select class="input" @bind="_presetId" @bind:after="LoadPreset">
+                    <option value="">@Loc.T("playground.loadPreset", "preset…")</option>
+                    @foreach (var p in _presets) { <option value="@p.Id">@p.Name</option> }
+                </select>
+                <button class="btn btn-sm" @onclick="SavePreset" title="@Loc.T("playground.savePreset", "Save preset")">
+                    <span class="material-symbols-outlined" style="font-size:15px">bookmark_add</span>
+                </button>
+            </div>
+        </div>
+        <div class="mt-4">
             <label class="lbl">@Loc.T("playground.conversation", "Conversation")</label>
             <div class="flex gap-2">
                 <button class="btn btn-sm" @onclick="Save">@Loc.T("common.save", "Save")</button>
@@ -71,11 +83,40 @@
         <div class="flex gap-2 mt-4">
             <input class="input" style="flex:1" placeholder="@Loc.T("playground.placeholder", "Type a message…")"
                    @bind="_input" @bind:event="oninput" @onkeydown='e => { if (e.Key == "Enter") _ = Send(); }' />
+            <button class="btn btn-sm" @onclick="Improve" disabled="@(_busy || string.IsNullOrWhiteSpace(_input))" title="@Loc.T("playground.improve", "Improve prompt")">
+                <span class="material-symbols-outlined" style="font-size:17px">auto_fix_high</span>
+            </button>
+            <button class="btn btn-sm" @onclick="SimulateRoute" disabled="@(string.IsNullOrWhiteSpace(_model))" title="@Loc.T("playground.route", "Dry-run route")">
+                <span class="material-symbols-outlined" style="font-size:17px">route</span>
+            </button>
             <button class="btn btn-primary" @onclick="Send" disabled="@(_busy || string.IsNullOrWhiteSpace(_model))">
                 <span class="material-symbols-outlined" style="font-size:17px">send</span>
             </button>
         </div>
         @if (_error is not null) { <p class="sm mt-2" style="color:var(--error)">@_error</p> }
+        @if (_route is not null)
+        {
+            <div class="card card-p mt-2" style="background:var(--surface2,#1a1a1a)">
+                <div class="xs muted bold">@Loc.T("playground.routeTitle", "Route dry-run") — @_model</div>
+                @if (_routeTargets.Count == 0)
+                {
+                    <p class="sm muted">@Loc.T("playground.noTargets", "No targets resolved")</p>
+                }
+                else
+                {
+                    <ol class="sm" style="margin:6px 0 0 18px">
+                        @foreach (var t in _routeTargets)
+                        {
+                            <li>@t.Provider/@t.UpstreamModel → @t.Connection @(t.Combo is not null ? $" (combo {t.Combo})" : "")</li>
+                        }
+                    </ol>
+                    @if (_routeCall is not null)
+                    {
+                        <pre class="mono xs muted" style="margin-top:6px;overflow:auto;max-height:90px">@_routeCall</pre>
+                    }
+                }
+            </div>
+        }
     </div>
 </div>
 
@@ -91,6 +132,85 @@
     private double _temp = 0.7;
     private int _maxTok = 1024;
     private List<(string Id, string Title)> _convs = [];
+    private List<(string Id, string Name)> _presets = [];
+    private string _presetId = "";
+    private JsonElement? _route;
+    private sealed record T(string Provider, string UpstreamModel, string Connection, string? Combo);
+    private List<T> _routeTargets = [];
+    private string? _routeCall;
+
+    private async Task LoadPresets()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/playground/presets");
+            _presets = r.TryGetProperty("presets", out var a)
+                ? a.EnumerateArray().Select(p => (p.GetProperty("id").GetString()!, p.GetProperty("name").GetString()!)).ToList() : [];
+        }
+        catch { }
+    }
+
+    private async Task SavePreset()
+    {
+        if (string.IsNullOrWhiteSpace(_model)) return;
+        var name = _presetId != "" ? _presets.FirstOrDefault(p => p.Id == _presetId).Name
+            : $"{_model} preset";
+        var body = new { name, model = _model, @params = new { system = _system, temperature = _temp, maxTokens = _maxTok, stream = _stream } };
+        if (_presetId != "") await Api.PutAsync($"api/playground/presets/{_presetId}", body);
+        else await Api.PostAsync("api/playground/presets", body);
+        await LoadPresets();
+    }
+
+    private async Task LoadPreset()
+    {
+        if (_presetId == "") return;
+        var r = await Api.GetAsync("api/playground/presets");
+        var p = r.GetProperty("presets").EnumerateArray().FirstOrDefault(x => x.GetProperty("id").GetString() == _presetId);
+        if (p.ValueKind == JsonValueKind.Undefined) return;
+        _model = p.TryGetProperty("model", out var m) ? m.GetString() ?? _model : _model;
+        if (p.TryGetProperty("paramsJson", out var pj))
+        {
+            var pr = JsonDocument.Parse(pj.GetString() ?? "{}").RootElement;
+            if (pr.TryGetProperty("system", out var s)) _system = s.GetString() ?? "";
+            if (pr.TryGetProperty("temperature", out var t) && t.TryGetDouble(out var td)) _temp = td;
+            if (pr.TryGetProperty("maxTokens", out var mx) && mx.TryGetInt32(out var mi)) _maxTok = mi;
+            if (pr.TryGetProperty("stream", out var st)) _stream = st.GetBoolean();
+        }
+    }
+
+    private async Task Improve()
+    {
+        if (string.IsNullOrWhiteSpace(_input)) return;
+        _busy = true;
+        try
+        {
+            var r = await Api.PostAsync("api/playground/improve-prompt", new { prompt = _input, model = _model });
+            if (r.TryGetProperty("improved", out var imp)) _input = imp.GetString() ?? _input;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        _busy = false;
+    }
+
+    private async Task SimulateRoute()
+    {
+        try
+        {
+            var r = await Api.PostAsync("api/playground/simulate-route", new
+            {
+                model = _model,
+                body = new { model = _model, messages = _messages.Select(m => new { role = m.Role, content = m.Content }) },
+            });
+            _route = r;
+            _routeTargets = r.TryGetProperty("targets", out var ts)
+                ? ts.EnumerateArray().Select(t => new T(
+                    t.GetProperty("provider").GetString() ?? "",
+                    t.GetProperty("upstreamModel").GetString() ?? "",
+                    t.TryGetProperty("connection", out var c) ? c.GetString() ?? "" : "",
+                    t.TryGetProperty("combo", out var cb) && cb.ValueKind == JsonValueKind.String ? cb.GetString() : null)).ToList() : [];
+            _routeCall = r.TryGetProperty("wouldBeCall", out var w) && w.ValueKind == JsonValueKind.Object ? w.GetRawText() : null;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
 
     protected override async Task OnAfterRenderAsync(bool first)
     {
@@ -141,6 +261,7 @@
             foreach (var cb in c.GetProperty("combos").EnumerateArray())
                 _combos.Add(cb.GetProperty("name").GetString()!);
             _model = _models.FirstOrDefault() ?? _combos.FirstOrDefault() ?? "";
+            await LoadPresets();
         }
         catch { }
     }

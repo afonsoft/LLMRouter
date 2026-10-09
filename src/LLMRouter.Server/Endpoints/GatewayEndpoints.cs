@@ -459,6 +459,54 @@ public static class GatewayEndpoints
             if (rewritten is { } rw) body = rw;
         }
 
+        // SPEC-034: compression engine pipeline — combo-assigned pipeline >
+        // settings.compression.stackedPipeline > comboOverrides > defaultMode.
+        if (sdata.ValueKind == JsonValueKind.Object
+            && sdata.TryGetProperty("compression", out var cv) && cv.ValueKind == JsonValueKind.Object)
+        {
+            var compNode = JsonNode.Parse(cv.GetRawText()) as JsonObject;
+            var routingComboId = comboEntity?.Id ?? model;
+            var assigned = routingComboId is null ? null
+                : await db.CompressionComboAssignments.FirstOrDefaultAsync(a => a.RoutingComboId == routingComboId);
+            JsonObject? comboPipeline = null;
+            if (assigned is not null
+                && await db.CompressionCombos.FindAsync(assigned.CompressionComboId) is { } comboRow)
+                comboPipeline = JsonNode.Parse(comboRow.Pipeline) as JsonObject;
+
+            var steps = Core.Compression.CompressionPipeline.ResolvePlan(compNode, routingComboId, comboPipeline);
+            if (steps.Count > 0 && body.ValueKind == JsonValueKind.Object)
+            {
+                var bodyNode = JsonNode.Parse(body.GetRawText()) as JsonObject;
+                if (bodyNode is not null)
+                {
+                    var engineCfgs = compNode?["engineConfigs"] as JsonObject;
+                    var (outBody, runs) = Core.Compression.CompressionPipeline.Run(bodyNode, steps,
+                        new Core.Compression.EngineOptions(
+                            Model: model,
+                            PrincipalId: apiKey),
+                        engineCfgs);
+                    if (runs.Count > 0)
+                    {
+                        body = JsonSerializer.SerializeToElement(outBody);
+                        var now = DateTime.UtcNow.ToString("o");
+                        foreach (var r in runs.Where(r => r.SavedChars > 0))
+                            db.CompressionRuns.Add(new Core.Data.CompressionRun
+                            {
+                                Id = Guid.NewGuid().ToString("n")[..12],
+                                Timestamp = now,
+                                PrincipalId = apiKey,
+                                Model = model,
+                                EngineId = r.Engine,
+                                BeforeChars = r.BeforeChars,
+                                AfterChars = r.AfterChars,
+                                ComboId = assigned?.CompressionComboId,
+                            });
+                        await db.SaveChangesAsync();
+                    }
+                }
+            }
+        }
+
         // SPEC-020: fusion (parallel fan-out + judge) and pipeline (sequential
         // chain) execute at the endpoint level, non-stream only
         if (comboEntity?.Kind == "fusion" && !stream)

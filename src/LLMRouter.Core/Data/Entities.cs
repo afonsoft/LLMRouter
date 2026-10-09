@@ -143,3 +143,43 @@ public class RequestDetail
     public string? Status { get; set; }
     public string Data { get; set; } = "{}";
 }
+
+[Table("compressionCombos")]
+public class CompressionCombo
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? Description { get; set; }
+    public string Pipeline { get; set; } = "[]";
+    public string LanguagePacks { get; set; } = "[]";
+    public bool OutputMode { get; set; }
+    public string? OutputModeIntensity { get; set; }
+    public bool IsDefault { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}
+
+[Table("compressionComboAssignments")]
+public class CompressionComboAssignment
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string CompressionComboId { get; set; } = "";
+    public string RoutingComboId { get; set; } = "";
+    public string CreatedAt { get; set; } = "";
+}
+
+[Table("compressionRuns")]
+public class CompressionRun
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Timestamp { get; set; } = "";
+    public string? PrincipalId { get; set; }
+    public string? Model { get; set; }
+    public string EngineId { get; set; } = "";
+    public long BeforeChars { get; set; }
+    public long AfterChars { get; set; }
+    public string? ComboId { get; set; }
+}

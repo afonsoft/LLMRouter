@@ -1,0 +1,189 @@
+@namespace LLMRouter.Client.Pages.Context
+@inject Api Api
+@inject Loc Loc
+@inject IJSRuntime JS
+
+@* Schema-driven engine config page (SPEC-034): config form + preview + 7d analytics. *@
+
+<h1 class="page-title">@(_engine is null ? EngineId : Name)</h1>
+<p class="page-desc">@_desc</p>
+
+@if (!Stable)
+{
+    <div class="card card-p" style="border-color:var(--warn,#e6a23c)">
+        <span class="sm">⚠ @Loc.T("context.experimental", "Experimental — engine registered for catalog parity; Apply is a safe pass-through until its backend ships.")</span>
+    </div>
+}
+
+<div class="grid grid-2">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("context.config", "Configuration")</h3>
+        @if (_fields is null)
+        {
+            <p class="muted">…</p>
+        }
+        else
+        {
+            @foreach (var f in _fields)
+            {
+                <div class="flex between mt-2">
+                    <span class="sm" title="@f.Description">@f.Label</span>
+                    @switch (f.Type)
+                    {
+                        case "boolean":
+                            <input type="checkbox" checked="@GetBool(f)" @onchange="e => Set(f, e.Value)" />
+                            break;
+                        case "select":
+                            <select class="inp xs" value="@GetStr(f)" @onchange="e => Set(f, e.Value)">
+                                @foreach (var o in f.Options ?? [])
+                                {
+                                    <option value="@o">@o</option>
+                                }
+                            </select>
+                            break;
+                        case "number":
+                            <input class="inp xs" type="number" style="width:90px" value="@GetNum(f)" @onchange="e => Set(f, e.Value)" />
+                            break;
+                        default:
+                            <input class="inp xs" style="width:160px" value="@GetStr(f)" @onchange="e => Set(f, e.Value)" />
+                            break;
+                    }
+                </div>
+            }
+            <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+            @if (_msg is not null) { <span class="sm muted" style="margin-left:8px">@_msg</span> }
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("context.preview", "Preview")</h3>
+        <textarea class="inp xs mono" style="width:100%" rows="5" placeholder="Paste text or a {messages:[…]} body"
+            @bind="_previewText"></textarea>
+        <button class="btn btn-sm mt-2" @onclick="Preview">@Loc.T("context.runPreview", "Run preview")</button>
+        @if (_preview is not null)
+        {
+            <div class="mt-3 xs">
+                <div class="flex between"><span class="muted">before</span><span class="mono">@_previewBefore chars</span></div>
+                <div class="flex between"><span class="muted">after</span><span class="mono" style="color:var(--primary)">@_previewAfter chars (@_previewPct%)</span></div>
+                <pre class="mono xs mt-2" style="max-height:200px;overflow:auto;white-space:pre-wrap">@_preview</pre>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="card card-p mt-4">
+    <h3 class="bold" style="margin:0 0 8px">@Loc.T("context.analytics7d", "Last 7 days")</h3>
+    @if (_analytics is not null)
+    {
+        <div class="flex" style="gap:24px">
+            <div><div style="font-size:24px;font-weight:700">@_analytics.Value.Runs</div><div class="xs muted">runs</div></div>
+            <div><div style="font-size:24px;font-weight:700;color:var(--primary)">@_analytics.Value.TokensSaved</div><div class="xs muted">tokens saved</div></div>
+            <div><div style="font-size:24px;font-weight:700">@_analytics.Value.Avg%</div><div class="xs muted">avg savings</div></div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string EngineId { get; set; } = "";
+    [Parameter] public string? Title { get; set; }
+
+    private string Name => Title ?? _engine?.GetProperty("name").GetString() ?? EngineId;
+    private string _desc = "";
+    private bool Stable => _engine is not { } e || !e.TryGetProperty("stable", out var s) || s.GetBoolean();
+    private List<Field>? _fields;
+    private JsonObject _cfg = new();
+    private JsonElement? _engine;
+    private string? _msg;
+    private string _previewText = "";
+    private string? _preview;
+    private int _previewBefore, _previewAfter;
+    private double _previewPct;
+    private (long Runs, long TokensSaved, double Avg)? _analytics;
+
+    private sealed record Field(string Key, string Type, string Label, string[]? Options, string? Description, JsonElement? Default);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var cat = await Api.GetAsync("api/compression/engines");
+        _engine = cat.GetProperty("engines").EnumerateArray()
+            .FirstOrDefault(e => e.GetProperty("id").GetString() == EngineId);
+        _desc = _engine?.TryGetProperty("description", out var d) == true ? d.GetString() ?? "" : "";
+
+        if (_engine?.TryGetProperty("configSchema", out var schema) == true)
+            _fields = schema.EnumerateArray().Select(f => new Field(
+                f.GetProperty("key").GetString()!,
+                f.GetProperty("type").GetString()!,
+                f.GetProperty("label").GetString()!,
+                f.TryGetProperty("options", out var o) ? o.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : null,
+                f.TryGetProperty("description", out var ds) ? ds.GetString() : null,
+                f.TryGetProperty("defaultValue", out var dv) ? dv.Clone() : null)).ToList();
+
+        var st = await Api.GetAsync("api/settings/compression");
+        if (st.TryGetProperty("compression", out var comp) && comp.ValueKind == JsonValueKind.Object
+            && comp.TryGetProperty("engineConfigs", out var ecs) && ecs.ValueKind == JsonValueKind.Object
+            && ecs.TryGetProperty(EngineId, out var ec) && ec.ValueKind == JsonValueKind.Object)
+            _cfg = JsonNode.Parse(ec.GetRawText()) as JsonObject ?? new();
+        foreach (var f in _fields ?? [])
+            if (_cfg[f.Key] is null && f.Default is { } dv)
+                _cfg[f.Key] = JsonNode.Parse(dv.GetRawText());
+
+        try
+        {
+            var a = await Api.GetAsync($"api/context/analytics/engine?engineId={EngineId}&days=7");
+            _analytics = (a.GetProperty("runs").GetInt64(), a.GetProperty("tokensSaved").GetInt64(), a.GetProperty("avgSavingsPercent").GetDouble());
+        }
+        catch { _analytics = (0, 0, 0); }
+    }
+
+    private bool GetBool(Field f) => _cfg[f.Key] is JsonValue v && v.TryGetValue<bool>(out var b) && b;
+    private string GetStr(Field f) => _cfg[f.Key]?.GetValue<string>() ?? f.Default?.ToString() ?? "";
+    private double GetNum(Field f) => _cfg[f.Key] is JsonValue v && v.TryGetValue<double>(out var d) ? d
+        : f.Default?.GetDouble() ?? 0;
+
+    private void Set(Field f, object? value)
+    {
+        _cfg[f.Key] = f.Type switch
+        {
+            "boolean" => JsonValue.Create(value is bool b ? b : value?.ToString() == "True"),
+            "number" => JsonValue.Create(double.TryParse(value?.ToString(), out var d) ? d : 0),
+            _ => JsonValue.Create(value?.ToString() ?? ""),
+        };
+    }
+
+    private async Task Save()
+    {
+        var current = await Api.GetAsync("api/settings/compression");
+        var comp = current.TryGetProperty("compression", out var c) && c.ValueKind == JsonValueKind.Object
+            ? JsonNode.Parse(c.GetRawText()) as JsonObject ?? new() : new JsonObject();
+        var ecs = comp["engineConfigs"] as JsonObject ?? new JsonObject();
+        ecs[EngineId] = _cfg.DeepClone();
+        comp["engineConfigs"] = ecs;
+        await Api.PutAsync("api/settings/compression", JsonNode.Parse(comp.ToJsonString()));
+        _msg = "✓";
+        StateHasChanged();
+    }
+
+    private async Task Preview()
+    {
+        if (string.IsNullOrWhiteSpace(_previewText)) return;
+        JsonObject req;
+        try
+        {
+            req = _previewText.TrimStart().StartsWith('{')
+                ? JsonNode.Parse(_previewText) as JsonObject ?? new()
+                : new JsonObject { ["text"] = _previewText };
+        }
+        catch { req = new JsonObject { ["text"] = _previewText }; }
+        req["engineId"] = EngineId;
+        var res = await Api.PostAsync("api/compression/preview", req);
+        _previewBefore = res.GetProperty("stats").GetProperty("originalTokens").GetInt32() * 4;
+        _previewAfter = res.GetProperty("stats").GetProperty("compressedTokens").GetInt32() * 4;
+        _previewPct = res.GetProperty("stats").GetProperty("savingsPercent").GetDouble();
+        if (res.TryGetProperty("body", out var rb))
+        {
+            var msgs = rb.GetProperty("messages").EnumerateArray()
+                .Select(m => m.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : c.GetRawText());
+            _preview = string.Join("\n---\n", msgs);
+            if (_preview.Length > 4000) _preview = _preview[..4000] + "…";
+        }
+    }
+}

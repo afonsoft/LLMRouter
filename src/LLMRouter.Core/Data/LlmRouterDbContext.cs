@@ -17,6 +17,9 @@ public class LlmRouterDbContext : DbContext
     public DbSet<UsageRecord> UsageHistory => Set<UsageRecord>();
     public DbSet<UsageDaily> UsageDaily => Set<UsageDaily>();
     public DbSet<RequestDetail> RequestDetails => Set<RequestDetail>();
+    public DbSet<CompressionCombo> CompressionCombos => Set<CompressionCombo>();
+    public DbSet<CompressionComboAssignment> CompressionComboAssignments => Set<CompressionComboAssignment>();
+    public DbSet<CompressionRun> CompressionRuns => Set<CompressionRun>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -46,7 +49,7 @@ public class LlmRouterDbContext : DbContext
             catch (Exception ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
             { /* schema raced by a parallel host */ }
         }
-        // Lightweight column migration for DBs created before the column existed.
+        // Lightweight migrations for DBs created before these tables/columns existed.
         var conn = Database.GetDbConnection();
         var opened = conn.State != System.Data.ConnectionState.Open;
         if (opened) conn.Open();
@@ -55,6 +58,17 @@ public class LlmRouterDbContext : DbContext
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "ALTER TABLE usageHistory ADD COLUMN LatencyMs INTEGER NOT NULL DEFAULT 0";
             try { cmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+            // SPEC-034: context-compression tables (no-op when EnsureCreated already made them)
+            foreach (var ddl in new[]
+            {
+                """CREATE TABLE IF NOT EXISTS compressionCombos (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Description TEXT NULL, Pipeline TEXT NOT NULL DEFAULT '[]', LanguagePacks TEXT NOT NULL DEFAULT '[]', OutputMode INTEGER NOT NULL DEFAULT 0, OutputModeIntensity TEXT NULL, IsDefault INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS compressionComboAssignments (Id TEXT NOT NULL PRIMARY KEY, CompressionComboId TEXT NOT NULL, RoutingComboId TEXT NOT NULL, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS compressionRuns (Id TEXT NOT NULL PRIMARY KEY, Timestamp TEXT NOT NULL, PrincipalId TEXT NULL, Model TEXT NULL, EngineId TEXT NOT NULL, BeforeChars INTEGER NOT NULL, AfterChars INTEGER NOT NULL, ComboId TEXT NULL)""",
+            })
+            {
+                cmd.CommandText = ddl;
+                try { cmd.ExecuteNonQuery(); } catch { /* exists */ }
+            }
         }
         finally { if (opened) conn.Close(); }
     }

@@ -1,0 +1,102 @@
+@page "/dashboard/context/settings"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("ctxSettings.title", "Compression settings")</h1>
+<p class="page-desc">@Loc.T("ctxSettings.subtitle", "Default mode, stacked pipeline and telemetry for context compression")</p>
+
+<div class="grid grid-2">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("ctxSettings.mode", "Mode")</h3>
+        @if (_cfg is not null)
+        {
+            <div class="flex between"><span class="sm">defaultMode</span>
+                <select class="inp xs" @bind="_defaultMode">
+                    @foreach (var m in new[] { "off", "lite", "standard", "caveman", "aggressive", "ultra", "rtk", "omniglyph", "codex-responses", "stacked" })
+                    { <option value="@m">@m</option> }
+                </select></div>
+            <div class="mt-3"><span class="xs muted">stackedPipeline (JSON — used when defaultMode=stacked or as fallback plan)</span>
+                <textarea class="inp xs mono" style="width:100%" rows="4" @bind="_stacked"></textarea></div>
+            <div class="mt-2"><span class="xs muted">exclusions (regex, uma por linha)</span>
+                <textarea class="inp xs mono" style="width:100%" rows="2" @bind="_exclusions"></textarea></div>
+            <div class="flex between mt-3"><span class="sm">mcpAccessibility.enabled</span>
+                <input type="checkbox" checked="@_mcp" @onchange="e => _mcp = (bool)(e.Value ?? false)" /></div>
+            <div class="flex between mt-3"><span class="sm">outputMode</span>
+                <span class="flex" style="gap:6px;align-items:center">
+                    <input type="checkbox" checked="@_outputMode" @onchange="e => _outputMode = (bool)(e.Value ?? false)" />
+                    <select class="inp xs" @bind="_outputIntensity">
+                        <option value="lite">lite</option><option value="full">full</option><option value="ultra">ultra</option>
+                    </select></span></div>
+            <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+            @if (_msg is not null) { <span class="sm muted" style="margin-left:8px">@_msg</span> }
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("ctxSettings.telemetry", "Run telemetry")</h3>
+        @if (_tel is not null)
+        {
+            <div style="font-size:28px;font-weight:700;color:var(--primary)">@_tel.Value.GetProperty("totalSavedChars").GetInt64()</div>
+            <div class="xs muted">chars saved · @_tel.Value.GetProperty("totalRuns").GetInt64() runs · @_tel.Value.GetProperty("savingsPercent").GetDouble()%</div>
+            @if (_tel.Value.TryGetProperty("byEngine", out var be))
+            {
+                <div class="mt-3">
+                @foreach (var e in be.EnumerateArray())
+                {
+                    <div class="flex between mt-1"><span class="xs">@e.GetProperty("engine").GetString()</span>
+                        <span class="xs mono muted">@e.GetProperty("saved").GetInt64() chars · @e.GetProperty("runs").GetInt64() runs</span></div>
+                }
+                </div>
+            }
+        }
+        <div class="mt-4"><button class="btn btn-sm" @onclick="ClearCcr">@Loc.T("ctxSettings.clearCcr", "Clear CCR store")</button></div>
+    </div>
+</div>
+
+@code {
+    private JsonElement? _cfg, _tel;
+    private string _defaultMode = "off", _stacked = "", _exclusions = "", _outputIntensity = "full", _msg = null!;
+    private bool _mcp, _outputMode;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var res = await Api.GetAsync("api/settings/compression");
+        _cfg = res.TryGetProperty("compression", out var c) ? c : null;
+        if (_cfg is { } cc)
+        {
+            _defaultMode = cc.TryGetProperty("defaultMode", out var dm) ? dm.GetString() ?? "off" : "off";
+            _stacked = cc.TryGetProperty("stackedPipeline", out var sp) && sp.ValueKind == JsonValueKind.Array
+                ? sp.GetRawText() : "";
+            _exclusions = cc.TryGetProperty("exclusions", out var ex) && ex.ValueKind == JsonValueKind.Array
+                ? string.Join("\n", ex.EnumerateArray().Select(x => x.GetString())) : "";
+            _mcp = cc.TryGetProperty("mcpAccessibility", out var mc) && mc.TryGetProperty("enabled", out var me) && me.GetBoolean();
+            if (cc.TryGetProperty("outputMode", out var om) && om.ValueKind == JsonValueKind.Object)
+            {
+                _outputMode = om.TryGetProperty("enabled", out var oe) && oe.GetBoolean();
+                _outputIntensity = om.TryGetProperty("intensity", out var oi) ? oi.GetString() ?? "full" : "full";
+            }
+        }
+        _tel = await Api.GetAsync("api/settings/compression/run-telemetry");
+    }
+
+    private async Task Save()
+    {
+        var patch = new JsonObject
+        {
+            ["defaultMode"] = _defaultMode,
+            ["exclusions"] = new JsonArray(_exclusions.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => (JsonNode)JsonValue.Create(x)!).ToArray()),
+            ["mcpAccessibility"] = new JsonObject { ["enabled"] = _mcp },
+            ["outputMode"] = new JsonObject { ["enabled"] = _outputMode, ["intensity"] = _outputIntensity },
+        };
+        if (!string.IsNullOrWhiteSpace(_stacked))
+            try { patch["stackedPipeline"] = JsonNode.Parse(_stacked); } catch { _msg = "stackedPipeline: invalid JSON"; return; }
+        await Api.PutAsync("api/settings/compression", patch);
+        _msg = "✓";
+    }
+
+    private async Task ClearCcr()
+    {
+        await Api.PostAsync("api/compression/ccr/clear", new { });
+        _msg = "✓ CCR cleared";
+    }
+}

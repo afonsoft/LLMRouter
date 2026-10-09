@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -343,5 +344,144 @@ public class McpToolsTests : IDisposable
         });
         var errJson = await err.Content.ReadFromJsonAsync<JsonElement>();
         errJson!.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32602);
+    }
+}
+
+/// <summary>SPEC-025: MCP SSE transport, extra tools, API-key tool scopes.</summary>
+public class McpTransportTests : IDisposable
+{
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly HttpClient _client;
+
+    public McpTransportTests()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, c) =>
+                c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = _dbPath })));
+        _client = _factory.CreateClient();
+        _client.PostAsJsonAsync("/api/auth/login", new { password = "test1234" }).Wait();
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose(); _factory.Dispose();
+        foreach (var f in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
+            try { File.Delete(f); } catch { }
+    }
+
+    [Fact]
+    public async Task ToolsList_includes_spec025_modules()
+    {
+        var resp = await _client.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        var j = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        var names = j!.GetProperty("result").GetProperty("tools").EnumerateArray()
+            .Select(t => t.GetProperty("name").GetString()).ToList();
+        names.ShouldContain("gamification.get");
+        names.ShouldContain("plugins.list");
+        names.ShouldContain("plugins.toggle");
+        names.ShouldContain("searchTools.list");
+        names.ShouldContain("localCorpus.search");
+    }
+
+    [Fact]
+    public async Task GamificationGet_returns_xp_and_badges()
+    {
+        var resp = await _client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0", id = 1, method = "tools/call",
+            @params = new { name = "gamification.get", arguments = new { } },
+        });
+        var j = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        var text = j!.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString()!;
+        using var doc = JsonDocument.Parse(text);
+        doc.RootElement.TryGetProperty("xp", out _).ShouldBeTrue();
+        doc.RootElement.GetProperty("badges").ValueKind.ShouldBe(JsonValueKind.Array);
+    }
+
+    [Fact]
+    public async Task SseEndpoint_announces_message_endpoint()
+    {
+        // Read just the first SSE event then abort — the stream stays open.
+        using var req = new HttpRequestMessage(HttpMethod.Get, "/mcp/sse");
+        using var resp = await _client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        resp.Content.Headers.ContentType!.MediaType.ShouldBe("text/event-stream");
+        var buf = new char[512];
+        using var sr = new StreamReader(await resp.Content.ReadAsStreamAsync());
+        var read = await sr.ReadAsync(buf, 0, buf.Length);
+        var head = new string(buf, 0, read);
+        head.ShouldContain("event: endpoint");
+        head.ShouldContain("/mcp/sse/message?sessionId=");
+    }
+
+    [Fact]
+    public async Task SseMessage_roundtrips_jsonrpc()
+    {
+        // Open SSE stream, grab sessionId, POST a ping, read the response event.
+        using var req = new HttpRequestMessage(HttpMethod.Get, "/mcp/sse");
+        using var resp = await _client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        var stream = await resp.Content.ReadAsStreamAsync();
+        using var sr = new StreamReader(stream);
+        var first = await sr.ReadLineAsync(); // event: endpoint
+        var second = await sr.ReadLineAsync(); // data: /mcp/sse/message?sessionId=...
+        var url = second![5..];
+        var msg2 = await _client.PostAsJsonAsync(url, new
+        {
+            jsonrpc = "2.0", id = 7, method = "tools/call",
+            @params = new { name = "system.status", arguments = new { } },
+        });
+        msg2.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        string? eventLine = null, dataLine = null;
+        while (!cts.IsCancellationRequested)
+        {
+            var l = await sr.ReadLineAsync(cts.Token);
+            if (l is null) break;
+            if (l.StartsWith("event:")) eventLine = l;
+            else if (l.StartsWith("data:") && l.Contains("result")) { dataLine = l; break; }
+        }
+        dataLine.ShouldNotBeNull();
+        dataLine.ShouldContain("\"jsonrpc\"");
+        dataLine.ShouldContain("LLMRouter");
+    }
+
+    [Fact]
+    public async Task SseMessage_unknown_session_404()
+    {
+        var resp = await _client.PostAsJsonAsync("/mcp/sse/message?sessionId=nope", new { jsonrpc = "2.0", id = 1, method = "ping" });
+        resp.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Restricted_key_scopes_tools()
+    {
+        // create key, restrict it to system.* tools only
+        var create = await _client.PostAsJsonAsync("/api/keys", new { name = "scoped" });
+        var key = (await create.Content.ReadFromJsonAsync<JsonElement>())!.GetProperty("key");
+        var id = key.GetProperty("id").GetString()!;
+        var raw = key.GetProperty("key").GetString()!;
+        await _client.PutAsJsonAsync($"/api/keys/{id}", new { accessRestricted = true, accessAllow = "system.*" });
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        req.Headers.TryAddWithoutValidation("x-api-key", raw);
+        req.Content = JsonContent.Create(new
+        {
+            jsonrpc = "2.0", id = 1, method = "tools/call",
+            @params = new { name = "providers.list", arguments = new { } },
+        });
+        var resp = await _client.SendAsync(req);
+        var j = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        j!.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32602);
+
+        // allowed tool passes the scope gate
+        using var req2 = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        req2.Headers.TryAddWithoutValidation("x-api-key", raw);
+        req2.Content = JsonContent.Create(new
+        {
+            jsonrpc = "2.0", id = 2, method = "tools/call",
+            @params = new { name = "system.status", arguments = new { } },
+        });
+        var ok = await (await _client.SendAsync(req2)).Content.ReadFromJsonAsync<JsonElement>();
+        ok!.TryGetProperty("result", out _).ShouldBeTrue();
     }
 }

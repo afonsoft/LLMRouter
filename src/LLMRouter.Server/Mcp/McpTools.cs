@@ -58,6 +58,11 @@ public static class McpTools
         new("docs.search", "Search built-in docs index", Schema(("q", "string", true))),
         new("system.status", "Router status: version, counts, uptime", Schema()),
         new("chat", "Chat completion via any configured model/combo", Schema(("model", "string", true), ("prompt", "string", true))),
+        new("gamification.get", "XP, level and badges for this router", Schema()),
+        new("plugins.list", "List registered plugins", Schema()),
+        new("plugins.toggle", "Enable/disable a plugin", Schema(("id", "string", true), ("enabled", "boolean", true))),
+        new("searchTools.list", "Web search/fetch tool connections", Schema()),
+        new("localCorpus.search", "Search local corpus (stub: returns empty index)", Schema(("q", "string", true))),
     };
 
     public static IEnumerable<object> ListTools() =>
@@ -318,6 +323,48 @@ public static class McpTools
                     },
                 };
             }
+            case "gamification.get":
+            {
+                var requests = await db.UsageHistory.LongCountAsync();
+                var tokens = await db.UsageHistory.SumAsync(r => r.PromptTokens + r.CompletionTokens);
+                var provs = await db.ProviderConnections.CountAsync(c => c.IsActive);
+                var (xp, level, badges) = LLMRouter.Core.Extras.Extras.Gamification(requests, tokens, provs);
+                return new { xp, level, badges, requests, tokens, providers = provs };
+            }
+            case "plugins.list":
+            {
+                var row = await db.Kv.FindAsync("plugins", "registered");
+                var plugins = row is null ? new System.Text.Json.Nodes.JsonArray()
+                    : System.Text.Json.Nodes.JsonNode.Parse(row.Value)?.AsArray() ?? new System.Text.Json.Nodes.JsonArray();
+                return new { plugins };
+            }
+            case "plugins.toggle":
+            {
+                var row = await db.Kv.FindAsync("plugins", "registered");
+                var arr = row is null ? new System.Text.Json.Nodes.JsonArray()
+                    : System.Text.Json.Nodes.JsonNode.Parse(row.Value)?.AsArray() ?? new System.Text.Json.Nodes.JsonArray();
+                var pid = Arg(args, "id") ?? "";
+                var en = Arg(args, "enabled") is "true" or "True";
+                var hit = false;
+                foreach (var p in arr)
+                    if (p?["id"]?.GetValue<string>() == pid) { p["enabled"] = en; hit = true; }
+                if (!hit) arr.Add(new System.Text.Json.Nodes.JsonObject { ["id"] = pid, ["enabled"] = en });
+                if (row is null) db.Kv.Add(new LLMRouter.Core.Data.KvEntry { Scope = "plugins", Key = "registered", Value = arr.ToJsonString() });
+                else row.Value = arr.ToJsonString();
+                await db.SaveChangesAsync();
+                return new { ok = true, id = pid, enabled = en };
+            }
+            case "searchTools.list":
+            {
+                var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync();
+                var tools = conns.Where(c =>
+                        (c.Data ?? "").Contains("\"search\"", StringComparison.OrdinalIgnoreCase)
+                        || (c.Data ?? "").Contains("\"fetch\"", StringComparison.OrdinalIgnoreCase))
+                    .Select(c => new { c.Id, c.Provider, c.Name });
+                return new { tools };
+            }
+            case "localCorpus.search":
+                return new { results = Array.Empty<object>(), note = "local corpus index not built (stub)" };
             default:
                 return null;
         }

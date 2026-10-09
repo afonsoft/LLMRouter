@@ -17,6 +17,11 @@ if (args is ["reset-password", var newPw, ..])
     LLMRouter.Server.Cli.ResetPassword(newPw);
     return;
 }
+if (args is ["mcp-stdio", ..])
+{
+    Environment.Exit(await LLMRouter.Server.Cli.McpStdioAsync());
+    return;
+}
 args = args.Where(a => a != "serve").ToArray();
 
 var builder = WebApplication.CreateBuilder(args);

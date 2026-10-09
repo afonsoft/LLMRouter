@@ -48,11 +48,57 @@ public static class ProtocolEndpoints
     public static void MapProtocolEndpoints(this WebApplication app)
     {
         // ---- MCP server (JSON-RPC 2.0) — expose gateway models as tools ----
+        MapA2aEndpoints(app);
         app.MapPost("/mcp", async (HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, LLMRouter.Core.Registry.ProviderRegistry registry) =>
         {
             JsonElement rpc;
             try { rpc = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
             catch { return Results.Json(RpcError(null, -32700, "parse error")); }
+            return await HandleRpcAsync(ctx, rpc, db, hf, registry);
+        });
+
+        // SPEC-025: SSE transport — GET /mcp/sse emits the POST endpoint, then
+        // streams `event: message` responses; POST /mcp/sse/message?sessionId
+        // enqueues a JSON-RPC request onto that session's stream.
+        var sseSessions = new System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.Channels.Channel<string>>();
+        app.MapGet("/mcp/sse", async (HttpContext ctx) =>
+        {
+            var sid = Guid.NewGuid().ToString("N");
+            var ch = System.Threading.Channels.Channel.CreateUnbounded<string>();
+            sseSessions[sid] = ch;
+            ctx.Response.Headers.ContentType = "text/event-stream";
+            ctx.Response.Headers.CacheControl = "no-cache";
+            await ctx.Response.WriteAsync($"event: endpoint\ndata: /mcp/sse/message?sessionId={sid}\n\n");
+            await ctx.Response.Body.FlushAsync();
+            try
+            {
+                await foreach (var msg in ch.Reader.ReadAllAsync(ctx.RequestAborted))
+                {
+                    await ctx.Response.WriteAsync($"event: message\ndata: {msg}\n\n");
+                    await ctx.Response.Body.FlushAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+            finally { sseSessions.TryRemove(sid, out _); }
+        });
+        app.MapPost("/mcp/sse/message", async (HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, LLMRouter.Core.Registry.ProviderRegistry registry) =>
+        {
+            var sid = ctx.Request.Query["sessionId"].ToString();
+            if (sid == "" || !sseSessions.TryGetValue(sid, out var ch))
+                return Results.Json(RpcError(null, -32000, "unknown sessionId"), statusCode: 404);
+            JsonElement rpc;
+            try { rpc = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
+            catch { ch.Writer.TryWrite(RpcError(null, -32700, "parse error").ToJsonString()); return Results.Accepted(); }
+            var res = await HandleRpcAsync(ctx, rpc, db, hf, registry);
+            if (res is IValueHttpResult vr && vr.Value is not null)
+                ch.Writer.TryWrite(JsonSerializer.Serialize(vr.Value, JsonOpts));
+            return Results.Accepted();
+        });
+    }
+
+    private static async Task<IResult> HandleRpcAsync(HttpContext ctx, JsonElement rpc,
+        LlmRouterDbContext db, IHttpClientFactory hf, LLMRouter.Core.Registry.ProviderRegistry registry)
+    {
             var method = rpc.TryGetProperty("method", out var m) ? m.GetString() : "";
             var id = rpc.TryGetProperty("id", out var i) ? (object)i.Clone() : null;
 
@@ -83,15 +129,22 @@ public static class ProtocolEndpoints
                             required = new[] { "prompt" },
                         },
                     });
+                    var scopes = await ToolScopesAsync(ctx, db);
+                    var tools = Mcp.McpTools.ListTools().Concat(dynamic);
+                    if (scopes is not null)
+                        tools = tools.Where(t => ScopeAllows(scopes, ((JsonElement)JsonSerializer.SerializeToElement(t)).GetProperty("name").GetString()!));
                     return Results.Json(RpcResult(id!, new
                     {
-                        tools = Mcp.McpTools.ListTools().Concat(dynamic),
+                        tools,
                     }));
                 }
                 case "tools/call":
                 {
                     var prms = rpc.GetProperty("params");
                     var toolName = prms.GetProperty("name").GetString()!;
+                    var scopes2 = await ToolScopesAsync(ctx, db);
+                    if (scopes2 is not null && !ScopeAllows(scopes2, toolName))
+                        return Results.Json(RpcError(id, -32602, $"tool not permitted by key scopes: {toolName}"));
                     var callArgs = prms.TryGetProperty("arguments", out var ca) ? ca.Clone() : default;
                     string text;
                     if (toolName.StartsWith("chat__"))
@@ -117,8 +170,27 @@ public static class ProtocolEndpoints
                 default:
                     return Results.Json(RpcError(id, -32601, "method not found"));
             }
-        });
+    }
 
+    /// <summary>SPEC-025: tool scopes — when the caller's API key is access
+    /// restricted, its AccessAllow globs also gate MCP tools (absent = open).
+    /// Denied tools are filtered out of tools/list and rejected on tools/call.</summary>
+    private static async Task<string[]?> ToolScopesAsync(HttpContext ctx, LlmRouterDbContext db)
+    {
+        var raw = ctx.Request.Headers["x-api-key"].FirstOrDefault()
+            ?? ctx.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
+        if (string.IsNullOrEmpty(raw)) return null;
+        var key = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == raw && k.IsActive);
+        if (key is null || !key.AccessRestricted || string.IsNullOrWhiteSpace(key.AccessAllow)) return null;
+        return key.AccessAllow.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static bool ScopeAllows(string[] scopes, string tool) => scopes.Any(sc =>
+        sc == "*" || sc == tool ||
+        (sc.EndsWith('*') && tool.StartsWith(sc[..^1], StringComparison.Ordinal)));
+
+    private static void MapA2aEndpoints(WebApplication app)
+    {
         // ---- A2A agent card + JSON-RPC tasks ----
         app.MapGet("/.well-known/agent.json", (HttpContext ctx) => Results.Json(new
         {

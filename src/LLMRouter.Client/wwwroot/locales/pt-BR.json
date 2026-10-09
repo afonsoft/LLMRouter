@@ -998,7 +998,9 @@
     "batchFileUsedByCount": "Usado por {count, plural, one {# lote} other {# lotes}}",
     "batchFilePreview": "Prévia",
     "batchFilePreviewTruncated": "Mostrando as primeiras {shown} linhas ({total} linhas no total)",
-    "batchFileDownloadFull": "Baixar Arquivo Completo"
+    "batchFileDownloadFull": "Baixar Arquivo Completo",
+    "create": "Criar",
+    "method": "Método"
   },
   "disabled": "Desabilitado",
   "featureFlagOmnirouteEmergencyFallbackDescription": "Roteie solicitações com orçamento esgotado para o provedor/modelo de fallback gratuito de emergência.",
@@ -1924,7 +1926,19 @@
     "readinessStep3": "Copie seu endpoint",
     "readinessStep4": "Envie uma requisição de teste",
     "readinessContinue": "Continuar configuração",
-    "readinessDismiss": "Dispensar por agora"
+    "readinessDismiss": "Dispensar por agora",
+    "title": "Início",
+    "subtitle": "Visão geral do seu LLMRouter",
+    "activeProviders": "Providers ativos",
+    "combos": "Combos",
+    "requestsToday": "Requisições hoje",
+    "tokensToday": "Tokens hoje",
+    "recentActivity": "Atividade recente",
+    "noActivity": "Nenhuma atividade ainda",
+    "viewEndpoints": "Ver endpoints",
+    "step1": "Crie uma conexão de provider",
+    "step2": "Gere uma API key",
+    "step3": "Aponte seu cliente para o gateway"
   },
   "analytics": {
     "title": "Análises",
@@ -3262,7 +3276,9 @@
     "cliproxyapiUnknown": "Desconhecido",
     "cliproxyapiUpdate": "Atualizar",
     "cliproxyapiUpdateAvailable": "Atualização disponível: v{current} → v{latest}",
-    "cliproxyapiVersion": "Versão"
+    "cliproxyapiVersion": "Versão",
+    "subtitle": "CLIs de IA detectados no host",
+    "notDetected": "Não detectado"
   },
   "modelCatalog": {
     "title": "Modelos e Combos",
@@ -3994,7 +4010,15 @@
     "duplicateAutoComboSnapshotMsg": "Isso irá capturar os provedores/modelos atualmente conectados que correspondem a este modelo em uma combinação editável.",
     "duplicateAutoComboFailedPrefix": "Falha ao duplicar a combinação automática:",
     "duplicateAutoComboUnknownError": "Erro desconhecido",
-    "duplicateAutoComboTitle": "Criar uma combinação estática de {name}"
+    "duplicateAutoComboTitle": "Criar uma combinação estática de {name}",
+    "new": "Novo combo",
+    "name": "Nome",
+    "kind": "Estratégia",
+    "edit": "Editar",
+    "empty": "Nenhum combo",
+    "aliases": "Aliases",
+    "mappings": "Mapeamentos",
+    "subtitle": "Combine providers com fallback"
   },
   "costs": {
     "title": "Custos",
@@ -10443,7 +10467,10 @@
     "privacy": "Privacidade",
     "license": "Licença",
     "footerDescription": "A interface unificada para infraestrutura de IA moderna. Segura, observável e escalável.",
-    "communityDiscussions": "Discussões da Comunidade"
+    "communityDiscussions": "Discussões da Comunidade",
+    "analytics": "Analytics",
+    "combos": "Combos inteligentes",
+    "docs": "Documentação"
   },
   "docs": {
     "title": "Documentação",
@@ -10696,7 +10723,8 @@
       "description": "Descrição",
       "returns": "Retornos",
       "typePrefix": "Tipo:"
-    }
+    },
+    "pick": "Escolha uma página de documentação"
   },
   "legal": {
     "privacyPolicy": "Política de Privacidade",
@@ -14695,7 +14723,10 @@
     "voiceSpeaking": "falando…",
     "sttFailed": "Transcrição falhou (confira modelo/provider de STT)",
     "ttsFailed": "Síntese de voz falhou (confira modelo/provider de TTS)",
-    "micDenied": "Microfone indisponível ou permissão negada"
+    "micDenied": "Microfone indisponível ou permissão negada",
+    "run": "Executar",
+    "output": "Saída",
+    "final": "Resultado final"
   },
   "orchestration": {
     "title": "Orquestração",
@@ -14869,5 +14900,48 @@
     "search": "Buscar mensagens…",
     "empty": "Nenhuma conversa salva",
     "pick": "Escolha uma conversa"
-  }
+  },
+  "keys": {
+    "title": "API Keys",
+    "subtitle": "Chaves de acesso ao gateway",
+    "new": "Nova key",
+    "name": "Nome",
+    "key": "Key",
+    "status": "Status",
+    "empty": "Nenhuma key criada",
+    "created": "Key criada — copie agora, não será exibida de novo"
+  },
+  "inspector": {
+    "title": "Traffic Inspector",
+    "subtitle": "Capture e inspecione tráfego do proxy mitm",
+    "capture": "Captura",
+    "clear": "Limpar",
+    "relay": "Relay",
+    "ca": "Certificado CA"
+  },
+  "extras": {
+    "scan": "Detectar providers locais",
+    "none": "Nenhum item",
+    "chaosHint": "Simule falhas/latência por rota"
+  },
+  "error": {
+    "home": "Voltar ao início"
+  },
+  "a2a": {
+    "title": "A2A",
+    "subtitle": "Agent-to-Agent",
+    "card": "Cartão do agente",
+    "send": "Enviar",
+    "submit": "Enviar tarefa"
+  },
+  "apiEndpoints": {
+    "title": "Endpoints da API",
+    "subtitle": "Superfície HTTP do gateway",
+    "desc": "Rotas disponíveis"
+  },
+  "changelog": {
+    "title": "Changelog"
+  },
+  "consoleLogs": "Console",
+  "costsOverview": "Visão geral de custos"
 }

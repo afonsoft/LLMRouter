@@ -1,57 +1,109 @@
 @page "/dashboard/api-endpoints"
+@inject Api Api
 @inject Loc Loc
 
-<h1 class="page-title">@Loc.T("apiEndpoints.title", "API endpoints")</h1>
-<p class="page-desc">@Loc.T("apiEndpoints.subtitle", "Every route this router exposes")</p>
+<h1 class="page-title">@Loc.T("apiEndpoints.title", "API explorer")</h1>
+<p class="page-desc">@Loc.T("apiEndpoints.subtitle", "Every route this router exposes — from the live OpenAPI spec")</p>
 
-<div class="card card-p" style="max-width:900px">
-    <table class="tbl">
-        <thead><tr><th>Path</th><th>Methods</th><th>@Loc.T("apiEndpoints.desc", "Description")</th></tr></thead>
-        <tbody>
-            @foreach (var e in _routes)
-            {
-                <tr><td><code>@e.Path</code></td><td>@e.Methods</td><td class="muted">@e.Desc</td></tr>
-            }
-        </tbody>
-    </table>
-</div>
+@if (_groups.Count == 0) { <p class="muted">…</p> }
+else
+{
+    <div class="col gap-4" style="max-width:960px">
+        @foreach (var grp in _groups)
+        {
+            <div class="card card-p">
+                <div class="bold mb-2">@grp.Name <span class="muted xs">(@grp.Endpoints.Count)</span></div>
+                @foreach (var e in grp.Endpoints)
+                {
+                    <div class="flex" style="align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid var(--border,#333)">
+                        <button class="badge ghost sm mono" style="min-width:56px" @onclick="() => Toggle(e)">@e.Method</button>
+                        <div style="flex:1">
+                            <code class="sm">@e.Path</code>
+                            @if (e.Summary.Length > 0) { <span class="muted xs" style="margin-left:6px">@e.Summary</span> }
+                            @if (e.Open)
+                            {
+                                <div class="mt-2" style="background:var(--surface2,#1a1a1a);border-radius:6px;padding:8px">
+                                    @if (e.AcceptsBody)
+                                    {
+                                        <textarea class="input mono" rows="4" @bind="e.Body" placeholder="{ … }" style="width:100%"></textarea>
+                                    }
+                                    <div class="flex gap-2 mt-2" style="align-items:center">
+                                        <button class="btn btn-sm" @onclick="() => Try(e)" disabled="@e.Busy">@Loc.T("apiEndpoints.try", "Try it")</button>
+                                        @if (e.Result is not null)
+                                        {
+                                            <span class="badge @(e.Status < 400 ? "ok" : "err")">@e.Status</span>
+                                            <span class="muted xs">@e.Ms ms</span>
+                                        }
+                                    </div>
+                                    @if (e.Result is not null)
+                                    {
+                                        <pre class="mono xs" style="margin-top:6px;max-height:220px;overflow:auto;white-space:pre-wrap">@e.Result</pre>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
 
 @code {
-    private record R(string Path, string Methods, string Desc);
-    private static readonly R[] _routes =
-    [
-        new("/v1/chat/completions", "POST", "Chat — openai format"),
-        new("/v1/messages", "POST", "Chat — claude format"),
-        new("/v1/responses", "POST", "Chat — responses API"),
-        new("/v1/models", "GET", "Model catalog"),
-        new("/v1/{*path}", "GET/POST", "Passthrough (media: audio, images, embeddings, search, videos)"),
-        new("/v1beta/models/{m}:generateContent", "POST", "Gemini native"),
-        new("/mcp", "POST", "MCP JSON-RPC (initialize/tools/list/tools/call)"),
-        new("/a2a", "POST", "A2A tasks (tasks/send, message/send)"),
-        new("/.well-known/agent.json", "GET", "A2A agent card"),
-        new("/api/auth/login", "POST", "Dashboard login"),
-        new("/api/providers", "GET", "Provider registry"),
-        new("/api/provider-connections", "GET/POST/PUT/DELETE", "Connection CRUD + test + models"),
-        new("/api/provider-nodes", "GET/POST", "Custom provider nodes"),
-        new("/api/models", "GET", "Resolved model list"),
-        new("/api/combos", "GET/POST/PUT/DELETE", "Combo CRUD + sticky/mappings"),
-        new("/api/keys", "GET/POST/PUT/DELETE", "API keys"),
-        new("/api/usage/*", "GET", "Timeseries, provider-stats, pricing, budget"),
-        new("/api/logs/*", "GET/DELETE", "Request details, console, export"),
-        new("/api/settings", "GET/PUT", "settings.data merge + reset/export"),
-        new("/api/quota", "GET", "Per-connection quota state"),
-        new("/api/proxy-pools[/{id}]", "GET/POST/PUT/DELETE", "Egress proxy pools + /test"),
-        new("/api/token-saver/stats", "GET", "Token saver stats"),
-        new("/api/cli-tools[/{id}/config]", "GET", "CLI manifest + env blocks"),
-        new("/api/translator", "POST", "Format converter playground"),
-        new("/api/skills[/{name}/toggle|/install]", "GET/POST", "SKILL.md modules"),
-        new("/api/media-providers", "GET", "Connections grouped by media kind"),
-        new("/api/oauth/*", "GET/POST", "OAuth start/poll/callback"),
-        new("/api/token-health[/{id}/refresh]", "GET/POST", "OAuth token health + refresh"),
-        new("/api/conversations[/{id}]", "GET/PUT/DELETE", "Saved playground conversations"),
-        new("/api/conductor/*", "GET/PUT/POST", "Workflows + run"),
-        new("/api/mcp-servers[/{name}]", "GET/PUT/DELETE", "External MCP registry"),
-        new("/api/docs[/{*path}]", "GET", "Markdown docs from repo"),
-        new("/api/status", "GET", "Public status"),
-    ];
+    private sealed class Ep
+    {
+        public string Path = "", Method = "", Summary = "", Body = "";
+        public bool AcceptsBody, Open, Busy;
+        public int Status; public long Ms; public string? Result;
+    }
+    private sealed class Grp { public string Name = ""; public List<Ep> Endpoints = []; }
+    private readonly List<Grp> _groups = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var spec = await Api.GetAsync("api/openapi/spec");
+            var paths = spec.GetProperty("paths");
+            var byTag = new SortedDictionary<string, List<Ep>>();
+            foreach (var p in paths.EnumerateObject())
+            {
+                foreach (var op in p.Value.EnumerateObject())
+                {
+                    var tag = op.Value.TryGetProperty("tags", out var ts) && ts.GetArrayLength() > 0
+                        ? ts[0].GetString() ?? "api" : "api";
+                    var ep = new Ep
+                    {
+                        Path = p.Name, Method = op.Name.ToUpperInvariant(),
+                        Summary = op.Value.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "",
+                        AcceptsBody = op.Value.TryGetProperty("requestBody", out _),
+                    };
+                    if (!byTag.TryGetValue(tag, out var l)) byTag[tag] = l = [];
+                    l.Add(ep);
+                }
+            }
+            foreach (var (k, v) in byTag) _groups.Add(new Grp { Name = k, Endpoints = v });
+        }
+        catch { }
+    }
+
+    private void Toggle(Ep e) => e.Open = !e.Open;
+
+    private async Task Try(Ep e)
+    {
+        e.Busy = true; e.Result = null;
+        try
+        {
+            object body = e.AcceptsBody && e.Body.Length > 0
+                ? JsonDocument.Parse(e.Body).RootElement : new { };
+            var r = await Api.PostAsync("api/openapi/try", new { path = e.Path, method = e.Method, body });
+            e.Status = r.GetProperty("status").GetInt32();
+            e.Ms = r.GetProperty("ms").GetInt64();
+            var raw = r.GetProperty("body").GetString() ?? "";
+            try { e.Result = JsonDocument.Parse(raw).RootElement.GetRawText(); }
+            catch { e.Result = raw.Length > 2000 ? raw[..2000] + "…" : raw; }
+        }
+        catch (Exception ex) { e.Status = 0; e.Result = ex.Message; }
+        e.Busy = false;
+    }
 }

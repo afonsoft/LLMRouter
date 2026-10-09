@@ -39,4 +39,38 @@ public static class Cli
         db.SaveChanges();
         Console.WriteLine($"Password reset ({dbPath})");
     }
+
+    /// <summary>SPEC-025: `llmrouter mcp-stdio` — stdin/stdout JSON-RPC bridge to
+    /// the running server's POST /mcp. Env: LLMROUTER_MCP_URL (default
+    /// http://localhost:20128/mcp), LLMROUTER_API_KEY (forwarded as x-api-key).</summary>
+    public static async Task<int> McpStdioAsync()
+    {
+        var url = Environment.GetEnvironmentVariable("LLMROUTER_MCP_URL") ?? "http://localhost:20128/mcp";
+        var apiKey = Environment.GetEnvironmentVariable("LLMROUTER_API_KEY");
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+        string? line;
+        var stdout = Console.OpenStandardOutput();
+        while ((line = await Console.In.ReadLineAsync()) is not null)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            { Content = new StringContent(line, System.Text.Encoding.UTF8, "application/json") };
+            if (apiKey is not null) req.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+            try
+            {
+                using var res = await http.SendAsync(req);
+                var body = await res.Content.ReadAsStringAsync();
+                var bytes = System.Text.Encoding.UTF8.GetBytes(body + "\n");
+                await stdout.WriteAsync(bytes);
+                await stdout.FlushAsync();
+            }
+            catch (Exception ex)
+            {
+                var err = $"{{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{{\"code\":-32000,\"message\":{JsonSerializer.Serialize(ex.Message)}}}}}\n";
+                await stdout.WriteAsync(System.Text.Encoding.UTF8.GetBytes(err));
+                await stdout.FlushAsync();
+            }
+        }
+        return 0;
+    }
 }

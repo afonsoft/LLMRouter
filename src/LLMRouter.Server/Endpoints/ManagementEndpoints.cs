@@ -310,6 +310,8 @@ public static class ManagementEndpoints
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             if (b.TryGetProperty("isActive", out var ia)) k.IsActive = ia.GetBoolean();
             if (b.TryGetProperty("name", out _)) k.Name = Get(b, "name") ?? k.Name;
+            if (b.TryGetProperty("accessRestricted", out var ar)) k.AccessRestricted = ar.GetBoolean();
+            if (b.TryGetProperty("accessAllow", out var aa)) k.AccessAllow = aa.GetString();
             await db.SaveChangesAsync();
             return Results.Json(new { key = k }, JsonOpts);
         });

@@ -33,7 +33,8 @@ public sealed class GatewayEngine(
     LlmRouterDbContext db,
     ProviderRegistry registry,
     ComboPlanner planner,
-    ModelResolver resolver)
+    ModelResolver resolver,
+    Routing.RateLimiter? rateLimiter = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -248,6 +249,15 @@ public sealed class GatewayEngine(
         });
         await db.SaveChangesAsync();
         await RollupDailyAsync(provider, model, promptTokens, completionTokens);
+
+        // SPEC-039: credit tokens to matching rate-limit windows (tpm accounting)
+        if (rateLimiter is not null)
+        {
+            var rlRules = await db.RateLimits.Where(r => r.Enabled).ToListAsync();
+            if (rlRules.Count > 0)
+                rateLimiter.RecordTokens(rlRules, apiKey, provider, model,
+                    promptTokens + completionTokens);
+        }
     }
 
     private async Task RollupDailyAsync(string provider, string model, int prompt, int completion)

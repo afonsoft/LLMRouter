@@ -209,3 +209,18 @@ public class JobRun
     public string Status { get; set; } = "";
     public string? Output { get; set; }
 }
+
+[Table("rateLimits")]
+public class RateLimit
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Scope { get; set; } = "";      // apiKey | provider | model
+    public string ScopeValue { get; set; } = ""; // "*" or value/prefix*
+    public int Rpm { get; set; }                 // requests/min; 0 = unlimited
+    public int Tpm { get; set; }                 // tokens/min; 0 = unlimited
+    public int Burst { get; set; }               // extra request headroom over Rpm
+    public bool Enabled { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}

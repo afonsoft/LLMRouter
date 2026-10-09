@@ -14862,5 +14862,12 @@
     "saveMessage": "Guardar mensaje",
     "defaultModel": "Modelo de prueba predeterminado",
     "defaultModelHint": "Se usa automáticamente con los botones «Mensaje de prueba» de esta cuenta. Se guarda con la conexión; no se envía ningún mensaje."
+  },
+  "conversations": {
+    "title": "Conversaciones",
+    "subtitle": "Conversaciones guardadas del playground — explorar, buscar, inspeccionar",
+    "search": "Buscar mensajes…",
+    "empty": "No hay conversaciones guardadas",
+    "pick": "Elige una conversación"
   }
 }

@@ -14862,5 +14862,12 @@
     "saveMessage": "Salvar mensagem",
     "defaultModel": "Modelo de teste padrão",
     "defaultModelHint": "Usado automaticamente pelos botões de mensagem de teste desta conta. É salvo com a conexão; nenhuma mensagem é enviada."
+  },
+  "conversations": {
+    "title": "Conversas",
+    "subtitle": "Conversas salvas do playground — navegar, buscar, inspecionar",
+    "search": "Buscar mensagens…",
+    "empty": "Nenhuma conversa salva",
+    "pick": "Escolha uma conversa"
   }
 }

@@ -23,29 +23,102 @@ public static class DocsEndpoints
         return null;
     }
 
-    /// <summary>Minimal markdown → html (headers, lists, code fences, bold/links, tables passthrough).</summary>
+    /// <summary>
+    /// SPEC-024: markdown → html — GFM tables, nested lists (2-space indent),
+    /// headings with id anchors + auto TOC block.
+    /// </summary>
     public static string MdToHtml(string md)
     {
         var sb = new System.Text.StringBuilder();
-        var inCode = false;
-        foreach (var raw in md.Split('\n'))
+        var toc = new List<(int Level, string Text, string Id)>();
+        var inCode = false; var inTable = false; var listDepth = 0;
+        string Slug(string t) => System.Text.RegularExpressions.Regex.Replace(
+            System.Text.RegularExpressions.Regex.Replace(t.ToLowerInvariant(), @"[^a-z0-9\s-]", ""), @"\s+", "-").Trim('-');
+        string Enc(string t)
         {
-            var line = raw.TrimEnd();
-            if (line.StartsWith("```")) { sb.Append(inCode ? "</code></pre>" : "<pre class='code-block'><code>"); inCode = !inCode; continue; }
-            if (inCode) { sb.Append(System.Net.WebUtility.HtmlEncode(line)).Append('\n'); continue; }
-            var e = System.Net.WebUtility.HtmlEncode(line);
+            var e = System.Net.WebUtility.HtmlEncode(t);
             e = System.Text.RegularExpressions.Regex.Replace(e, @"\*\*([^*]+)\*\*", "<b>$1</b>");
+            e = System.Text.RegularExpressions.Regex.Replace(e, @"\*([^*]+)\*", "<i>$1</i>");
             e = System.Text.RegularExpressions.Regex.Replace(e, @"`([^`]+)`", "<code>$1</code>");
             e = System.Text.RegularExpressions.Regex.Replace(e, @"\[([^\]]+)\]\(([^)]+)\)", "<a href='$2'>$1</a>");
-            if (line.StartsWith("####")) sb.Append($"<h4>{e[4..].TrimStart()}</h4>");
-            else if (line.StartsWith("###")) sb.Append($"<h3>{e[3..].TrimStart()}</h3>");
-            else if (line.StartsWith("##")) sb.Append($"<h2>{e[2..].TrimStart()}</h2>");
-            else if (line.StartsWith("#")) sb.Append($"<h1>{e[1..].TrimStart()}</h1>");
-            else if (line.TrimStart().StartsWith("- ")) sb.Append($"<li>{e[(e.IndexOf('-') + 1)..].TrimStart()}</li>");
-            else if (string.IsNullOrWhiteSpace(line)) sb.Append("<br/>");
-            else sb.Append($"<p>{e}</p>");
+            return e;
+        }
+        void CloseTable() { if (inTable) { sb.Append("</tbody></table>"); inTable = false; } }
+        void CloseLists(int to = 0) { while (listDepth > to) { sb.Append("</ul>"); listDepth--; } }
+
+        var lines = md.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var raw = lines[i]; var line = raw.TrimEnd();
+            if (line.StartsWith("```")) { CloseTable(); CloseLists(); sb.Append(inCode ? "</code></pre>" : "<pre class='code-block'><code>"); inCode = !inCode; continue; }
+            if (inCode) { sb.Append(System.Net.WebUtility.HtmlEncode(line)).Append('\n'); continue; }
+
+            // GFM table row
+            var isRow = line.StartsWith('|') && line.EndsWith('|');
+            var nextSep = i + 1 < lines.Length && System.Text.RegularExpressions.Regex.IsMatch(lines[i + 1].Trim(), @"^\|?[\s:|-]+\|[\s:|-]+\|?$");
+            if (isRow && nextSep)
+            {
+                CloseLists();
+                sb.Append("<table class='tbl'><thead><tr>");
+                foreach (var c in line.Trim('|').Split('|'))
+                    sb.Append("<th>").Append(Enc(c.Trim())).Append("</th>");
+                sb.Append("</tr></thead><tbody>");
+                inTable = true; i++; // skip separator
+                continue;
+            }
+            if (inTable)
+            {
+                if (isRow)
+                {
+                    sb.Append("<tr>");
+                    foreach (var c in line.Trim('|').Split('|'))
+                        sb.Append("<td>").Append(Enc(c.Trim())).Append("</td>");
+                    sb.Append("</tr>");
+                    continue;
+                }
+                CloseTable();
+            }
+
+            // headings with anchors for TOC
+            var h = 0;
+            while (h < line.Length && line[h] == '#') h++;
+            if (h is > 0 and <= 4 && line.Length > h && line[h] == ' ')
+            {
+                CloseLists();
+                var text = line[(h + 1)..].Trim();
+                var id = Slug(text);
+                toc.Add((h, text, id));
+                sb.Append($"<h{h} id='{id}'>{Enc(text)}</h{h}>");
+                continue;
+            }
+
+            // nested list item (2-space indents)
+            var m = System.Text.RegularExpressions.Regex.Match(raw, @"^(\s*)[-*]\s+(.*)$");
+            if (m.Success)
+            {
+                CloseTable();
+                var depth = m.Groups[1].Value.Length / 2;
+                while (listDepth < depth + 1) { sb.Append("<ul>"); listDepth++; }
+                CloseLists(depth + 1);
+                sb.Append("<li>").Append(Enc(m.Groups[2].Value.TrimEnd())).Append("</li>");
+                continue;
+            }
+            CloseLists();
+
+            if (string.IsNullOrWhiteSpace(line)) { sb.Append("<br/>"); continue; }
+            sb.Append("<p>").Append(Enc(line)).Append("</p>");
         }
         if (inCode) sb.Append("</code></pre>");
+        CloseTable(); CloseLists();
+
+        if (toc.Count(t => t.Level <= 2) >= 3)
+        {
+            var t2 = new System.Text.StringBuilder("<nav class='toc'><b>Contents</b><ul>");
+            foreach (var (lv, text, id) in toc)
+                if (lv <= 3) t2.Append($"<li style='margin-left:{(lv - 1) * 12}px'><a href='#{id}'>{System.Net.WebUtility.HtmlEncode(text)}</a></li>");
+            t2.Append("</ul></nav>");
+            return t2.ToString() + sb.ToString();
+        }
         return sb.ToString();
     }
 

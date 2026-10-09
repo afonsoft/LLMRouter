@@ -4,6 +4,7 @@ using Shouldly;
 namespace LLMRouter.Tests;
 
 /// <summary>SPEC-021: provider breaker + model lockout state machines.</summary>
+[Collection("StaticState")]
 public class ResilienceTests : IDisposable
 {
     public ResilienceTests() => ProviderBreaker.HerdWindow = TimeSpan.Zero;

@@ -1,0 +1,99 @@
+@page "/dashboard/conversations"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("conversations.title", "Conversations")</h1>
+<p class="page-desc">@Loc.T("conversations.subtitle", "Saved playground conversations — browse, search, inspect")</p>
+
+<div class="flex" style="gap:10px;margin-bottom:12px">
+    <input class="input" style="max-width:280px" @bind="_search" @bind:event="oninput"
+           placeholder="@Loc.T("conversations.search", "Search messages…")" />
+    <button class="btn btn-sm" @onclick="LoadList">@Loc.T("logs.refresh", "Refresh")</button>
+</div>
+
+<div class="flex" style="gap:14px;align-items:flex-start">
+    <div class="card card-p" style="min-width:260px;max-width:320px">
+        @if (_list is null) { <p class="muted">…</p> }
+        else if (_list.Count == 0) { <p class="muted">@Loc.T("conversations.empty", "No saved conversations")</p> }
+        else
+        {
+            @foreach (var c in _list)
+            {
+                <div class="flex" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+                    <a href="/dashboard/conversations?id=@c.Id" class="@(c.Id == _selected ? "bold" : "")"
+                       style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@c.Title</a>
+                    <button class="btn btn-sm" @onclick="() => Delete(c.Id)">✕</button>
+                </div>
+            }
+        }
+    </div>
+
+    <div class="card card-p" style="flex:1">
+        @if (_detail is null)
+        {
+            <p class="muted">@Loc.T("conversations.pick", "Pick a conversation")</p>
+        }
+        else
+        {
+            <h3 class="bold" style="margin:0 0 8px">@_detailTitle</h3>
+            @foreach (var m in Filtered)
+            {
+                <div class="msg @(m.Role == "user" ? "msg-user" : "msg-assistant")" style="margin-bottom:8px">
+                    <div class="muted sm bold">@m.Role</div>
+                    <div style="white-space:pre-wrap">@m.Content</div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private sealed record Row(string Id, string Title);
+    private sealed record Msg(string Role, string Content);
+    private List<Row>? _list;
+    private List<Msg>? _detail;
+    private string _detailTitle = "";
+    private string _selected = "";
+    private string _search = "";
+
+    [SupplyParameterFromQuery] public string? Id { get; set; }
+
+    private IEnumerable<Msg> Filtered => string.IsNullOrWhiteSpace(_search)
+        ? _detail ?? []
+        : (_detail ?? []).Where(m => m.Content.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadList();
+        if (Id is { Length: > 0 }) await Open(Id);
+    }
+
+    private async Task LoadList()
+    {
+        var r = await Api.GetAsync("api/conversations");
+        _list = r.TryGetProperty("conversations", out var arr)
+            ? arr.EnumerateArray().Select(c => new Row(
+                c.GetProperty("id").GetString()!,
+                c.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString()! : c.GetProperty("id").GetString()!
+            )).ToList() : [];
+    }
+
+    private async Task Open(string id)
+    {
+        _selected = id;
+        var r = await Api.GetAsync($"api/conversations/{id}");
+        _detailTitle = r.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString()! : id;
+        _detail = r.TryGetProperty("messages", out var ms)
+            ? ms.EnumerateArray().Select(m => new Msg(
+                m.TryGetProperty("role", out var ro) ? ro.GetString() ?? "?" : "?",
+                m.TryGetProperty("content", out var co) ? co.GetString() ?? "" : "")).ToList()
+            : [];
+    }
+
+    private async Task Delete(string id)
+    {
+        await Api.Raw.DeleteAsync($"api/conversations/{id}");
+        if (_selected == id) { _selected = ""; _detail = null; }
+        await LoadList();
+    }
+}

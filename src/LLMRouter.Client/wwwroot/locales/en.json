@@ -14862,5 +14862,12 @@
     "saveMessage": "Save message",
     "defaultModel": "Default test model",
     "defaultModelHint": "Used automatically by the Test message buttons for this account. Saved with the connection; no message is sent."
+  },
+  "conversations": {
+    "title": "Conversations",
+    "subtitle": "Saved playground conversations — browse, search, inspect",
+    "search": "Search messages…",
+    "empty": "No saved conversations",
+    "pick": "Pick a conversation"
   }
 }

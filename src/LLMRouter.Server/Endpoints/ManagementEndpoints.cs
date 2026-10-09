@@ -926,6 +926,75 @@ public static class ManagementEndpoints
             return Results.Json(new { pool = p }, JsonOpts);
         });
 
+        // SPEC-027: on-demand health check — probes every proxy, persists
+        // latencyMs/lastStatus/checkedAt/failCount into pool.Data.
+        g.MapPost("/proxy-pools/{id}/check", async (string id, LlmRouterDbContext db) =>
+        {
+            var p = await db.ProxyPools.FindAsync(id);
+            if (p is null) return Results.NotFound();
+            var data = JsonNode.Parse(p.Data)!.AsObject();
+            var probeUrl = data["probeUrl"]?.GetValue<string>() ?? "https://api.ipify.org/?format=json";
+            var results = new List<object>();
+            if (data["proxies"] is JsonArray arr)
+            {
+                foreach (var px in arr.OfType<JsonObject>())
+                {
+                    var url = px["url"]?.GetValue<string>() ?? "";
+                    var st = new { id = px["id"]?.GetValue<string>(), url };
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    string status; long latency;
+                    try
+                    {
+                        using var handler = new SocketsHttpHandler { Proxy = new System.Net.WebProxy(url), UseProxy = true };
+                        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+                        var res = await http.GetAsync(probeUrl);
+                        latency = sw.ElapsedMilliseconds;
+                        status = res.IsSuccessStatusCode ? "ok" : $"http{(int)res.StatusCode}";
+                        px["failCount"] = 0;
+                    }
+                    catch (Exception ex)
+                    {
+                        latency = sw.ElapsedMilliseconds;
+                        status = "fail";
+                        px["failCount"] = (px["failCount"]?.GetValue<int>() ?? 0) + 1;
+                        px["lastError"] = ex.Message.Length > 120 ? ex.Message[..120] : ex.Message;
+                    }
+                    px["latencyMs"] = latency;
+                    px["lastStatus"] = status;
+                    px["checkedAt"] = DateTime.UtcNow.ToString("o");
+                    results.Add(new { st.id, url, status, latencyMs = latency });
+                }
+            }
+            p.Data = data.ToJsonString();
+            p.TestStatus = results.Count > 0 && results.All(r => ((dynamic)r).status == "ok") ? "ok"
+                : results.Any(r => ((dynamic)r).status == "ok") ? "partial" : "fail";
+            p.UpdatedAt = Now();
+            await db.SaveChangesAsync();
+            return Results.Json(new { results, testStatus = p.TestStatus }, JsonOpts);
+        });
+
+        // SPEC-027: health dashboard — breaker states + cooldowns + model
+        // lockouts + last errors, per provider/connection.
+        g.MapGet("/monitoring/providers", async (LlmRouterDbContext db) =>
+        {
+            var breakers = Core.Resilience.ProviderBreaker.Snapshot();
+            var cooldowns = Core.Resilience.CooldownTracker.Snapshot();
+            var lockouts = Core.Resilience.ModelLockout.Snapshot();
+            var lastErrors = await db.UsageHistory
+                .Where(u => u.Status != null && u.Status != "ok" && u.Status != "200")
+                .OrderByDescending(u => u.Timestamp).Take(50)
+                .Select(u => new { u.Provider, u.Model, u.ConnectionId, u.Status, u.Timestamp })
+                .ToListAsync();
+            return Results.Json(new
+            {
+                breakers,
+                cooldowns,
+                lockouts,
+                lastErrors,
+                generatedAt = DateTime.UtcNow.ToString("o"),
+            }, JsonOpts);
+        });
+
         g.MapDelete("/proxy-pools/{id}", async (string id, LlmRouterDbContext db) =>
         {
             var p = await db.ProxyPools.FindAsync(id);

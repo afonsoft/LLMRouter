@@ -123,15 +123,22 @@ public static class ExtrasEndpoints
                 ?? db.Kv.Add(new KvEntry { Scope = "memory", Key = "items", Value = "[]" }).Entity;
             var items = JsonDocument.Parse(row.Value).RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
             if (b.TryGetProperty("id", out var id)) // delete
+            {
                 items.RemoveAll(x => x.TryGetProperty("id", out var i) && i.GetString() == id.GetString());
+                await Core.Extras.KvIndex.RemoveAsync(db, "memory", id.GetString()!);
+            }
             else
-                items.Add(JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                var item = JsonDocument.Parse(JsonSerializer.Serialize(new
                 {
                     id = Guid.NewGuid().ToString("N")[..8],
                     at = DateTime.UtcNow,
                     content = b.GetProperty("content").GetString(),
                     tags = b.TryGetProperty("tags", out var t) ? t.GetString() : "",
-                })).RootElement.Clone());
+                })).RootElement.Clone();
+                items.Add(item);
+                await Core.Extras.KvIndex.UpsertAsync(db, "memory", item.GetProperty("id").GetString()!, item);
+            }
             row.Value = JsonSerializer.Serialize(items);
             await db.SaveChangesAsync();
             return Results.Json(new { ok = true }, JsonOpts);
@@ -150,19 +157,35 @@ public static class ExtrasEndpoints
                 ?? db.Kv.Add(new KvEntry { Scope = "webhooks", Key = "list", Value = "[]" }).Entity;
             var list = JsonDocument.Parse(row.Value).RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
             if (b.TryGetProperty("id", out var id))
+            {
                 list.RemoveAll(x => x.TryGetProperty("id", out var i) && i.GetString() == id.GetString());
+                await Core.Extras.KvIndex.RemoveAsync(db, "webhooks", id.GetString()!);
+            }
             else
-                list.Add(JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                var wh = JsonDocument.Parse(JsonSerializer.Serialize(new
                 {
                     id = Guid.NewGuid().ToString("N")[..8],
                     url = b.GetProperty("url").GetString(),
                     events = b.TryGetProperty("events", out var e)
                         ? e.EnumerateArray().Select(x => x.GetString()).ToArray() : new[] { "*" },
-                })).RootElement.Clone());
+                })).RootElement.Clone();
+                list.Add(wh);
+                await Core.Extras.KvIndex.UpsertAsync(db, "webhooks", wh.GetProperty("id").GetString()!, wh);
+            }
             row.Value = JsonSerializer.Serialize(list);
             await db.SaveChangesAsync();
             await Extras.AuditAsync(db, "webhooks.update", "");
             return Results.Json(new { ok = true }, JsonOpts);
+        });
+
+        // SPEC-027: rebuild kv item index for a scope (memory|webhooks)
+        g.MapPost("/kv/{scope}/reindex", async (string scope, LlmRouterDbContext db) =>
+        {
+            if (scope is not ("memory" or "webhooks")) return Results.BadRequest(new { error = "unsupported scope" });
+            var n = await Core.Extras.KvIndex.ReindexAsync(db, scope);
+            await db.SaveChangesAsync();
+            return Results.Json(new { scope, indexed = n }, JsonOpts);
         });
 
         // ---- batches (sequential chat jobs with lifecycle) ----

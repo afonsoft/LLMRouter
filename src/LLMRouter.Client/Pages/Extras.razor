@@ -95,6 +95,22 @@ else if (section is "chaos")
 }
 else if (section is "memory")
 {
+    <div class="card card-p" style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="xs muted">backend</span>
+        <select class="inp xs" @bind="_memBackend">
+            <option value="kv">kv</option><option value="obsidian">obsidian</option><option value="notion">notion</option>
+        </select>
+        @if (_memBackend == "obsidian")
+        {
+            <input class="inp xs mono" style="flex:1;min-width:200px" placeholder="vault path" @bind="_obsVault" />
+        }
+        @if (_memBackend == "notion")
+        {
+            <input class="inp xs mono" style="width:200px" placeholder="parent page/database id" @bind="_notParent" />
+            <input class="inp xs mono" style="flex:1;min-width:160px" type="password" placeholder="integration token" @bind="_notToken" />
+        }
+        <button class="btn xs" @onclick="SaveBackend">@Loc.T("common.save", "Save")</button>
+    </div>
     <div class="flex" style="gap:8px;margin-bottom:10px">
         <input class="input" style="flex:1" @bind="_memContent" placeholder="memory content…" />
         <input class="input" style="width:160px" @bind="_memTags" placeholder="tags" />
@@ -247,6 +263,7 @@ else
     private int _errorPct, _latencyMs;
     private string _memContent = "", _memTags = "", _memQ = "", _whUrl = "", _whEvents = "*";
     private string _plName = "", _plHooks = "", _stName = "", _stKind = "webFetch", _stUrl = "";
+    private string _memBackend = "kv", _obsVault = "", _notParent = "", _notToken = "";
     private JsonElement[]? _regTools;
 
     protected override async Task OnParametersSetAsync()
@@ -268,7 +285,7 @@ else
                 _errorPct = c.TryGetProperty("errorPct", out var e) ? e.GetInt32() : 0;
                 _latencyMs = c.TryGetProperty("latencyMs", out var l) ? l.GetInt32() : 0;
                 break;
-            case "memory": await LoadMemory(); break;
+            case "memory": await LoadMemory(); await LoadBackend(); break;
             case "webhooks":
                 _hooks = (await Api.GetAsync("api/webhooks")).GetProperty("webhooks").EnumerateArray().ToArray();
                 break;
@@ -306,6 +323,28 @@ else
 
     private async Task DelMemory(string id)
     { await Api.PostAsync("api/memory", new { id }); await LoadMemory(); }
+
+    private async Task LoadBackend()
+    {
+        var b = await Api.GetAsync("api/memory/backend");
+        _memBackend = b.TryGetProperty("backend", out var be) ? be.GetString() ?? "kv" : "kv";
+        if (b.TryGetProperty("obsidian", out var ob) && ob.TryGetProperty("vaultPath", out var v))
+            _obsVault = v.GetString() ?? "";
+        if (b.TryGetProperty("notion", out var no) && no.TryGetProperty("parentId", out var p))
+            _notParent = p.GetString() ?? "";
+    }
+
+    private async Task SaveBackend()
+    {
+        await Api.PostAsync("api/memory/backend", new
+        {
+            backend = _memBackend,
+            obsidian = new { vaultPath = _obsVault },
+            notion = new { token = _notToken, parentId = _notParent },
+        });
+        _notToken = "";
+        await LoadMemory();
+    }
 
     private async Task AddWebhook()
     {

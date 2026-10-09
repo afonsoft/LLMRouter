@@ -26,6 +26,26 @@ else
                 <span class="sm">@Loc.T("tokenSaver.dedup", "Dedup consecutive identical lines")</span>
                 <input type="checkbox" checked="@Get("dedup", true)" @onchange='e => Set("dedup", (bool)(e.Value ?? false))' />
             </div>
+            <div class="mt-4" style="border-top:1px solid var(--border);padding-top:10px">
+                <h4 class="bold xs muted" style="margin:0 0 8px">RTK filters</h4>
+                @if (_filters is not null)
+                {
+                    @foreach (var f in _filters)
+                    {
+                        <div class="flex between mt-2">
+                            <span class="xs">@f.GetProperty("name").GetString() <span class="muted">— @f.GetProperty("desc").GetString()</span></span>
+                            <input type="checkbox" checked="@FilterOn(f.GetProperty("name").GetString()!)" @onchange='e => ToggleFilter(f.GetProperty("name").GetString()!, (bool)(e.Value ?? false))' />
+                        </div>
+                    }
+                    <div class="flex between mt-3">
+                        <span class="xs">maxLineLength</span>
+                        <input class="inp xs" type="number" style="width:80px" @bind="_maxLine" />
+                    </div>
+                    <div class="mt-3"><span class="xs muted">compressRoles (csv)</span><input class="inp xs mono" style="width:100%" @bind="_roles" /></div>
+                    <div class="mt-2"><span class="xs muted">skipRules (regex, um por linha)</span><textarea class="inp xs mono" style="width:100%" rows="2" @bind="_skip"></textarea></div>
+                    <div class="mt-2"><span class="xs muted">preservePatterns (regex, um por linha)</span><textarea class="inp xs mono" style="width:100%" rows="2" @bind="_preserve"></textarea></div>
+                }
+            </div>
             <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
             @if (_msg is not null) { <span class="sm muted" style="margin-left:8px">@_msg</span> }
         </div>
@@ -45,6 +65,12 @@ else
     private string? _msg;
 
     private bool Enabled => Get("enabled");
+    private JsonElement[]? _filters;
+    private HashSet<string> _on = [];
+    private int _maxLine = 500;
+    private string _roles = "system,user,assistant", _skip = "", _preserve = "";
+    private bool FilterOn(string n) => _on.Contains(n);
+    private void ToggleFilter(string n, bool on) { if (on) _on.Add(n); else _on.Remove(n); }
     private bool Get(string k, bool def = false) =>
         _data!.TryGetValue(k, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : def;
     private void Set(string k, bool v) => _data![k] = JsonSerializer.SerializeToElement(v);
@@ -56,6 +82,22 @@ else
             && d.TryGetProperty("tokenSaver", out var ts) && ts.ValueKind == JsonValueKind.Object)
             _data = ts.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone());
         _data ??= [];
+        if (_data.TryGetValue("filters", out var fa) && fa.ValueKind == JsonValueKind.Array)
+            _on = fa.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x != "").ToHashSet();
+        else _on = new() { "collapseWhitespace", "dedupLines", "dropEmptyLines" };
+        if (_data.TryGetValue("maxLineLength", out var ml) && ml.TryGetInt32(out var mi)) _maxLine = mi;
+        if (_data.TryGetValue("compressRoles", out var cr) && cr.ValueKind == JsonValueKind.Array)
+            _roles = string.Join(",", cr.EnumerateArray().Select(x => x.GetString()));
+        if (_data.TryGetValue("skipRules", out var sr) && sr.ValueKind == JsonValueKind.Array)
+            _skip = string.Join("\n", sr.EnumerateArray().Select(x => x.GetString()));
+        if (_data.TryGetValue("preservePatterns", out var pp) && pp.ValueKind == JsonValueKind.Array)
+            _preserve = string.Join("\n", pp.EnumerateArray().Select(x => x.GetString()));
+        try
+        {
+            var cat = await Api.GetAsync("api/token-saver/filters");
+            _filters = cat.GetProperty("filters").EnumerateArray().ToArray();
+        }
+        catch { }
         try
         {
             var st = await Api.GetAsync("api/token-saver/stats");
@@ -68,6 +110,14 @@ else
     private async Task Save()
     {
         await Api.PutAsync("api/settings", new { tokenSaver = _data });
+        await Api.PostAsync("api/token-saver/filters", new
+        {
+            filters = _on.ToArray(),
+            maxLineLength = _maxLine,
+            compressRoles = _roles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            skipRules = _skip.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            preservePatterns = _preserve.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+        });
         _msg = "✓";
     }
 }

@@ -354,12 +354,27 @@ public static class GatewayEndpoints
             && tsv.ValueKind == JsonValueKind.Object
             && tsv.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True)
         {
-            var dedup = !tsv.TryGetProperty("dedup", out var dp) || dp.ValueKind != JsonValueKind.False;
-            var r = Core.Gateway.TokenSaver.Apply(body, dedup);
-            body = r.Body;
-            var savedTokens = Core.Gateway.TokenSaver.SavedTokens(r.SavedChars);
-            if (savedTokens > 0)
-                savedDetail = JsonSerializer.SerializeToElement(new { tokensSaved = savedTokens });
+            // SPEC-033: RTK filter config — when a filters array is configured,
+            // run the named-filter pipeline; otherwise the legacy dedup path.
+            if (tsv.TryGetProperty("filters", out _) || tsv.TryGetProperty("skipRules", out _)
+                || tsv.TryGetProperty("preservePatterns", out _) || tsv.TryGetProperty("compressRoles", out _))
+            {
+                var rtk = Core.Extras.RtkFilters.Parse(sdata);
+                var rr = Core.Extras.RtkFilters.ApplyToBody(body, rtk);
+                body = rr.Body;
+                var savedTokens = Core.Gateway.TokenSaver.SavedTokens(rr.SavedChars);
+                if (savedTokens > 0)
+                    savedDetail = JsonSerializer.SerializeToElement(new { tokensSaved = savedTokens });
+            }
+            else
+            {
+                var dedup = !tsv.TryGetProperty("dedup", out var dp) || dp.ValueKind != JsonValueKind.False;
+                var r = Core.Gateway.TokenSaver.Apply(body, dedup);
+                body = r.Body;
+                var savedTokens = Core.Gateway.TokenSaver.SavedTokens(r.SavedChars);
+                if (savedTokens > 0)
+                    savedDetail = JsonSerializer.SerializeToElement(new { tokensSaved = savedTokens });
+            }
         }
 
         // SPEC-026: context compression — settings.contextCompression {enabled,maxTokens}

@@ -25,6 +25,8 @@ if (args is ["mcp-stdio", ..])
 args = args.Where(a => a != "serve").ToArray();
 
 var builder = WebApplication.CreateBuilder(args);
+// SPEC-028: CONNECT/TLS-intercept proxy on LLMROUTER_PROXY_PORT (default 8889)
+builder.Services.AddHostedService<LLMRouter.Server.Mitm.ConnectProxy>();
 builder.Logging.AddProvider(LLMRouter.Server.Services.ConsoleLogBuffer.Instance);
 
 // Resolved inside the AddDbContext factory so test-provided configuration

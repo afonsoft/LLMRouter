@@ -64,7 +64,7 @@ public class DocsTests
     public void MdToHtml_renders_headers_code_and_bold()
     {
         var html = LLMRouter.Server.Endpoints.DocsEndpoints.MdToHtml("# Title\n- item **b**\n```\ncode <x>\n```\ntext `y`");
-        html.ShouldContain("<h1>Title</h1>");
+        html.ShouldContain("id='title'>Title</h1>");
         html.ShouldContain("<li>item <b>b</b></li>");
         html.ShouldContain("code &lt;x&gt;");
         html.ShouldContain("<code>y</code>");

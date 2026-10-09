@@ -168,6 +168,14 @@ public static class GatewayEndpoints
             return;
         }
 
+        // SPEC-041: per-key daily token cap
+        if (await Core.Routing.KeyQuota.DailyCapExceededAsync(db, apiKey))
+        {
+            ctx.Response.StatusCode = 429;
+            await WriteError(ctx, "openai", "rate_limit", "Daily token quota exhausted for this API key.");
+            return;
+        }
+
         // SPEC-031: plugin onRequest hooks (setModel/addHeaders) before resolution
         if (body.ValueKind == JsonValueKind.Object && rawBody is not null)
         {
@@ -480,6 +488,14 @@ public static class GatewayEndpoints
             ctx.Response.Headers.RetryAfter = rlVio.RetryAfterSec.ToString();
             await WriteError(ctx, inbound, "rate_limit",
                 $"Rate limit exceeded ({rlVio.Kind} {rlVio.Limit}/min on {rlVio.Scope} '{rlVio.ScopeValue}').");
+            return;
+        }
+
+        // SPEC-041: per-key daily token cap
+        if (await Core.Routing.KeyQuota.DailyCapExceededAsync(db, apiKey))
+        {
+            ctx.Response.StatusCode = 429;
+            await WriteError(ctx, inbound, "rate_limit", "Daily token quota exhausted for this API key.");
             return;
         }
 

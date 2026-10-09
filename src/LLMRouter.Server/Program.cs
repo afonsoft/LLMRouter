@@ -33,6 +33,7 @@ builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.ProxyPoolHealthJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.UsagePruneJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.DbBackupJob());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.QuotaSchedulesJob());
     return sched;
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Jobs.JobScheduler>());
@@ -133,6 +134,7 @@ DbBackupEndpoints.Map(app);
 JobsEndpoints.Map(app);
 RateLimitEndpoints.Map(app);
 FileEndpoints.Map(app);
+KeysQuotaEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

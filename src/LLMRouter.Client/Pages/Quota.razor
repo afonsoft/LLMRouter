@@ -41,6 +41,74 @@ else
     @if (_msg is not null) { <p class="sm muted mt-2">@_msg</p> }
 }
 
+@* ---- SPEC-041: quota plans + preview ---- *@
+<div class="card card-p mt-4">
+    <div class="flex between">
+        <h3 style="margin:0">@Loc.T("quota.plans", "Plans")</h3>
+        <div class="flex gap-2">
+            <input class="input" style="width:130px" placeholder="@Loc.T("quota.planName", "Plan name")" @bind="_planName" />
+            <input class="input" style="width:80px" type="number" placeholder="rpm" @bind="_planRpm" />
+            <input class="input" style="width:100px" type="number" placeholder="dailyTokens" @bind="_planDaily" />
+            <button class="btn btn-sm btn-primary" @onclick="CreatePlan">@Loc.T("quota.newPlan", "New plan")</button>
+        </div>
+    </div>
+    @if (_plans.Count == 0)
+    {
+        <p class="muted sm mt-2">@Loc.T("quota.noPlans", "No plans — plans apply a bundle of limits to a key")</p>
+    }
+    else
+    {
+        <table class="table mt-2">
+            <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.limits", "Limits")</th><th>@Loc.T("quota.applyTo", "Apply to key")</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in _plans)
+                {
+                    <tr>
+                        <td>@p.Name</td>
+                        <td class="mono sm muted">@p.Limits</td>
+                        <td>
+                            <select class="input" style="width:auto" @onchange="e => ApplyPlan(p, e.Value?.ToString())">
+                                <option value="">@Loc.T("quota.pickKey", "pick key…")</option>
+                                @foreach (var k in _keys)
+                                {
+                                    <option value="@k.Id">@k.Name</option>
+                                }
+                            </select>
+                        </td>
+                        <td><button class="btn btn-sm btn-danger" @onclick="() => DeletePlan(p)">Delete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card card-p mt-4">
+    <h3 style="margin:0">@Loc.T("quota.preview", "Preview")</h3>
+    <p class="muted sm">@Loc.T("quota.previewDesc", "Dry-run: would this key+model be allowed right now?")</p>
+    <div class="flex gap-2 mt-2" style="flex-wrap:wrap;align-items:end">
+        <div>
+            <label class="muted sm">@Loc.T("quota.key", "Key")</label>
+            <select class="input" @bind="_pvKey">
+                @foreach (var k in _keys)
+                {
+                    <option value="@k.Id">@k.Name</option>
+                }
+            </select>
+        </div>
+        <div><label class="muted sm">model</label><input class="input" style="width:160px" @bind="_pvModel" /></div>
+        <div><label class="muted sm">estTokens</label><input class="input" style="width:100px" type="number" @bind="_pvTokens" /></div>
+        <button class="btn btn-sm btn-primary" @onclick="Preview">@Loc.T("quota.check", "Check")</button>
+    </div>
+    @if (_pv is not null)
+    {
+        <p class="mt-2 sm">
+            <span class="badge @(_pvAllow ? "ok" : "err")">@(_pvAllow ? "allow" : "deny")</span>
+            <span class="muted"> @_pv</span>
+        </p>
+    }
+</div>
+
 @code {
     private List<JsonElement>? _quota;
     private string? _msg;
@@ -59,6 +127,65 @@ else
         var conns = await Api.GetAsync("api/provider-connections");
         foreach (var c in conns.GetProperty("connections").EnumerateArray())
             _connData[c.GetProperty("id").GetString()!] = JsonDocument.Parse(c.GetProperty("data").GetString()!).RootElement.Clone();
+        await LoadPlans();
+    }
+
+    // ---- SPEC-041 state ----
+    private sealed class P { public string Id = ""; public string Name = ""; public string Limits = "{}"; }
+    private List<P> _plans = [];
+    private List<(string Id, string Name)> _keys = [];
+    private string _planName = "";
+    private int _planRpm, _planDaily;
+    private string _pvKey = "", _pvModel = "", _pv = "";
+    private int _pvTokens;
+    private bool _pvAllow;
+
+    private async Task LoadPlans()
+    {
+        var r = await Api.GetAsync("api/quota/plans");
+        _plans = r.TryGetProperty("plans", out var pa)
+            ? pa.EnumerateArray().Select(x => new P
+            {
+                Id = x.GetProperty("id").GetString() ?? "",
+                Name = x.GetProperty("name").GetString() ?? "",
+                Limits = x.TryGetProperty("limitsJson", out var lj) ? lj.GetString() ?? "{}" : "{}",
+            }).ToList() : [];
+        var kr = await Api.GetAsync("api/keys");
+        _keys = kr.TryGetProperty("keys", out var ka)
+            ? ka.EnumerateArray().Select(k => (k.GetProperty("id").GetString() ?? "",
+                k.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "")).ToList() : [];
+        if (_keys.Count > 0 && _pvKey.Length == 0) _pvKey = _keys[0].Id;
+    }
+
+    private async Task CreatePlan()
+    {
+        if (string.IsNullOrWhiteSpace(_planName)) return;
+        var limits = new Dictionary<string, int>();
+        if (_planRpm > 0) limits["rpm"] = _planRpm;
+        if (_planDaily > 0) limits["dailyTokens"] = _planDaily;
+        await Api.PostAsync("api/quota/plans", new { name = _planName, limits });
+        _planName = ""; _planRpm = _planDaily = 0;
+        await LoadPlans();
+    }
+
+    private async Task ApplyPlan(P p, string? keyId)
+    {
+        if (string.IsNullOrEmpty(keyId)) return;
+        await Api.PostAsync($"api/keys/{keyId}/plan", new { planId = p.Id });
+        _msg = "✓";
+    }
+
+    private async Task DeletePlan(P p) { await Api.DeleteAsync($"api/quota/plans/{p.Id}"); await LoadPlans(); }
+
+    private async Task Preview()
+    {
+        var r = await Api.PostAsync("api/quota/preview", new { keyId = _pvKey, model = _pvModel, estTokens = _pvTokens });
+        _pvAllow = r.TryGetProperty("allow", out var a) && a.GetBoolean();
+        var reasons = r.TryGetProperty("reasons", out var rs)
+            ? string.Join("; ", rs.EnumerateArray().Select(x => x.GetString())) : "";
+        var used = r.TryGetProperty("dailyUsed", out var du) ? du.GetInt64() : 0;
+        var cap = r.TryGetProperty("dailyCap", out var dc) && dc.ValueKind == JsonValueKind.Number ? dc.GetInt32().ToString() : "∞";
+        _pv = $"daily {used}/{cap}" + (reasons.Length > 0 ? $" — {reasons}" : "");
     }
 
     private async Task SaveCaps(string cid)

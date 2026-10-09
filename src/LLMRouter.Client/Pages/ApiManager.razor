@@ -16,7 +16,7 @@
 
 <div class="card mt-6 scroll-x">
     <table class="table">
-        <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.key", "Key")</th><th>@Loc.T("keys.status", "Status")</th><th>@Loc.T("keys.created", "Created")</th><th></th></tr></thead>
+        <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.key", "Key")</th><th>@Loc.T("keys.status", "Status")</th><th>@Loc.T("keys.limits", "Limits")</th><th>@Loc.T("keys.created", "Created")</th><th></th></tr></thead>
         <tbody>
             @foreach (var k in _keys)
             {
@@ -24,7 +24,7 @@
                     <td>@k.Name</td>
                     <td class="mono sm">
                         @( _reveal == k.Id ? k.Key : k.Key[..Math.Min(10, k.Key.Length)] + "…" )
-                        <button class="icon-btn" style="width:26px;height:26px;margin-left:6px" @onclick="() => _reveal = _reveal == k.Id ? null : k.Id">
+                        <button class="icon-btn" style="width:26px;height:26px;margin-left:6px" @onclick="() => Reveal(k)">
                             <span class="material-symbols-outlined" style="font-size:14px">@(_reveal == k.Id ? "visibility_off" : "visibility")</span>
                         </button>
                         <button class="icon-btn" style="width:26px;height:26px" @onclick="() => Copy(k.Key)">
@@ -32,25 +32,88 @@
                         </button>
                     </td>
                     <td><span class="badge @(k.IsActive ? "ok" : "err")">@(k.IsActive ? "active" : "off")</span></td>
+                    <td class="sm muted">@LimitSummary(k)</td>
                     <td class="muted sm">@k.CreatedAt</td>
-                    <td class="flex gap-2">
+                    <td class="flex gap-2" style="flex-wrap:wrap">
+                        <button class="btn btn-sm" @onclick="() => OpenLimits(k)">@Loc.T("keys.limitsBtn", "Limits")</button>
+                        <button class="btn btn-sm" @onclick="() => Regenerate(k)">@Loc.T("keys.regenerate", "Regenerate")</button>
                         <button class="btn btn-sm" @onclick="() => Toggle(k)">@(k.IsActive ? "Disable" : "Enable")</button>
                         <button class="btn btn-sm btn-danger" @onclick="() => Delete(k.Id)">Delete</button>
                     </td>
                 </tr>
+                @if (_limitsFor == k.Id)
+                {
+                    <tr><td colspan="6">
+                        <div class="flex gap-2" style="flex-wrap:wrap;align-items:end;padding:8px 0">
+                            <div><label class="muted sm">rpm</label><input class="input" style="width:100px" type="number" @bind="_lim.Rpm" /></div>
+                            <div><label class="muted sm">tpm</label><input class="input" style="width:110px" type="number" @bind="_lim.Tpm" /></div>
+                            <div><label class="muted sm">dailyTokens</label><input class="input" style="width:120px" type="number" @bind="_lim.DailyTokens" /></div>
+                            <button class="btn btn-sm btn-primary" @onclick="() => SaveLimits(k)">@Loc.T("common.save", "Save")</button>
+                            <span class="muted sm">@Loc.T("keys.dailyUsed", "used today"): @_dailyUsed</span>
+                        </div>
+                    </td></tr>
+                }
             }
             @if (_keys.Count == 0)
             {
-                <tr><td colspan="5"><div class="empty"><span class="material-symbols-outlined">vpn_key</span>@Loc.T("keys.empty", "No API keys — create one to start using the gateway")</div></td></tr>
+                <tr><td colspan="6"><div class="empty"><span class="material-symbols-outlined">vpn_key</span>@Loc.T("keys.empty", "No API keys — create one to start using the gateway")</div></td></tr>
             }
         </tbody>
     </table>
 </div>
 
+<div class="card card-p mt-4">
+    <div class="flex between">
+        <h3 style="margin:0">@Loc.T("keys.groups", "Key groups")</h3>
+        <div class="flex gap-2">
+            <input class="input" style="width:160px" placeholder="@Loc.T("keys.groupName", "Group name")" @bind="_groupName" />
+            <button class="btn btn-sm btn-primary" @onclick="CreateGroup">@Loc.T("keys.newGroup", "New group")</button>
+        </div>
+    </div>
+    @if (_groups.Count == 0)
+    {
+        <p class="muted sm mt-2">@Loc.T("keys.noGroups", "No groups — groups let quota schedules target a set of keys")</p>
+    }
+    else
+    {
+        <table class="table mt-2">
+            <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.keysInGroup", "Keys")</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var gr in _groups)
+                {
+                    <tr>
+                        <td>@gr.Name</td>
+                        <td class="sm muted">@gr.KeyIds.Count key(s)</td>
+                        <td class="flex gap-2">
+                            <select class="input" style="width:auto" @onchange="e => ToggleGroupKey(gr, e.Value?.ToString())">
+                                <option value="">@Loc.T("keys.addKey", "add/remove key…")</option>
+                                @foreach (var k in _keys)
+                                {
+                                    <option value="@k.Id">@(gr.KeyIds.Contains(k.Id) ? "−" : "+") @k.Name</option>
+                                }
+                            </select>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteGroup(gr)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
 @code {
     private record K(string Id, string Key, string Name, bool IsActive, string CreatedAt);
+    private sealed record Lim { public int Rpm { get; set; } public int Tpm { get; set; } public int DailyTokens { get; set; } }
+    private sealed class G { public string Id = ""; public string Name = ""; public List<string> KeyIds = []; }
+
     private List<K> _keys = [];
+    private List<G> _groups = [];
     private string? _reveal;
+    private string? _limitsFor;
+    private Lim _lim = new();
+    private long _dailyUsed;
+    private string _groupName = "";
+    private readonly Dictionary<string, JsonElement> _limits = new();
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -62,6 +125,36 @@
             k.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
             k.GetProperty("isActive").GetBoolean(),
             k.TryGetProperty("createdAt", out var c) ? c.GetString() ?? "" : "")).ToList();
+
+        var gr = await Api.GetAsync("api/keys/groups");
+        _groups = gr.TryGetProperty("groups", out var ga)
+            ? ga.EnumerateArray().Select(x => new G
+            {
+                Id = x.GetProperty("id").GetString() ?? "",
+                Name = x.GetProperty("name").GetString() ?? "",
+                KeyIds = x.TryGetProperty("keysJson", out var kj)
+                    ? JsonDocument.Parse(kj.GetString() ?? "[]").RootElement.EnumerateArray()
+                        .Select(e => e.GetString() ?? "").Where(s => s.Length > 0).ToList()
+                    : [],
+            }).ToList() : [];
+
+        _limits.Clear();
+        foreach (var k in _keys)
+        {
+            var ul = await Api.GetAsync($"api/keys/{k.Id}/usage-limits");
+            if (ul.TryGetProperty("limits", out var l)) _limits[k.Id] = l.Clone();
+        }
+    }
+
+    private string LimitSummary(K k)
+    {
+        if (!_limits.TryGetValue(k.Id, out var l) || l.ValueKind != JsonValueKind.Object || !l.EnumerateObject().Any())
+            return "—";
+        var parts = new List<string>();
+        if (l.TryGetProperty("rpm", out var r)) parts.Add($"{r.GetInt32()}/min");
+        if (l.TryGetProperty("tpm", out var t)) parts.Add($"{t.GetInt32()} tok/min");
+        if (l.TryGetProperty("dailyTokens", out var d)) parts.Add($"{d.GetInt32()}/day");
+        return string.Join(", ", parts);
     }
 
     private async Task Create()
@@ -70,7 +163,69 @@
         await Load();
     }
 
+    private async Task OpenLimits(K k)
+    {
+        if (_limitsFor == k.Id) { _limitsFor = null; return; }
+        _limitsFor = k.Id;
+        _lim = new();
+        var ul = await Api.GetAsync($"api/keys/{k.Id}/usage-limits");
+        if (ul.TryGetProperty("limits", out var l) && l.ValueKind == JsonValueKind.Object)
+        {
+            if (l.TryGetProperty("rpm", out var r)) _lim.Rpm = r.GetInt32();
+            if (l.TryGetProperty("tpm", out var t)) _lim.Tpm = t.GetInt32();
+            if (l.TryGetProperty("dailyTokens", out var d)) _lim.DailyTokens = d.GetInt32();
+        }
+        _dailyUsed = ul.TryGetProperty("dailyUsed", out var du) ? du.GetInt64() : 0;
+    }
+
+    private async Task Reveal(K k)
+    {
+        if (_reveal == k.Id) { _reveal = null; return; }
+        _reveal = k.Id;
+        // server-side reveal endpoint keeps an audit trail of who saw the key
+        await Api.PostAsync($"api/keys/{k.Id}/reveal", new { });
+    }
+
+    private async Task Regenerate(K k)
+    {
+        await Api.PostAsync($"api/keys/{k.Id}/regenerate", new { });
+        await Load();
+    }
+
+    private async Task SaveLimits(K k)
+    {
+        var body = new Dictionary<string, int>();
+        if (_lim.Rpm > 0) body["rpm"] = _lim.Rpm;
+        if (_lim.Tpm > 0) body["tpm"] = _lim.Tpm;
+        if (_lim.DailyTokens > 0) body["dailyTokens"] = _lim.DailyTokens;
+        await Api.PutAsync($"api/keys/{k.Id}/usage-limits", body);
+        _limitsFor = null; _lim = new();
+        await Load();
+    }
+
     private async Task Toggle(K k) { await Api.PutAsync($"api/keys/{k.Id}", new { isActive = !k.IsActive }); await Load(); }
     private async Task Delete(string id) { await Api.DeleteAsync($"api/keys/{id}"); await Load(); }
     private async Task Copy(string t) => await JS.InvokeVoidAsync("llmrouter.copy", t);
+
+    private async Task CreateGroup()
+    {
+        if (string.IsNullOrWhiteSpace(_groupName)) return;
+        await Api.PostAsync("api/keys/groups", new { name = _groupName, keys = Array.Empty<string>() });
+        _groupName = "";
+        await Load();
+    }
+
+    private async Task ToggleGroupKey(G gr, string? keyId)
+    {
+        if (string.IsNullOrEmpty(keyId)) return;
+        if (!gr.KeyIds.Remove(keyId)) gr.KeyIds.Add(keyId);
+        await Api.PutAsync($"api/keys/groups/{gr.Id}", new { keys = gr.KeyIds });
+        await Load();
+    }
+
+    private async Task DeleteGroup(G gr)
+    {
+        await Api.DeleteAsync($"api/keys/groups/{gr.Id}");
+        await Load();
+    }
 }

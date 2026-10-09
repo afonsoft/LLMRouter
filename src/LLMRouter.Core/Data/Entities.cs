@@ -236,3 +236,41 @@ public class FileEntry
     public string Mime { get; set; } = "";
     public string CreatedAt { get; set; } = "";
 }
+
+// ---- SPEC-041: advanced keys + quota ----
+
+[Table("keyGroups")]
+public class KeyGroup
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    // JSON array of apiKeys ids
+    public string KeysJson { get; set; } = "[]";
+    public string CreatedAt { get; set; } = "";
+}
+
+[Table("quotaPlans")]
+public class QuotaPlan
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    // JSON: {rpm?, tpm?, dailyTokens?}
+    public string LimitsJson { get; set; } = "{}";
+    public double? Price { get; set; }
+    public string CreatedAt { get; set; } = "";
+}
+
+[Table("quotaSchedules")]
+public class QuotaSchedule
+{
+    [Key]
+    public string Id { get; set; } = "";
+    // "all" | an apiKeys id | a keyGroups id
+    public string Target { get; set; } = "all";
+    // "daily" | "weekly" | "monthly"
+    public string Window { get; set; } = "daily";
+    public string? LastRunAt { get; set; }
+    public string CreatedAt { get; set; } = "";
+}

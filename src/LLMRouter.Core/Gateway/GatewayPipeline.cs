@@ -258,6 +258,10 @@ public sealed class GatewayEngine(
                 rateLimiter.RecordTokens(rlRules, apiKey, provider, model,
                     promptTokens + completionTokens);
         }
+
+        // SPEC-041: credit tokens toward the key's daily quota counter
+        await Routing.KeyQuota.CreditDailyAsync(db, apiKey, promptTokens + completionTokens);
+        await db.SaveChangesAsync();
     }
 
     private async Task RollupDailyAsync(string provider, string model, int prompt, int completion)

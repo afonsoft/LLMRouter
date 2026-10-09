@@ -45,6 +45,19 @@ public sealed class RateLimiter
         return null;
     }
 
+    /// <summary>Dry-run of CheckAndConsume for quota preview: returns the first
+    /// violation a request would hit without consuming anything.</summary>
+    public Violation? Peek(IReadOnlyList<RateLimit> rules, string apiKey,
+        string? providerId, string model, bool providerOnly = false)
+    {
+        var matching = rules
+            .Where(r => providerOnly ? r.Scope == "provider" : r.Scope != "provider")
+            .Where(r => Matches(r, apiKey, providerId, model));
+        foreach (var r in matching)
+            if (Check(r) is { } v) return v;
+        return null;
+    }
+
     /// <summary>Credit token usage to every fully-matching rule's window.</summary>
     public void RecordTokens(IReadOnlyList<RateLimit> rules, string apiKey,
         string? providerId, string model, int tokens)

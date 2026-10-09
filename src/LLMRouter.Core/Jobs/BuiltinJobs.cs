@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using LLMRouter.Core.Data;
+using LLMRouter.Core.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,6 +99,52 @@ public static class BuiltinJobs
             var usage = await db.UsageHistory.Where(r => string.Compare(r.Timestamp, cutoff) < 0).ExecuteDeleteAsync(ct);
             var details = await db.RequestDetails.Where(r => string.Compare(r.Timestamp, cutoff) < 0).ExecuteDeleteAsync(ct);
             return $"older than {days}d: usage={usage} details={details}";
+        }
+    }
+
+    // SPEC-041: quotaSchedules rows whose window elapsed get their daily-token
+    // counters (kv scope "keyusage") reset; runs hourly and lets each schedule
+    // decide if it's due (daily/weekly/monthly windows).
+    public sealed class QuotaSchedulesJob : IJob
+    {
+        public string Id => "quota-schedules";
+        public string Name => "Quota window resets";
+        public TimeSpan Interval => TimeSpan.FromHours(1);
+        public bool EnabledByDefault => true;
+
+        public async Task<string> RunAsync(IServiceProvider services, CancellationToken ct)
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
+            var now = DateTime.UtcNow;
+            var ran = 0;
+            foreach (var s in await db.QuotaSchedules.ToListAsync(ct))
+            {
+                var last = DateTime.TryParse(s.LastRunAt, out var l)
+                    ? l : DateTime.MinValue;
+                var due = s.Window switch
+                {
+                    "weekly" => now - last >= TimeSpan.FromDays(7),
+                    "monthly" => now - last >= TimeSpan.FromDays(28),
+                    _ => now - last >= TimeSpan.FromDays(1),
+                };
+                if (!due) continue;
+                var cleared = s.Target == "all"
+                    ? await KeyQuota.ResetDailyCountersAsync(db, ct)
+                    : await ClearKeyAsync(db, s.Target, ct);
+                s.LastRunAt = now.ToString("yyyy-MM-dd HH:mm:ss");
+                ran++;
+            }
+            await db.SaveChangesAsync(ct);
+            return $"ran {ran} schedule(s)";
+        }
+
+        private static async Task<int> ClearKeyAsync(LlmRouterDbContext db, string keyOrId, CancellationToken ct)
+        {
+            var key = await db.ApiKeys.FindAsync([keyOrId], ct) is { } k ? k.Key : keyOrId;
+            var rows = await db.Kv.Where(r => r.Scope == KeyQuota.UsageScope && r.Key.StartsWith(key + ":")).ToListAsync(ct);
+            db.Kv.RemoveRange(rows);
+            return rows.Count;
         }
     }
 

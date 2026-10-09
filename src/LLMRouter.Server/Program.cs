@@ -27,6 +27,15 @@ args = args.Where(a => a != "serve").ToArray();
 var builder = WebApplication.CreateBuilder(args);
 // SPEC-028: CONNECT/TLS-intercept proxy on LLMROUTER_PROXY_PORT (default 8889)
 builder.Services.AddHostedService<LLMRouter.Server.Mitm.ConnectProxy>();
+builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
+{
+    var sched = new LLMRouter.Core.Jobs.JobScheduler(sp, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<LLMRouter.Core.Jobs.JobScheduler>>());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.ProxyPoolHealthJob());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.UsagePruneJob());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.DbBackupJob());
+    return sched;
+});
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Jobs.JobScheduler>());
 builder.Logging.AddProvider(LLMRouter.Server.Services.ConsoleLogBuffer.Instance);
 
 // Resolved inside the AddDbContext factory so test-provided configuration
@@ -119,6 +128,7 @@ CompressionEndpoints.Map(app);
 CliEndpoints.Map(app);
 AnalyticsEndpoints.Map(app);
 DbBackupEndpoints.Map(app);
+JobsEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

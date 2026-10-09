@@ -183,3 +183,29 @@ public class CompressionRun
     public long AfterChars { get; set; }
     public string? ComboId { get; set; }
 }
+
+[Table("jobStates")]
+public class JobState
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+    public string? LastRun { get; set; }
+    public string? NextRun { get; set; }
+    public string? LastStatus { get; set; }
+    public string? LastError { get; set; }
+    public long LastDurationMs { get; set; }
+}
+
+[Table("jobRuns")]
+public class JobRun
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string JobId { get; set; } = "";
+    public string StartedAt { get; set; } = "";
+    public long DurationMs { get; set; }
+    public string Status { get; set; } = "";
+    public string? Output { get; set; }
+}

@@ -1,0 +1,138 @@
+@page "/dashboard/jobs"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("jobs.title", "Jobs")</h1>
+    <p class="page-desc">@Loc.T("jobs.subtitle", "Scheduled tasks — health checks, retention, backups")</p>
+</div>
+
+<div class="card card-p mt-6">
+    @if (_jobs.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">schedule</span>@Loc.T("jobs.none", "No jobs registered")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>Job</th><th>Interval</th><th>Enabled</th><th>Last run</th><th>Status</th><th>Next run</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var j in _jobs)
+            {
+                <tr>
+                    <td><div class="bold">@j.Name</div><div class="mono dim" style="font-size:11px">@j.Id</div></td>
+                    <td>@Fmt(j.IntervalSeconds)</td>
+                    <td><input type="checkbox" checked="@j.Enabled" @onchange="e => Toggle(j, (bool)(e.Value ?? false))" /></td>
+                    <td class="dim mono">@(j.LastRun ?? "—")</td>
+                    <td>
+                        @if (j.LastStatus is not null)
+                        {
+                            <span class="chip @(j.LastStatus == "ok" ? "chip-green" : "chip-red")">@j.LastStatus</span>
+                        }
+                        else { <span class="dim">—</span> }
+                        @if (j.LastError is not null)
+                        {
+                            <div class="dim" style="font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@j.LastError">@j.LastError</div>
+                        }
+                    </td>
+                    <td class="dim mono">@(j.NextRun ?? "—")</td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn ghost sm" @onclick="() => RunNow(j)" disabled="@_busy">@Loc.T("jobs.runNow", "Run now")</button>
+                            <button class="btn ghost sm" @onclick="() => LoadRuns(j)">@(_openId == j.Id ? "−" : Loc.T("jobs.history", "Runs"))</button>
+                        </div>
+                    </td>
+                </tr>
+                @if (_openId == j.Id)
+                {
+                    <tr><td colspan="7">
+                        @if (_runs.Count == 0) { <div class="dim">—</div> }
+                        else
+                        {
+                            <table class="table">
+                                <thead><tr><th>Started</th><th>Status</th><th>Duration</th><th>Output</th></tr></thead>
+                                <tbody>
+                                @foreach (var r in _runs)
+                                {
+                                    <tr>
+                                        <td class="mono dim">@r.StartedAt</td>
+                                        <td><span class="chip @(r.Status == "ok" ? "chip-green" : "chip-red")">@r.Status</span></td>
+                                        <td>@r.DurationMs ms</td>
+                                        <td class="dim" style="font-size:12px">@r.Output</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        }
+                    </td></tr>
+                }
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private bool _busy;
+    private string? _openId;
+    private List<J> _jobs = new();
+    private List<R> _runs = new();
+
+    private sealed record J(string Id, string Name, long IntervalSeconds, bool Enabled,
+        string? LastRun, string? NextRun, string? LastStatus, string? LastError, long LastDurationMs);
+    private sealed record R(string StartedAt, string Status, long DurationMs, string? Output);
+
+    private static string Fmt(long s) => s >= 86400 ? $"{s / 86400}d" : s >= 3600 ? $"{s / 3600}h" : s >= 60 ? $"{s / 60}m" : $"{s}s";
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/jobs");
+        _jobs = new();
+        if (r.TryGetProperty("jobs", out var arr))
+            foreach (var j in arr.EnumerateArray())
+                _jobs.Add(new J(
+                    j.GetProperty("id").GetString() ?? "",
+                    j.GetProperty("name").GetString() ?? "",
+                    j.GetProperty("intervalSeconds").GetInt64(),
+                    j.GetProperty("enabled").GetBoolean(),
+                    j.TryGetProperty("lastRun", out var lr) ? lr.GetString() : null,
+                    j.TryGetProperty("nextRun", out var nr) ? nr.GetString() : null,
+                    j.TryGetProperty("lastStatus", out var ls) ? ls.GetString() : null,
+                    j.TryGetProperty("lastError", out var le) ? le.GetString() : null,
+                    j.TryGetProperty("lastDurationMs", out var ld) ? ld.GetInt64() : 0));
+    }
+
+    private async Task Toggle(J j, bool on)
+    {
+        await Api.PostAsync($"api/jobs/{j.Id}/{(on ? "enable" : "disable")}", new { });
+        await Load();
+    }
+
+    private async Task RunNow(J j)
+    {
+        _busy = true;
+        await Api.PostAsync($"api/jobs/{j.Id}/run-now", new { });
+        await Load();
+        if (_openId == j.Id) await LoadRuns(j);
+        _busy = false;
+    }
+
+    private async Task LoadRuns(J j)
+    {
+        if (_openId == j.Id) { _openId = null; return; }
+        _openId = j.Id;
+        var r = await Api.GetAsync($"api/jobs/{j.Id}/runs?limit=20");
+        _runs = new();
+        if (r.TryGetProperty("runs", out var arr))
+            foreach (var x in arr.EnumerateArray())
+                _runs.Add(new R(
+                    x.GetProperty("startedAt").GetString() ?? "",
+                    x.GetProperty("status").GetString() ?? "",
+                    x.GetProperty("durationMs").GetInt64(),
+                    x.TryGetProperty("output", out var o) ? o.GetString() : null));
+    }
+}

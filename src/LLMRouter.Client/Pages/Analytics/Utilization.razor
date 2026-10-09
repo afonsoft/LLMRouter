@@ -1,0 +1,111 @@
+@page "/dashboard/analytics/utilization"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("analyticsUtilization", "Utilization")</h1>
+        <p class="page-desc">@Loc.T("analyticsUtilizationSubtitle", "Traffic and cost by provider, connection and API key")</p>
+    </div>
+    <select class="input" style="width:150px" @bind="_days" @bind:after="Load">
+        <option value="7">7d</option><option value="30">30d</option><option value="90">90d</option>
+    </select>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byProvider", "By provider")</h3>
+    @if (_providers.Count == 0) { <div class="empty"><span class="material-symbols-outlined">bar_chart</span>@Loc.T("analytics.noData", "No data yet")</div> }
+    else
+    {
+        var maxReq = _providers.Max(p => p.Requests);
+        <table class="table">
+            <thead><tr><th>Provider</th><th></th><th>Requests</th><th>Tokens</th><th>Cost</th><th>Error rate</th><th>Avg latency</th></tr></thead>
+            <tbody>
+            @foreach (var p in _providers)
+            {
+                var w = maxReq == 0 ? 0 : 100.0 * p.Requests / maxReq;
+                <tr>
+                    <td class="bold">@p.Name</td>
+                    <td style="width:30%"><div style="width:@(w.ToString("F0"))%;height:8px;background:var(--accent);border-radius:3px"></div></td>
+                    <td>@p.Requests.ToString("N0")</td>
+                    <td>@p.Tokens.ToString("N0")</td>
+                    <td>$@p.Cost.ToString("F4")</td>
+                    <td>@p.ErrorRate.ToString("F1")%</td>
+                    <td>@p.AvgLatencyMs ms</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="grid grid-2 mt-6">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byConnection", "By connection")</h3>
+        @if (_conns.Count == 0) { <div class="dim">—</div> }
+        else
+        {
+            <table class="table">
+                <thead><tr><th>Connection</th><th>Providers</th><th>Requests</th><th>Cost</th><th>Errors</th></tr></thead>
+                <tbody>
+                @foreach (var c in _conns)
+                {
+                    <tr><td class="mono">@c.Id</td><td class="dim">@string.Join(", ", c.Providers)</td><td>@c.Requests.ToString("N0")</td><td>$@c.Cost.ToString("F4")</td><td>@c.ErrorRate.ToString("F1")%</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byKey", "By API key")</h3>
+        @if (_keys.Count == 0) { <div class="dim">—</div> }
+        else
+        {
+            <table class="table">
+                <thead><tr><th>Key</th><th>Requests</th><th>Tokens</th><th>Cost</th></tr></thead>
+                <tbody>
+                @foreach (var k in _keys)
+                {
+                    <tr><td class="mono">@k.Key</td><td>@k.Requests.ToString("N0")</td><td>@k.Tokens.ToString("N0")</td><td>$@k.Cost.ToString("F4")</td></tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private int _days = 7;
+    private List<P> _providers = new();
+    private List<C> _conns = new();
+    private List<K> _keys = new();
+
+    private sealed record P(string Name, long Requests, long Tokens, double Cost, double ErrorRate, long AvgLatencyMs);
+    private sealed record C(string Id, string[] Providers, long Requests, long Tokens, double Cost, double ErrorRate);
+    private sealed record K(string Key, long Requests, long Tokens, double Cost);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync($"api/usage/utilization?days={_days}");
+        _providers = new(); _conns = new(); _keys = new();
+        if (r.TryGetProperty("byProvider", out var bp))
+            foreach (var x in bp.EnumerateArray())
+                _providers.Add(new P(x.GetProperty("provider").GetString() ?? "?",
+                    x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64(),
+                    x.GetProperty("cost").GetDouble(), x.GetProperty("errorRate").GetDouble(),
+                    x.GetProperty("avgLatencyMs").GetInt64()));
+        if (r.TryGetProperty("byConnection", out var bc))
+            foreach (var x in bc.EnumerateArray())
+                _conns.Add(new C(x.GetProperty("connectionId").GetString() ?? "?",
+                    x.TryGetProperty("providers", out var ps) ? ps.EnumerateArray().Select(p => p.GetString() ?? "?").ToArray() : Array.Empty<string>(),
+                    x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64(),
+                    x.GetProperty("cost").GetDouble(), x.GetProperty("errorRate").GetDouble()));
+        if (r.TryGetProperty("byApiKey", out var bk))
+            foreach (var x in bk.EnumerateArray())
+                _keys.Add(new K(x.GetProperty("apiKey").GetString() ?? "?",
+                    x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64(),
+                    x.GetProperty("cost").GetDouble()));
+    }
+}

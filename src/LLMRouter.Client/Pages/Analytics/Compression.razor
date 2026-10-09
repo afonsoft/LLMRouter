@@ -1,0 +1,84 @@
+@page "/dashboard/analytics/compression"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("analyticsCompression", "Compression analytics")</h1>
+        <p class="page-desc">@Loc.T("analyticsCompressionSubtitle", "Token savings across context engines")</p>
+    </div>
+    <select class="input" style="width:150px" @bind="_days" @bind:after="Load">
+        <option value="7">7d</option><option value="30">30d</option><option value="90">90d</option>
+    </select>
+</div>
+
+<div class="grid grid-4 mt-6">
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(22,163,74,.14);color:var(--success)"><span class="material-symbols-outlined">compress</span></div>
+        <div><div class="stat-value">@_runs.ToString("N0")</div><div class="stat-label">@Loc.T("analytics.runs", "Runs")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(99,102,241,.14);color:var(--accent)"><span class="material-symbols-outlined">savings</span></div>
+        <div><div class="stat-value">@_tokensSaved.ToString("N0")</div><div class="stat-label">@Loc.T("analytics.tokensSaved", "Tokens saved")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(217,119,6,.14);color:var(--warning)"><span class="material-symbols-outlined">percent</span></div>
+        <div><div class="stat-value">@_avgPct.ToString("F1")%</div><div class="stat-label">@Loc.T("analytics.avgSavings", "Avg savings")</div></div>
+    </div>
+    <div class="card stat">
+        <div class="stat-icon" style="background:rgba(229,77,94,.14);color:var(--primary)"><span class="material-symbols-outlined">token</span></div>
+        <div><div class="stat-value">@_charsSaved.ToString("N0")</div><div class="stat-label">@Loc.T("analytics.charsSaved", "Chars saved")</div></div>
+    </div>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byEngine", "By engine")</h3>
+    @if (_engines.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">compress</span>@Loc.T("analytics.noRuns", "No compression runs yet")</div>
+    }
+    else
+    {
+        var max = _engines.Max(e => e.SavedChars);
+        <table class="table">
+            <thead><tr><th>Engine</th><th></th><th>Runs</th><th>Chars saved</th></tr></thead>
+            <tbody>
+            @foreach (var e in _engines)
+            {
+                var w = max == 0 ? 0 : 100.0 * e.SavedChars / max;
+                <tr>
+                    <td class="bold">@e.Engine</td>
+                    <td style="width:40%"><div style="width:@(w.ToString("F0"))%;height:8px;background:var(--accent);border-radius:3px"></div></td>
+                    <td>@e.Runs.ToString("N0")</td>
+                    <td>@e.SavedChars.ToString("N0")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private int _days = 7;
+    private long _runs, _tokensSaved, _charsSaved;
+    private double _avgPct;
+    private List<E> _engines = new();
+    private sealed record E(string Engine, long Runs, long SavedChars);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync($"api/context/analytics?since={_days}d");
+        _engines = new();
+        if (r.TryGetProperty("runs", out var rv)) _runs = rv.GetInt64();
+        if (r.TryGetProperty("tokensSaved", out var ts)) _tokensSaved = ts.GetInt64();
+        if (r.TryGetProperty("avgSavingsPercent", out var ap)) _avgPct = ap.GetDouble();
+        _charsSaved = _tokensSaved * 4;
+        if (r.TryGetProperty("byEngine", out var be))
+            foreach (var x in be.EnumerateArray())
+                _engines.Add(new E(x.GetProperty("engine").GetString() ?? "?",
+                    x.GetProperty("runs").GetInt64(), x.GetProperty("savedChars").GetInt64()));
+        _engines = _engines.OrderByDescending(e => e.SavedChars).ToList();
+    }
+}

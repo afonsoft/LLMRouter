@@ -1,0 +1,95 @@
+@page "/dashboard/analytics/search"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("analyticsSearch", "Request search")</h1>
+    <p class="page-desc">@Loc.T("analyticsSearchSubtitle", "Search and inspect captured gateway requests")</p>
+</div>
+
+<div class="card card-p mt-6">
+    <div class="flex gap-2" style="flex-wrap:wrap">
+        <input class="input" style="width:180px" placeholder="@Loc.T("analytics.provider", "Provider")" @bind="_provider" />
+        <input class="input" style="width:180px" placeholder="@Loc.T("analytics.model", "Model")" @bind="_model" />
+        <select class="input" style="width:140px" @bind="_status">
+            <option value="">@Loc.T("analytics.anyStatus", "Any status")</option>
+            <option value="200">200</option>
+            <option value="400">400</option>
+            <option value="429">429</option>
+            <option value="500">500</option>
+        </select>
+        <button class="btn primary" @onclick="Load"><span class="material-symbols-outlined">search</span>@Loc.T("common.search", "Search")</button>
+    </div>
+</div>
+
+<div class="card card-p mt-4">
+    @if (_rows.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">manage_search</span>@Loc.T("analytics.noResults", "No requests found")</div>
+    }
+    else
+    {
+        <p class="dim" style="margin:0 0 8px">@_total.ToString("N0") @Loc.T("analytics.results", "results")</p>
+        <table class="table">
+            <thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr>
+                    <td class="mono dim">@r.Timestamp</td>
+                    <td>@r.Provider</td>
+                    <td class="mono">@r.Model</td>
+                    <td><span class="chip @(r.Status == "200" ? "chip-green" : "chip-red")">@r.Status</span></td>
+                    <td><button class="btn ghost sm" @onclick="() => Toggle(r.Id)">@(Expanded(r.Id) ? "−" : "+")</button></td>
+                </tr>
+                @if (Expanded(r.Id))
+                {
+                    <tr><td colspan="5"><pre class="mono" style="white-space:pre-wrap;max-height:300px;overflow:auto;font-size:11px">@_detail</pre></td></tr>
+                }
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private string? _provider, _model, _status;
+    private int _total;
+    private string? _openId, _detail;
+    private List<R> _rows = new();
+
+    private sealed record R(string Id, string Timestamp, string Provider, string Model, string Status);
+    private bool Expanded(string id) => _openId == id;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var qs = $"api/logs?limit=100" +
+            (string.IsNullOrWhiteSpace(_provider) ? "" : $"&provider={Uri.EscapeDataString(_provider)}") +
+            (string.IsNullOrWhiteSpace(_model) ? "" : $"&model={Uri.EscapeDataString(_model)}") +
+            (string.IsNullOrWhiteSpace(_status) ? "" : $"&status={Uri.EscapeDataString(_status)}");
+        var r = await Api.GetAsync(qs);
+        _rows = new(); _openId = null;
+        if (r.TryGetProperty("total", out var t)) _total = t.GetInt32();
+        if (r.TryGetProperty("logs", out var logs))
+            foreach (var x in logs.EnumerateArray())
+                _rows.Add(new R(
+                    x.GetProperty("id").GetString() ?? "",
+                    x.GetProperty("timestamp").GetString() ?? "",
+                    x.TryGetProperty("provider", out var p) ? p.GetString() ?? "—" : "—",
+                    x.TryGetProperty("model", out var m) ? m.GetString() ?? "—" : "—",
+                    x.TryGetProperty("status", out var s) ? s.GetString() ?? "—" : "—"));
+    }
+
+    private async Task Toggle(string id)
+    {
+        if (_openId == id) { _openId = null; return; }
+        _openId = id; _detail = "…";
+        var r = await Api.GetAsync($"api/logs/{id}");
+        if (r.TryGetProperty("log", out var log))
+            _detail = log.TryGetProperty("data", out var d) && d.ValueKind == System.Text.Json.JsonValueKind.String
+                ? d.GetString() : log.GetRawText();
+        else _detail = "(not found)";
+    }
+}

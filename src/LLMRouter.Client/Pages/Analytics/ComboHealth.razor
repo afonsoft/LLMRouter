@@ -1,0 +1,73 @@
+@page "/dashboard/analytics/combo-health"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("analyticsComboHealth", "Combo health")</h1>
+        <p class="page-desc">@Loc.T("analyticsComboHealthSubtitle", "Live success and latency per routing combo")</p>
+    </div>
+    <select class="input" style="width:150px" @bind="_days" @bind:after="Load">
+        <option value="7">7d</option><option value="30">30d</option><option value="90">90d</option>
+    </select>
+</div>
+
+<div class="card card-p mt-6">
+    @if (_combos.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">monitor_heart</span>@Loc.T("analytics.noData", "No data yet")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr><th>Combo</th><th>Score</th><th>Requests</th><th>Success</th><th>Avg latency</th><th>Last error</th></tr></thead>
+            <tbody>
+            @foreach (var c in _combos)
+            {
+                <tr>
+                    <td class="bold">@c.Combo</td>
+                    <td><span class="chip @(c.Score >= 80 ? "chip-green" : c.Score >= 50 ? "chip-amber" : "chip-red")">@c.Score.ToString("F0")</span></td>
+                    <td>@c.Requests.ToString("N0")</td>
+                    <td>@c.SuccessRate.ToString("F1")%</td>
+                    <td>@c.AvgLatencyMs ms</td>
+                    <td class="dim" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@(c.LastError ?? "—")</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private int _days = 7;
+    private List<Row> _combos = new();
+
+    private sealed record Row(string Combo, long Requests, double SuccessRate, long AvgLatencyMs, string? LastError, double Score);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync($"api/usage/combo-health?days={_days}");
+        var list = new List<Row>();
+        if (r.TryGetProperty("combos", out var arr))
+            foreach (var c in arr.EnumerateArray())
+            {
+                string? err = null;
+                if (c.TryGetProperty("lastError", out var le) && le.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    var e = le.TryGetProperty("error", out var ee) && ee.ValueKind == System.Text.Json.JsonValueKind.String ? ee.GetString() : null;
+                    var at = le.TryGetProperty("at", out var aa) && aa.ValueKind == System.Text.Json.JsonValueKind.String ? aa.GetString() : "";
+                    err = $"{at} {(e is null ? "" : e[..Math.Min(80, e.Length)])}";
+                }
+                list.Add(new Row(
+                    c.GetProperty("combo").GetString() ?? "?",
+                    c.GetProperty("requests").GetInt64(),
+                    c.GetProperty("successRate").GetDouble(),
+                    c.GetProperty("avgLatencyMs").GetInt64(),
+                    err,
+                    c.GetProperty("score").GetDouble()));
+            }
+        _combos = list;
+    }
+}

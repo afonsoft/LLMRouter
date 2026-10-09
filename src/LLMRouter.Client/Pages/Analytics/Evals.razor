@@ -1,0 +1,73 @@
+@page "/dashboard/analytics/evals"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("analyticsEvals", "Combo scoring")</h1>
+        <p class="page-desc">@Loc.T("analyticsEvalsSubtitle", "Derived evaluation of each routing combo from live traffic")</p>
+    </div>
+    <select class="input" style="width:150px" @bind="_days" @bind:after="Load">
+        <option value="7">7d</option><option value="30">30d</option><option value="90">90d</option>
+    </select>
+</div>
+
+<div class="card card-p mt-6">
+    @if (_rows.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">labs</span>@Loc.T("analytics.noData", "No data yet")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>#</th><th>Combo</th><th>Score</th><th>Requests</th><th>Success</th><th>Avg latency</th>
+            </tr></thead>
+            <tbody>
+            @{ var i = 0; }
+            @foreach (var r in _rows)
+            {
+                i++;
+                <tr>
+                    <td class="dim">@i</td>
+                    <td class="bold">@r.Combo</td>
+                    <td>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <div style="width:100px;height:8px;background:var(--border);border-radius:4px">
+                                <div style="width:@(Math.Min(100, r.Score).ToString("F0"))%;height:8px;background:var(--accent);border-radius:4px"></div>
+                            </div>
+                            @r.Score.ToString("F0")
+                        </div>
+                    </td>
+                    <td>@r.Requests.ToString("N0")</td>
+                    <td>@r.SuccessRate.ToString("F1")%</td>
+                    <td>@r.AvgLatencyMs ms</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <p class="dim mt-4" style="font-size:12px">@Loc.T("analytics.scoreNote", "Score = 70% success rate + 30% latency (best under ~30s). Combos with no traffic score 0.")</p>
+    }
+</div>
+
+@code {
+    private int _days = 30;
+    private List<R> _rows = new();
+    private sealed record R(string Combo, long Requests, double SuccessRate, long AvgLatencyMs, double Score);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync($"api/usage/combo-health?days={_days}");
+        _rows = new();
+        if (r.TryGetProperty("combos", out var arr))
+            foreach (var c in arr.EnumerateArray())
+                _rows.Add(new R(
+                    c.GetProperty("combo").GetString() ?? "?",
+                    c.GetProperty("requests").GetInt64(),
+                    c.GetProperty("successRate").GetDouble(),
+                    c.GetProperty("avgLatencyMs").GetInt64(),
+                    c.GetProperty("score").GetDouble()));
+    }
+}

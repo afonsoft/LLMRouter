@@ -761,8 +761,8 @@ public static class ManagementEndpoints
         });
 
         // ---- models (aggregated catalog; ?live=true fetches upstream model lists) ----
-        g.MapGet("/models", async (LlmRouterDbContext db, ProviderRegistry r, bool live,
-            IHttpClientFactory hf, IMemoryCache cache) =>
+        g.MapGet("/models", async (LlmRouterDbContext db, ProviderRegistry r, IHttpClientFactory hf,
+            IMemoryCache cache, bool live = false) =>
         {
             var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync();
             var models = new List<object>();

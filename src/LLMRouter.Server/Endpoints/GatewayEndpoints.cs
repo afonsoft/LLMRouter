@@ -155,6 +155,19 @@ public static class GatewayEndpoints
         }
         model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
 
+        // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
+        // scope is enforced per-target inside the dispatch loop below.
+        var rateLimiter = ctx.RequestServices.GetRequiredService<RateLimiter>();
+        var rlRules = await db.RateLimits.Where(r => r.Enabled).ToListAsync();
+        if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } ptVio)
+        {
+            ctx.Response.StatusCode = 429;
+            ctx.Response.Headers.RetryAfter = ptVio.RetryAfterSec.ToString();
+            await WriteError(ctx, "openai", "rate_limit",
+                $"Rate limit exceeded ({ptVio.Kind} {ptVio.Limit}/min on {ptVio.Scope} '{ptVio.ScopeValue}').");
+            return;
+        }
+
         // SPEC-031: plugin onRequest hooks (setModel/addHeaders) before resolution
         if (body.ValueKind == JsonValueKind.Object && rawBody is not null)
         {
@@ -193,8 +206,16 @@ public static class GatewayEndpoints
 
         var path = ctx.Request.Path.Value ?? "";
         var suffix = path[(path.IndexOf("/v1", StringComparison.Ordinal) + 3)..];
+        var providerLimited = false;
         foreach (var target in targets)
         {
+            // SPEC-039: provider-scope rate limits — skip this target, try the next
+            if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey,
+                    target.Provider.Id, model, providerOnly: true) is not null)
+            {
+                providerLimited = true;
+                continue;
+            }
             try
             {
                 var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
@@ -250,6 +271,14 @@ public static class GatewayEndpoints
                 return;
             }
             catch (Exception) when (target != targets[^1]) { }
+        }
+        // SPEC-039: every target was skipped by a provider-scope limit → 429
+        if (providerLimited)
+        {
+            ctx.Response.StatusCode = 429;
+            ctx.Response.Headers.RetryAfter = "60";
+            await WriteError(ctx, "openai", "rate_limit", "Rate limit exceeded on provider scope.");
+            return;
         }
         ctx.Response.StatusCode = 502;
         await WriteError(ctx, "openai", "upstream_unavailable", "All upstream targets failed.");
@@ -441,6 +470,19 @@ public static class GatewayEndpoints
         if (inbound == "gemini" && ctx.Request.Path.Value?.Contains("streamGenerateContent") == true)
             stream = true;
 
+        // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
+        // scope is enforced per-target inside the dispatch loop below.
+        var rateLimiter = ctx.RequestServices.GetRequiredService<RateLimiter>();
+        var rlRules = await db.RateLimits.Where(r => r.Enabled).ToListAsync();
+        if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } rlVio)
+        {
+            ctx.Response.StatusCode = 429;
+            ctx.Response.Headers.RetryAfter = rlVio.RetryAfterSec.ToString();
+            await WriteError(ctx, inbound, "rate_limit",
+                $"Rate limit exceeded ({rlVio.Kind} {rlVio.Limit}/min on {rlVio.Scope} '{rlVio.ScopeValue}').");
+            return;
+        }
+
         // SPEC-015/023: chaos fault injection (rules match provider/model)
         if (await Core.Extras.Extras.ChaosDelayAsync(db, model) is { } chatChaos)
         {
@@ -550,6 +592,14 @@ public static class GatewayEndpoints
         Exception? lastError = null;
         foreach (var target in targets)
         {
+            // SPEC-039: provider-scope rate limits — skip this target, try the next
+            if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey,
+                    target.Provider.Id, model, providerOnly: true) is { } pvio)
+            {
+                lastError = new HttpRequestException(
+                    $"rate limited ({pvio.Scope} '{pvio.ScopeValue}' {pvio.Kind} {pvio.Limit}/min)");
+                continue;
+            }
             try
             {
                 var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
@@ -633,6 +683,14 @@ public static class GatewayEndpoints
             }
         }
 
+        // SPEC-039: every target was skipped by a provider-scope limit → 429
+        if (lastError?.Message.StartsWith("rate limited", StringComparison.Ordinal) == true)
+        {
+            ctx.Response.StatusCode = 429;
+            ctx.Response.Headers.RetryAfter = "60";
+            await WriteError(ctx, inbound, "rate_limit", lastError.Message);
+            return;
+        }
         ctx.Response.StatusCode = 502;
         await WriteError(ctx, inbound, "upstream_unavailable",
             lastError?.Message ?? "All upstream targets failed.");

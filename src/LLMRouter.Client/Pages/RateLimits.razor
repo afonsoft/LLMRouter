@@ -1,0 +1,141 @@
+@page "/dashboard/rate-limits"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("rateLimits.title", "Rate limits")</h1>
+    <p class="page-desc">@Loc.T("rateLimits.subtitle", "Per-key, per-provider and per-model throttling — sliding 1-minute windows")</p>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 class="bold mb-4">@Loc.T("rateLimits.new", "New rule")</h3>
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+        <div>
+            <label class="dim" style="font-size:12px">@Loc.T("rateLimits.scope", "Scope")</label>
+            <select class="input" @bind="_scope">
+                <option value="apiKey">apiKey</option>
+                <option value="provider">provider</option>
+                <option value="model">model</option>
+            </select>
+        </div>
+        <div style="min-width:200px">
+            <label class="dim" style="font-size:12px">@Loc.T("rateLimits.value", "Value (* or prefix*)")</label>
+            <input class="input" @bind="_value" placeholder="*" />
+        </div>
+        <div>
+            <label class="dim" style="font-size:12px">RPM</label>
+            <input class="input" type="number" style="width:90px" @bind="_rpm" min="0" />
+        </div>
+        <div>
+            <label class="dim" style="font-size:12px">TPM</label>
+            <input class="input" type="number" style="width:110px" @bind="_tpm" min="0" />
+        </div>
+        <div>
+            <label class="dim" style="font-size:12px">@Loc.T("rateLimits.burst", "Burst")</label>
+            <input class="input" type="number" style="width:90px" @bind="_burst" min="0" />
+        </div>
+        <button class="btn primary" @onclick="Create" disabled="@_busy">@Loc.T("rateLimits.add", "Add rule")</button>
+    </div>
+    @if (_error is not null) { <div class="dim mt-2" style="color:var(--danger,#e5484d)">@_error</div> }
+</div>
+
+<div class="card card-p mt-4">
+    @if (_rules.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">speed</span>@Loc.T("rateLimits.none", "No rate-limit rules")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>@Loc.T("rateLimits.scope", "Scope")</th><th>@Loc.T("rateLimits.value", "Value")</th>
+                <th>RPM</th><th>TPM</th><th>@Loc.T("rateLimits.burst", "Burst")</th>
+                <th>@Loc.T("rateLimits.window", "Window")</th><th>@Loc.T("rateLimits.enabled", "Enabled")</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var r in _rules)
+            {
+                <tr>
+                    <td><span class="chip">@r.Scope</span></td>
+                    <td class="mono">@r.ScopeValue</td>
+                    <td>@(r.Rpm > 0 ? r.Rpm.ToString() : "—")</td>
+                    <td>@(r.Tpm > 0 ? r.Tpm.ToString() : "—")</td>
+                    <td>@r.Burst</td>
+                    <td>
+                        @{
+                            var st = _status.GetValueOrDefault(r.Id);
+                        }
+                        <span class="chip @(st is { Requests: > 0 } || st is { Tokens: > 0 } ? "chip-green" : "")">
+                            @(st?.Requests ?? 0) req / @(st?.Tokens ?? 0) tok
+                        </span>
+                    </td>
+                    <td><input type="checkbox" checked="@r.Enabled" @onchange="e => Toggle(r, (bool)(e.Value ?? false))" /></td>
+                    <td><button class="btn ghost sm" @onclick="() => Delete(r)">@Loc.T("rateLimits.delete", "Delete")</button></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private bool _busy;
+    private string? _error;
+    private string _scope = "apiKey";
+    private string _value = "*";
+    private int _rpm = 60;
+    private int _tpm;
+    private int _burst;
+    private List<R> _rules = new();
+    private Dictionary<string, S> _status = new();
+
+    private sealed record R(string Id, string Scope, string ScopeValue, int Rpm, int Tpm, int Burst, bool Enabled);
+    private sealed record S(int Requests, long Tokens);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/rate-limits");
+        _rules = new();
+        if (r.TryGetProperty("rules", out var arr))
+            foreach (var x in arr.EnumerateArray())
+                _rules.Add(new R(
+                    x.GetProperty("id").GetString() ?? "",
+                    x.GetProperty("scope").GetString() ?? "",
+                    x.GetProperty("scopeValue").GetString() ?? "",
+                    x.GetProperty("rpm").GetInt32(),
+                    x.GetProperty("tpm").GetInt32(),
+                    x.GetProperty("burst").GetInt32(),
+                    x.GetProperty("enabled").GetBoolean()));
+
+        _status = new();
+        var s = await Api.GetAsync("api/rate-limit/status");
+        if (s.TryGetProperty("status", out var sa))
+            foreach (var x in sa.EnumerateArray())
+                _status[x.GetProperty("id").GetString() ?? ""] = new S(
+                    x.GetProperty("requests").GetInt32(), x.GetProperty("tokens").GetInt64());
+    }
+
+    private async Task Create()
+    {
+        _busy = true; _error = null;
+        var resp = await Api.Raw.PostAsJsonAsync("api/rate-limits",
+            new { scope = _scope, scopeValue = _value.Trim(), rpm = _rpm, tpm = _tpm, burst = _burst });
+        if (!resp.IsSuccessStatusCode) _error = await resp.Content.ReadAsStringAsync();
+        _busy = false;
+        await Load();
+    }
+
+    private async Task Toggle(R r, bool on)
+    {
+        await Api.Raw.PutAsJsonAsync($"api/rate-limits/{r.Id}", new { enabled = on });
+        await Load();
+    }
+
+    private async Task Delete(R r)
+    {
+        await Api.Raw.DeleteAsync($"api/rate-limits/{r.Id}");
+        await Load();
+    }
+}

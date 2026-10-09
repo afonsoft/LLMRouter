@@ -54,6 +54,7 @@ builder.Services.AddDbContext<LlmRouterDbContext>((sp, o) =>
 builder.Services.AddSingleton<ProviderRegistry>();
 builder.Services.AddSingleton<ComboPlanner>();
 builder.Services.AddSingleton<ModelResolver>();
+builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddScoped<GatewayEngine>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
@@ -129,6 +130,7 @@ CliEndpoints.Map(app);
 AnalyticsEndpoints.Map(app);
 DbBackupEndpoints.Map(app);
 JobsEndpoints.Map(app);
+RateLimitEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

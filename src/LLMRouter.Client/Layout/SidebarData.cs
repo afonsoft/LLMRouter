@@ -58,7 +58,8 @@ public static class SidebarData
                 new("integrations", "integrationsGroup", "Integrations", [
                     new("api-endpoints", "/dashboard/api-endpoints", "apiEndpoints", "api", Subtitle: "apiEndpointsSubtitle"),
                     new("webhooks", "/dashboard/webhooks", "webhooks", "webhook", Subtitle: "webhooksSubtitle"),
-                    new("log-export", "/dashboard/log-export", "logExport", "cloud_upload", Label: "Log export", Subtitle: "logExportSubtitle", SubtitleFallback: "Ship call logs out")
+                    new("log-export", "/dashboard/log-export", "logExport", "cloud_upload", Label: "Log export", Subtitle: "logExportSubtitle", SubtitleFallback: "Ship call logs out"),
+                    new("jobs", "/dashboard/jobs", "jobs", "schedule", Label: "Jobs", Subtitle: "jobsSubtitle", SubtitleFallback: "Scheduled tasks")
                 ])
             ]
         ),

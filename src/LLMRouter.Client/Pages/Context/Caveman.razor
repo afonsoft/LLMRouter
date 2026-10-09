@@ -1,0 +1,82 @@
+@page "/dashboard/context/caveman"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">Caveman</h1>
+<p class="page-desc">@Loc.T("caveman.subtitle", "Rule-based linguistic compression (llmlingua-level savings, no ML)")</p>
+
+<div class="grid grid-2">
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("caveman.config", "Configuration")</h3>
+        @if (_cfg is null) { <p class="muted">…</p> }
+        else
+        {
+            <div class="flex between"><span class="sm">@Loc.T("caveman.enabled", "Enabled")</span>
+                <input type="checkbox" checked="@_enabled" @onchange="e => _enabled = (bool)(e.Value ?? false)" /></div>
+            <div class="flex between mt-3"><span class="sm">@Loc.T("caveman.intensity", "Intensity")</span>
+                <select class="inp xs" @bind="_intensity">
+                    <option value="lite">lite</option><option value="full">full</option><option value="ultra">ultra</option>
+                </select></div>
+            <div class="mt-3"><span class="xs muted">compressRoles (csv)</span>
+                <input class="inp xs mono" style="width:100%" @bind="_roles" /></div>
+            <div class="mt-2"><span class="xs muted">skipRules (rule names, csv)</span>
+                <input class="inp xs mono" style="width:100%" @bind="_skip" /></div>
+            <div class="mt-2"><span class="xs muted">preservePatterns (regex, um por linha)</span>
+                <textarea class="inp xs mono" style="width:100%" rows="3" @bind="_preserve"></textarea></div>
+            <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
+            @if (_msg is not null) { <span class="sm muted" style="margin-left:8px">@_msg</span> }
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("caveman.rules", "Rules") (@_rules?.Length ?? 0)</h3>
+        @if (_rules is not null)
+        {
+            <div style="max-height:420px;overflow:auto">
+            @foreach (var r in _rules)
+            {
+                <div class="mt-2 xs" style="border-bottom:1px solid var(--border);padding-bottom:6px">
+                    <span class="bold">@r.GetProperty("name").GetString()</span>
+                    <span class="muted">· @r.GetProperty("category").GetString() · @r.GetProperty("minIntensity").GetString()</span>
+                    <div class="mono muted">@r.GetProperty("pattern").GetString() → @r.GetProperty("replacement").GetString()</div>
+                </div>
+            }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private JsonElement? _cfg;
+    private JsonElement[]? _rules;
+    private bool _enabled = true;
+    private string _intensity = "full", _roles = "user", _skip = "", _preserve = "", _msg = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cfg = await Api.GetAsync("api/context/caveman/config");
+        if (_cfg.Value.TryGetProperty("config", out var c) && c.ValueKind == JsonValueKind.Object)
+        {
+            if (c.TryGetProperty("enabled", out var e)) _enabled = e.GetBoolean();
+            if (c.TryGetProperty("intensity", out var i)) _intensity = i.GetString() ?? "full";
+            if (c.TryGetProperty("compressRoles", out var r)) _roles = string.Join(",", r.EnumerateArray().Select(x => x.GetString()));
+            if (c.TryGetProperty("skipRules", out var s)) _skip = string.Join(",", s.EnumerateArray().Select(x => x.GetString()));
+            if (c.TryGetProperty("preservePatterns", out var p)) _preserve = string.Join("\n", p.EnumerateArray().Select(x => x.GetString()));
+        }
+        var rules = await Api.GetAsync("api/compression/rules");
+        _rules = rules.GetProperty("rules").EnumerateArray().ToArray();
+    }
+
+    private async Task Save()
+    {
+        var cfg = new Dictionary<string, object>
+        {
+            ["enabled"] = _enabled,
+            ["intensity"] = _intensity,
+            ["compressRoles"] = _roles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            ["skipRules"] = _skip.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            ["preservePatterns"] = _preserve.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+        };
+        await Api.PutAsync("api/context/caveman/config", new { config = cfg });
+        _msg = "✓";
+    }
+}

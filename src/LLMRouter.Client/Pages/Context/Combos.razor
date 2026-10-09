@@ -1,0 +1,148 @@
+@page "/dashboard/context/combos"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("ctxCombos.title", "Compression combos")</h1>
+<p class="page-desc">@Loc.T("ctxCombos.subtitle", "Named engine pipelines assignable to routing combos")</p>
+
+<div class="card card-p">
+    <div class="flex between">
+        <h3 class="bold" style="margin:0">@Loc.T("ctxCombos.list", "Combos") (@_combos?.Length ?? 0)</h3>
+        <button class="btn btn-primary btn-sm" @onclick="New">+ @Loc.T("common.new", "New")</button>
+    </div>
+    @if (_combos is not null)
+    {
+        @foreach (var c in _combos)
+        {
+            <div class="flex between mt-3" style="border-bottom:1px solid var(--border);padding-bottom:8px">
+                <div>
+                    <span class="bold sm">@c.GetProperty("name").GetString()</span>
+                    @if (c.TryGetProperty("isDefault", out var d) && d.GetBoolean()) { <span class="xs muted"> · default</span> }
+                    <div class="xs muted">@PipelineLabel(c) · @AssignmentLabel(c)</div>
+                </div>
+                <div class="flex" style="gap:8px">
+                    <button class="btn btn-sm" @onclick="() => Edit(c)">@Loc.T("common.edit", "Edit")</button>
+                    <button class="btn btn-sm" @onclick="() => Del(IdOf(c))">🗑</button>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (_edit is not null)
+{
+    <div class="card card-p mt-4">
+        <h3 class="bold" style="margin:0 0 14px">@(_editId is null ? "New" : "Edit") combo</h3>
+        <div class="mt-2"><span class="xs muted">name</span><input class="inp xs" style="width:100%" @bind="_editName" /></div>
+        <div class="mt-2"><span class="xs muted">description</span><input class="inp xs" style="width:100%" @bind="_editDesc" /></div>
+        <div class="mt-2"><span class="xs muted">pipeline (JSON — [{"engine":"session-dedup"},{"engine":"caveman","intensity":"full"}])</span>
+            <textarea class="inp xs mono" style="width:100%" rows="4" @bind="_editPipeline"></textarea></div>
+        <div class="mt-3"><span class="xs muted">@Loc.T("ctxCombos.assign", "Assign to routing combos")</span>
+        @if (_routingCombos is not null)
+        {
+            @foreach (var rc in _routingCombos)
+            {
+                var rid = rc.GetProperty("id").GetString()!;
+                <div class="flex between mt-1">
+                    <span class="xs">@rc.GetProperty("name").GetString()</span>
+                    <input type="checkbox" checked="@_assigned.Contains(rid)" @onchange="e => ToggleAssign(rid, (bool)(e.Value ?? false))" />
+                </div>
+            }
+        }
+        </div>
+        <div class="mt-4 flex" style="gap:8px">
+            <button class="btn btn-primary btn-sm" @onclick="SaveEdit">@Loc.T("common.save", "Save")</button>
+            <button class="btn btn-sm" @onclick="() => _edit = false">@Loc.T("common.cancel", "Cancel")</button>
+            @if (_err is not null) { <span class="sm" style="color:#e74c3c">@_err</span> }
+        </div>
+    </div>
+}
+
+@code {
+    private JsonElement[]? _combos;
+    private JsonElement[]? _routingCombos;
+    private Dictionary<string, JsonElement[]> _assignments = new();
+    private bool? _edit;
+    private string? _editId, _editName, _editDesc, _editPipeline, _err;
+    private HashSet<string> _assigned = new();
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        var res = await Api.GetAsync("api/context/combos");
+        _combos = res.GetProperty("combos").EnumerateArray().ToArray();
+        _assignments = new();
+        foreach (var c in _combos)
+        {
+            var a = await Api.GetAsync($"api/context/combos/{c.GetProperty("id").GetString()}/assignments");
+            _assignments[c.GetProperty("id").GetString()!] =
+                a.GetProperty("assignments").EnumerateArray().Select(x => x.GetProperty("routingComboId")).ToArray();
+        }
+        try
+        {
+            var rc = await Api.GetAsync("api/combos");
+            _routingCombos = rc.ValueKind == JsonValueKind.Array
+                ? rc.EnumerateArray().ToArray()
+                : rc.TryGetProperty("combos", out var cl) ? cl.EnumerateArray().ToArray() : [];
+        }
+        catch { _routingCombos = []; }
+    }
+
+    private static string IdOf(JsonElement c) => c.GetProperty("id").GetString()!;
+    private string PipelineLabel(JsonElement c) =>
+        string.Join(" → ", c.GetProperty("pipeline").EnumerateArray()
+            .Select(s => s.TryGetProperty("engine", out var e) ? e.GetString() : "?"));
+
+    private string AssignmentLabel(JsonElement c)
+    {
+        var ids = _assignments.GetValueOrDefault(c.GetProperty("id").GetString()!, []);
+        var names = _routingCombos?.Where(rc => ids.Any(i => i.GetString() == rc.GetProperty("id").GetString()))
+            .Select(rc => rc.GetProperty("name").GetString()).ToArray() ?? [];
+        return names.Length > 0 ? $"→ {string.Join(", ", names)}" : Loc.T("ctxCombos.unassigned", "unassigned");
+    }
+
+    private void New()
+    {
+        _edit = true; _editId = null; _editName = ""; _editDesc = ""; _err = null;
+        _editPipeline = "[{\"engine\":\"session-dedup\"},{\"engine\":\"caveman\"}]";
+        _assigned = new();
+    }
+
+    private void Edit(JsonElement c)
+    {
+        _edit = true; _editId = c.GetProperty("id").GetString(); _err = null;
+        _editName = c.GetProperty("name").GetString();
+        _editDesc = c.TryGetProperty("description", out var d) ? d.GetString() : "";
+        _editPipeline = c.GetProperty("pipeline").GetRawText();
+        _assigned = (_assignments.GetValueOrDefault(_editId!, []) ?? [])
+            .Select(x => x.GetString()!).ToHashSet();
+    }
+
+    private void ToggleAssign(string rid, bool on) { if (on) _assigned.Add(rid); else _assigned.Remove(rid); }
+
+    private async Task SaveEdit()
+    {
+        _err = null;
+        JsonElement pipeline;
+        try { pipeline = JsonSerializer.Deserialize<JsonElement>(_editPipeline ?? "[]"); }
+        catch { _err = "pipeline: invalid JSON"; return; }
+        var body = new { name = _editName, description = _editDesc, pipeline };
+        var id = _editId;
+        if (id is null)
+        {
+            var created = await Api.PostAsync("api/context/combos", body);
+            id = created.GetProperty("id").GetString();
+        }
+        else await Api.PutAsync($"api/context/combos/{id}", body);
+        await Api.PutAsync($"api/context/combos/{id}/assignments", new { routingComboIds = _assigned.ToArray() });
+        _edit = null;
+        await Reload();
+    }
+
+    private async Task Del(string id)
+    {
+        await Api.DeleteAsync($"api/context/combos/{id}");
+        await Reload();
+    }
+}

@@ -115,6 +115,7 @@ app.UseStatusCodePagesWithReExecute("/error/{0}");
 app.MapAuthEndpoints();
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
+CompressionEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

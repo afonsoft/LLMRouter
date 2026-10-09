@@ -6,7 +6,7 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 
 1. **Batches nunca marcam `done`** — `POST /api/batches` enfileira e dispara Task.Run mas não persiste conclusão (comentário explícito no código). Status fica `queued` para sempre. ✅ SPEC-017
 2. **OAuth sem `clientSecretDefault`** — removido do registry por push protection; providers que dependem de secret embutido só funcionam com env vars. Falta documentar/mapear `clientIdEnv`/`clientSecretEnv` por provider. ✅ SPEC-021
-3. **i18n incompleto** — páginas novas (extras, inspector, tokens, mcp, conductor, onboarding, error) usam strings EN hardcoded; chaves `Loc.T` sem entrada nas locales caem no fallback. pt-BR/es parcial. ✅ SPEC-024 (parcial)
+3. **i18n incompleto** — páginas usam `Loc.T`; en.json completo (190 chaves injetadas), pt-BR/es traduzidos nas chaves de maior tráfego; demais caem no fallback EN. ✅ SPEC-024/029 (parcial)
 4. **MITM real não implementado** — só forward-proxy HTTP (absolute-URI) + CA para download. Sem CONNECT, sem interceptação TLS; página `pxpipe` é alias do inspector, não pipeline de mídia. ✅ SPEC-028
 5. **Estratégias de combo** — implementado: priority/fallback, round-robin, sticky. Faltam ~17 do upstream (weighted, p2c, least-used, cost-optimized, reset-aware, headroom, quota-weighted, lkgp, context-optimized, cache-optimized, context-relay, fusion, pipeline, auto 16-factor). ✅ SPEC-020
 6. **MCP limitado** — `tools/list` expõe apenas combos como `chat__*`. Upstream tem ~45 ferramentas canônicas (providers, keys, usage, settings, memory, skills, pools…) + transportes stdio/SSE. Faltam também os módulos memory/skill/GitHub/gamification/plugin. ✅ SPEC-025
@@ -15,10 +15,10 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 
 7. **Resiliência** — CooldownTracker cobre cooldown por conexão. Falta circuit breaker de provider 4-estados (CLOSED/DEGRADED/OPEN/HALF_OPEN), model lockout por modelo e anti-thundering-herd. ✅ SPEC-018
 8. **Guardrails** — sem prompt-injection guard nem validação de schema estilo Zod nas rotas do gateway; API key policy enforcement parcial. ✅ SPEC-023
-9. **Responses API** — tradutores openai↔claude↔gemini ok; falta `/v1/responses` (Responses API ↔ Chat Completions transformer).
+9. **Responses API** — `/v1/responses` + `/responses/compact` roteados; tradutores cobrem output[]/output_text/usage e SSE `response.*`. ✅ SPEC-029
 10. **Audit superficial** — só eventos de chaos/webhooks gravam; CRUDs de management não auditam. Falta endpoint de leitura completo + página (existe UI, poucos eventos). ✅ SPEC-021
 11. **Memory** — kv simples com busca por substring; upstream usa memória com embeddings/sessões. ✅ SPEC-026
-12. **Free-tiers** — detecção por substring `"free"` em `Data` é ingênua; upstream tem ranking por saúde/latência dos providers gratuitos.
+12. **Free-tiers** — ranking por saúde real (breaker + cooldown + latência/error-rate do usageHistory) com score. ✅ SPEC-029
 13. **Conversations** — CRUD existe e o playground consome; falta página viewer dedicada (`/dashboard/conversations` lista mas não há tela de detalhe/busca). ✅ SPEC-024
 14. **Skills** — scan de `skills/**/SKILL.md` + toggle/install ok; falta execução real de skills no pipeline (upstream injeta no system prompt/tooling). ✅ SPEC-026
 15. **Docs viewer** — `MdToHtml` é parser mínimo (sem tabelas GFM, listas aninhadas, TOC). ✅ SPEC-024

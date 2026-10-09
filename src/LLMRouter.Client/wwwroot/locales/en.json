@@ -998,7 +998,9 @@
     "batchFileUsedByCount": "Used by {count, plural, one {# batch} other {# batches}}",
     "batchFilePreview": "Preview",
     "batchFilePreviewTruncated": "Showing first {shown} lines ({total} total lines)",
-    "batchFileDownloadFull": "Download Full File"
+    "batchFileDownloadFull": "Download Full File",
+    "method": "Method",
+    "create": "Create"
   },
   "disabled": "Disabled",
   "featureFlagOmnirouteEmergencyFallbackDescription": "Route budget-exhausted requests to the emergency free fallback provider/model.",
@@ -1924,7 +1926,19 @@
     "readinessStep3": "Copy your endpoint",
     "readinessStep4": "Send a test request",
     "readinessContinue": "Continue setup",
-    "readinessDismiss": "Dismiss for now"
+    "readinessDismiss": "Dismiss for now",
+    "title": "Welcome to LLMRouter",
+    "subtitle": "Unified AI gateway — one endpoint, every provider",
+    "activeProviders": "Active providers",
+    "combos": "Combos",
+    "requestsToday": "Requests today",
+    "tokensToday": "Tokens today",
+    "step1": "Add a provider connection",
+    "step2": "Create an API key",
+    "step3": "Point your app at the gateway",
+    "viewEndpoints": "View endpoints",
+    "recentActivity": "Recent requests",
+    "noActivity": "No requests yet — send your first request to the gateway."
   },
   "analytics": {
     "title": "Analytics",
@@ -2595,7 +2609,8 @@
     "imageToTextBridgeCta": "Configure the Image→Text bridge in Modality Bridge settings",
     "sttBridgeCta": "Configure the Speech→Text bridge in Modality Bridge settings",
     "existingConnection": "Existing connection",
-    "openrouterSttDescription": "OpenRouter speech-to-text models use your configured OpenRouter connection. No separate credential is required."
+    "openrouterSttDescription": "OpenRouter speech-to-text models use your configured OpenRouter connection. No separate credential is required.",
+    "empty": "No connections for this kind yet"
   },
   "search": {
     "searchQuery": "Search Query",
@@ -3262,7 +3277,9 @@
     "cliproxyapiUnknown": "Unknown",
     "cliproxyapiUpdate": "Update",
     "cliproxyapiUpdateAvailable": "Update available: v{current} → v{latest}",
-    "cliproxyapiVersion": "Version"
+    "cliproxyapiVersion": "Version",
+    "subtitle": "Point any coding CLI at this router — copy the env block for your tool",
+    "notDetected": "not found"
   },
   "modelCatalog": {
     "title": "Models & Combos",
@@ -3994,7 +4011,15 @@
     "duplicateAutoComboSnapshotMsg": "This will snapshot the currently connected providers/models that match this template into an editable combo.",
     "duplicateAutoComboFailedPrefix": "Failed to duplicate auto-combo:",
     "duplicateAutoComboUnknownError": "Unknown error",
-    "duplicateAutoComboTitle": "Create a static combo from {name}"
+    "duplicateAutoComboTitle": "Create a static combo from {name}",
+    "subtitle": "Ordered model cascades with automatic fallback",
+    "new": "New combo",
+    "aliases": "Model aliases",
+    "mappings": "Model → combo mappings",
+    "empty": "No combos yet",
+    "edit": "Edit combo",
+    "name": "Name",
+    "kind": "Strategy"
   },
   "costs": {
     "title": "Costs",
@@ -4848,7 +4873,11 @@
     "installSkillModalDesc": "Paste a skill manifest JSON or upload a .json file.",
     "uploadJson": "Upload JSON",
     "cancel": "Cancel",
-    "installSkill": "Install Skill"
+    "installSkill": "Install Skill",
+    "subtitle": "Bundled and installed agent skills — SKILL.md modules that extend the router",
+    "install": "Install from GitHub",
+    "empty": "No skills installed — the skills/ directory ships bundled ones at runtime",
+    "installed": "Installed"
   },
   "health": {
     "queuesTitle": "Concurrency gates",
@@ -5178,7 +5207,10 @@
     },
     "compressionLogTitle": "Compression Log",
     "compressionLogEmpty": "No compressed requests yet. Compression stats will appear here when requests are processed with compression enabled.",
-    "tokens": "tokens"
+    "tokens": "tokens",
+    "subtitle": "Every request through the gateway",
+    "time": "Time",
+    "empty": "No requests logged"
   },
   "onboarding": {
     "welcome": "Welcome",
@@ -6737,7 +6769,27 @@
     "rateLimitOverridesModelConcurrencyLabel": "Per-model concurrency caps",
     "rateLimitOverridesModelConcurrencyPlaceholder": "glm-5=1\nglm-4.7=3",
     "rateLimitOverridesModelConcurrencyHint": "Optional: one model=cap per line, matched against the exact upstream model id. Queues excess requests locally; blank means no per-model cap.",
-    "rateLimitOverridesModelConcurrencyInvalid": "Invalid per-model concurrency entry \"{entry}\" — use model=cap with a whole number from 1 to {max}."
+    "rateLimitOverridesModelConcurrencyInvalid": "Invalid per-model concurrency entry \"{entry}\" — use model=cap with a whole number from 1 to {max}.",
+    "notFound": "Provider not found",
+    "back": "Providers",
+    "name": "Name",
+    "priority": "Priority",
+    "status": "Status",
+    "lastTest": "Last test",
+    "test": "Test",
+    "empty": "No connections yet",
+    "testResult": "Connection test",
+    "baseUrl": "Base URL (optional override)",
+    "oauthHint": "OAuth sign-in flow arrives in SPEC-011 — save with an access token in the API key field for now.",
+    "subtitle": "Provider catalog — pick a provider to manage connections",
+    "customNode": "Custom endpoint",
+    "all": "All",
+    "none": "No providers match",
+    "nodes": "Custom endpoints",
+    "kind": "Kind",
+    "modelsList": "Models (comma-separated, optional)",
+    "category": "Category",
+    "provider": "Provider"
   },
   "settings": {
     "title": "Settings",
@@ -8787,7 +8839,11 @@
     "resilienceTokenRefreshScopeProvider": "Provider (all accounts share one breaker)",
     "resilienceTokenRefreshScopeConnection": "Connection (each account has its own breaker)",
     "resilienceTokenRefreshThreshold": "Failures before pausing",
-    "resilienceTokenRefreshCooldown": "Pause after tripping"
+    "resilienceTokenRefreshCooldown": "Pause after tripping",
+    "subtitle": "Router configuration",
+    "language": "Language",
+    "theme": "Theme",
+    "sidebarHint": "Aplica-se na próxima navegação/recarregamento."
   },
   "contextRtk": {
     "title": "RTK Engine",
@@ -9668,7 +9724,12 @@
     "live": "Live",
     "copyInput": "Copy input",
     "copyOutput": "Copy output",
-    "streamTransformFailed": "Failed to transform stream"
+    "streamTransformFailed": "Failed to transform stream",
+    "subtitle": "Convert request/response bodies between OpenAI, Claude and Gemini formats",
+    "from": "From",
+    "to": "To",
+    "kind": "Kind",
+    "convert": "Convert"
   },
   "usage": {
     "codexPaidCreditsLabel": "Paid Codex credits",
@@ -10124,7 +10185,18 @@
     "updatedShort": "Updated",
     "lastRefreshed": "Last refreshed",
     "providerQuota": "Provider Quota",
-    "providerQuotaHomeHint": "Live status across connected accounts"
+    "providerQuotaHomeHint": "Live status across connected accounts",
+    "subtitle": "Requests and tokens through the gateway",
+    "week": "Last 7 days",
+    "month": "Last 30 days",
+    "all": "All time",
+    "tokens": "Tokens",
+    "promptTokens": "Prompt tokens",
+    "completionTokens": "Completion tokens",
+    "cost": "Est. cost",
+    "timeseries": "Requests over time",
+    "byProvider": "By provider",
+    "byModel": "By model"
   },
   "modals": {
     "waitingAuth": "Waiting for Authorization",
@@ -10443,7 +10515,19 @@
     "privacy": "Privacy",
     "license": "License",
     "footerDescription": "The unified interface for modern AI infrastructure. Secure, observable, and scalable.",
-    "communityDiscussions": "Community Discussions"
+    "communityDiscussions": "Community Discussions",
+    "tagline": "One endpoint. Every LLM provider. Automatic fallback.",
+    "docs": "Docs",
+    "f1": "OpenAI, Claude, Gemini and 285 more behind one API.",
+    "combos": "Combos",
+    "f2": "Cascade, round-robin and sticky fallback chains.",
+    "translators": "Translators",
+    "f3": "OpenAI ↔ Claude ↔ Gemini formats, streaming included.",
+    "analytics": "Usage & costs",
+    "f4": "Per-connection analytics, pricing and budgets.",
+    "resilience": "Resilience",
+    "f5": "Cooldowns, quotas, proxy pools and circuit breaking.",
+    "f6": "Mount the router as an MCP server or A2A agent."
   },
   "docs": {
     "title": "Documentation",
@@ -10696,7 +10780,8 @@
       "description": "Description",
       "returns": "Returns",
       "typePrefix": "Type:"
-    }
+    },
+    "pick": "Pick a document on the left"
   },
   "legal": {
     "privacyPolicy": "Privacy Policy",
@@ -11642,7 +11727,14 @@
       "nextButton": "Next",
       "runButton": "Run",
       "promptPlaceholder": "Enter your message… (Enter to send, Shift+Enter for newline)"
-    }
+    },
+    "subtitle": "Chat through the gateway with your connected models",
+    "system": "System prompt",
+    "compare": "Compare model (optional)",
+    "stream": "Streaming",
+    "conversation": "Conversation",
+    "load": "load…",
+    "placeholder": "Type a message…"
   },
   "miniPlayground": {
     "endpoint": "Endpoint",
@@ -14695,7 +14787,10 @@
     "voiceSpeaking": "speaking…",
     "sttFailed": "Transcription failed (check the STT model/provider)",
     "ttsFailed": "Speech synthesis failed (check the TTS model/provider)",
-    "micDenied": "Microphone unavailable or permission denied"
+    "micDenied": "Microphone unavailable or permission denied",
+    "run": "Run",
+    "output": "Output",
+    "final": "Final"
   },
   "orchestration": {
     "title": "Orchestration",
@@ -14869,5 +14964,138 @@
     "search": "Search messages…",
     "empty": "No saved conversations",
     "pick": "Pick a conversation"
+  },
+  "tokenSaver": {
+    "title": "Token saver",
+    "subtitle": "Lightweight prompt compression before upstream calls",
+    "settings": "Compression",
+    "enabled": "Enable token saver",
+    "whitespace": "Collapse whitespace runs",
+    "dedup": "Dedup consecutive identical lines",
+    "stats": "Savings",
+    "saved": "tokens saved"
+  },
+  "costsOverview": "Costs",
+  "quota": {
+    "title": "Provider quota",
+    "subtitle": "Token caps per connection — exhausted connections are skipped by the cascade"
+  },
+  "consoleLogs": "Console",
+  "logsTimeline": "Request timeline",
+  "onboard": {
+    "title": "Welcome — let's set up",
+    "welcome": "Welcome to LLMRouter",
+    "welcomeDesc": "Route every LLM provider through one API key with automatic fallback.",
+    "next": "Next",
+    "provider": "Add your first provider",
+    "skip": "Skip",
+    "apikey": "Create an API key",
+    "done": "All set",
+    "doneDesc": "Point your apps at /v1 with your new key.",
+    "finish": "Go to dashboard"
+  },
+  "inspector": {
+    "title": "Traffic inspector",
+    "subtitle": "Forward-proxy flows — send absolute-URI requests through this server to capture them",
+    "capture": "Capture",
+    "clear": "Clear",
+    "ca": "Download CA cert",
+    "relay": "Relay"
+  },
+  "extras": {
+    "scan": "Scan local providers",
+    "chaosHint": "Fault injection applies to gateway requests",
+    "none": "Nothing here yet — this page is reserved by the spec."
+  },
+  "keys": {
+    "title": "API keys",
+    "subtitle": "Keys for gateway authentication (Bearer / x-api-key)",
+    "new": "New key",
+    "name": "Name",
+    "key": "Key",
+    "status": "Status",
+    "created": "Created",
+    "empty": "No API keys — create one to start using the gateway"
+  },
+  "changelog": {
+    "title": "Changelog"
+  },
+  "apiEndpoints": {
+    "title": "API endpoints",
+    "subtitle": "Every route this router exposes",
+    "desc": "Description"
+  },
+  "placeholder": {
+    "message": "This section is planned in a later spec — see .specs/ in the repository."
+  },
+  "services": {
+    "title": "Embedded services",
+    "subtitle": "Catalog entries that expose extra service kinds (embeddings, TTS, search, images…)",
+    "kinds": "Service kinds",
+    "open": "Open",
+    "empty": "No embedded services"
+  },
+  "status": {
+    "title": "Status",
+    "status": "Status",
+    "version": "Version",
+    "uptime": "Uptime",
+    "providers": "Active connections"
+  },
+  "mcp": {
+    "title": "MCP",
+    "subtitle": "Mount this router as an MCP server and register external MCP servers",
+    "endpoint": "Router as MCP server",
+    "add": "Register external server"
+  },
+  "pxpipe": {
+    "title": "pxpipe",
+    "subtitle": "Media pipeline — provider connections per service kind",
+    "connections": "connections",
+    "empty": "No connections declare this media kind — set data.mediaKinds on the connection."
+  },
+  "tokens": {
+    "status": "Status",
+    "title": "OAuth tokens",
+    "subtitle": "OAuth connections — start flows, monitor expiry, refresh",
+    "start": "Start OAuth",
+    "connect": "Connect",
+    "code": "Code",
+    "check": "Check",
+    "env": "OAuth env vars",
+    "envHint": "Client credentials resolve from environment variables — set these before starting a flow.",
+    "refresh": "Refresh",
+    "empty": "No OAuth connections yet",
+    "waiting": "Waiting for authorization…"
+  },
+  "proxyPools": {
+    "title": "Proxy pools",
+    "subtitle": "Egress HTTP/SOCKS5 proxies — assign a pool to a connection to route its upstream traffic"
+  },
+  "models": {
+    "title": "Models & Combos",
+    "subtitle": "All models reachable through your connections",
+    "search": "Search models…",
+    "fetchLive": "Fetch live",
+    "model": "Model",
+    "context": "Context",
+    "capabilities": "Capabilities",
+    "empty": "No models — add a provider connection first"
+  },
+  "login": {
+    "subtitle": "Sign in to your router",
+    "firstRun": "First run — set your admin password.",
+    "password": "Password",
+    "confirm": "Confirm password"
+  },
+  "a2a": {
+    "title": "A2A agents",
+    "subtitle": "Agent-to-Agent protocol — this router's agent card and task endpoint",
+    "card": "Agent card",
+    "send": "Send task",
+    "submit": "Submit"
+  },
+  "error": {
+    "home": "Back home"
   }
 }

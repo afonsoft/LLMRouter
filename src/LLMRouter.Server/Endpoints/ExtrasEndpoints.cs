@@ -56,8 +56,43 @@ public static class ExtrasEndpoints
                 catch { }
                 return new { c.Id, c.Provider, c.IsActive, isFree, cooldownUntil };
             }).Where(x => x.isFree).ToList();
-            var healthy = free.Count(x => x.IsActive && (x.cooldownUntil is null || x.cooldownUntil < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-            return Results.Json(new { providers = free, total = free.Count, healthy }, JsonOpts);
+            // SPEC-029: rank by real health — breaker state, cooldown, recent
+            // latency/errors from usageHistory — not just the free flag.
+            var stats = await db.UsageHistory
+                .Where(u => free.Select(f => f.Id).Contains(u.ConnectionId ?? ""))
+                .GroupBy(u => u.ConnectionId)
+                .Select(g => new
+                {
+                    conn = g.Key,
+                    avgLatency = g.Average(u => (double)u.LatencyMs),
+                    errors = g.Count(u => u.Status != "ok" && u.Status != "200" && u.Status != null),
+                    total = g.Count(),
+                }).ToListAsync();
+            var ranked = free.Select(f =>
+            {
+                var st = stats.FirstOrDefault(x => x.conn == f.Id);
+                var breaker = Core.Resilience.ProviderBreaker.GetState(f.Provider);
+                var cooling = Core.Resilience.CooldownTracker.Remaining(f.Id);
+                var errRate = st is { total: > 0 } ? (double)st.errors / st.total : 0;
+                var score = 100.0
+                    - (breaker.ToString() == "Open" ? 60 : breaker.ToString() == "HalfOpen" ? 30 : 0)
+                    - Math.Min(30, cooling.TotalSeconds / 2)
+                    - errRate * 30
+                    - Math.Min(10, (st?.avgLatency ?? 0) / 2000);
+                if (!f.IsActive) score -= 50;
+                return new
+                {
+                    f.Id, f.Provider, f.IsActive, f.isFree, f.cooldownUntil,
+                    breaker = breaker.ToString(),
+                    cooldownSec = (int)cooling.TotalSeconds,
+                    avgLatencyMs = (long)(st?.avgLatency ?? 0),
+                    errorRate = Math.Round(errRate, 3),
+                    score = Math.Round(score, 1),
+                };
+            }).OrderByDescending(x => x.score).ToList();
+            var healthy = ranked.Count(x => x.IsActive && x.breaker != "Open"
+                && (x.cooldownUntil is null || x.cooldownUntil < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+            return Results.Json(new { providers = ranked, total = ranked.Count, healthy }, JsonOpts);
         });
 
         // ---- gamification + leaderboard ----

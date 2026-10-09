@@ -148,6 +148,36 @@ public static class BuiltinJobs
         }
     }
 
+    // SPEC-042: run enabled log-export destinations whose config.scheduleMinutes
+    // elapsed since LastRunAt.
+    public sealed class LogExportJob : IJob
+    {
+        public string Id => "log-export";
+        public string Name => "Scheduled log exports";
+        public TimeSpan Interval => TimeSpan.FromMinutes(5);
+        public bool EnabledByDefault => true;
+
+        public async Task<string> RunAsync(IServiceProvider services, CancellationToken ct)
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
+            var hf = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+            var now = DateTime.UtcNow;
+            var ran = 0; var failed = 0;
+            foreach (var d in await db.LogExportDestinations.Where(x => x.Enabled).ToListAsync(ct))
+            {
+                var cfg = JsonDocument.Parse(d.Config).RootElement;
+                if (!cfg.TryGetProperty("scheduleMinutes", out var sm) || !sm.TryGetInt32(out var mins) || mins <= 0)
+                    continue;
+                var last = DateTime.TryParse(d.LastRunAt, out var l) ? l : DateTime.MinValue;
+                if (now - last < TimeSpan.FromMinutes(mins)) continue;
+                await Logging.LogExporter.RunAsync(db, d, hf, ct);
+                if (d.LastRunStatus == "ok") ran++; else failed++;
+            }
+            return $"ran {ran} ok, {failed} failed";
+        }
+    }
+
     // Writes a portable JSON export (SPEC-037 format) to
     // {dbDir}/backups/llmrouter-<ts>.json, keeping the last 14.
     public sealed class DbBackupJob : IJob

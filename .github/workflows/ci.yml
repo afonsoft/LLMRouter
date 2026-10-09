@@ -45,3 +45,30 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config -q
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Publish server
+        run: dotnet publish src/LLMRouter.Server -c Release -o publish
+      - name: Start server
+        run: |
+          cd publish && ASPNETCORE_URLS=http://localhost:20128 nohup dotnet LLMRouter.Server.dll > $RUNNER_TEMP/server.log 2>&1 &
+          echo $! > $RUNNER_TEMP/server.pid
+          for i in $(seq 1 60); do curl -sf http://localhost:20128/api/version && break || sleep 2; done
+      - name: Playwright smoke
+        run: |
+          cd e2e
+          npm ci --no-audit --no-fund || npm i --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          BASE_URL=http://localhost:20128 node smoke.mjs
+      - name: Server log on failure
+        if: failure()
+        run: cat $RUNNER_TEMP/server.log || true

@@ -24,6 +24,9 @@ public class LlmRouterDbContext : DbContext
     public DbSet<JobRun> JobRuns => Set<JobRun>();
     public DbSet<RateLimit> RateLimits => Set<RateLimit>();
     public DbSet<FileEntry> Files => Set<FileEntry>();
+    public DbSet<KeyGroup> KeyGroups => Set<KeyGroup>();
+    public DbSet<QuotaPlan> QuotaPlans => Set<QuotaPlan>();
+    public DbSet<QuotaSchedule> QuotaSchedules => Set<QuotaSchedule>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -72,6 +75,9 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS jobRuns (Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, JobId TEXT NOT NULL, StartedAt TEXT NOT NULL, DurationMs INTEGER NOT NULL, Status TEXT NOT NULL, Output TEXT NULL)""",
                 """CREATE TABLE IF NOT EXISTS rateLimits (Id TEXT NOT NULL PRIMARY KEY, Scope TEXT NOT NULL, ScopeValue TEXT NOT NULL, Rpm INTEGER NOT NULL DEFAULT 0, Tpm INTEGER NOT NULL DEFAULT 0, Burst INTEGER NOT NULL DEFAULT 0, Enabled INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS files (Id TEXT NOT NULL PRIMARY KEY, Filename TEXT NOT NULL, Bytes INTEGER NOT NULL DEFAULT 0, Purpose TEXT NOT NULL, Mime TEXT NOT NULL, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS keyGroups (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, KeysJson TEXT NOT NULL DEFAULT '[]', CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS quotaPlans (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, LimitsJson TEXT NOT NULL DEFAULT '{}', Price REAL, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS quotaSchedules (Id TEXT NOT NULL PRIMARY KEY, Target TEXT NOT NULL DEFAULT 'all', Window TEXT NOT NULL DEFAULT 'daily', LastRunAt TEXT, CreatedAt TEXT NOT NULL)""",
             })
             {
                 cmd.CommandText = ddl;

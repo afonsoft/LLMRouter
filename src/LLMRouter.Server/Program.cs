@@ -118,6 +118,7 @@ app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);
 CliEndpoints.Map(app);
 AnalyticsEndpoints.Map(app);
+DbBackupEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

@@ -1,0 +1,50 @@
+@inject Api Api
+@inject Loc Loc
+
+<div class="card card-p" style="max-width:640px">
+    <h3 class="bold" style="margin:0 0 8px">@Loc.T("backup.title", "Database backup")</h3>
+    <p class="sm muted" style="margin:0 0 16px">@Loc.T("backup.desc", "Export the full SQLite database or restore from a JSON export. Import replaces all current data.")</p>
+
+    <div class="flex gap-2" style="flex-wrap:wrap">
+        <a class="btn" href="/api/db-backups/export"><span class="material-symbols-outlined">database</span>@Loc.T("backup.exportDb", "Export .db file")</a>
+        <a class="btn" href="/api/db-backups/export-all"><span class="material-symbols-outlined">download</span>@Loc.T("backup.exportJson", "Export JSON")</a>
+    </div>
+
+    <div class="mt-6">
+        <h4 class="bold" style="margin:0 0 8px">@Loc.T("backup.import", "Import JSON backup")</h4>
+        <div class="flex gap-2" style="align-items:center;flex-wrap:wrap">
+            <InputFile OnChange="Pick" accept=".json,application/json" class="input" />
+            <button class="btn btn-danger" disabled="@(_file is null || _busy)" @onclick="Import">
+                @(_busy ? "…" : Loc.T("backup.importRun", "Import (replaces data)"))
+            </button>
+        </div>
+        @if (_msg is not null)
+        {
+            <p class="sm mt-2 @(_err ? "danger" : "muted")">@_msg</p>
+        }
+    </div>
+</div>
+
+@code {
+    private IBrowserFile? _file;
+    private bool _busy, _err;
+    private string? _msg;
+
+    private void Pick(InputFileChangeEventArgs e) { _file = e.File; _msg = null; }
+
+    private async Task Import()
+    {
+        if (_file is null) return;
+        _busy = true; _msg = null;
+        try
+        {
+            using var stream = _file.OpenReadStream(64 * 1024 * 1024);
+            var resp = await Api.Raw.PostAsync("api/db-backups/import", new StreamContent(stream));
+            var body = await resp.Content.ReadAsStringAsync();
+            _err = !resp.IsSuccessStatusCode;
+            _msg = _err ? body : body;
+        }
+        catch (Exception ex) { _err = true; _msg = ex.Message; }
+        _busy = false;
+    }
+}

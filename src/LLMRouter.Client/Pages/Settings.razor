@@ -273,6 +273,10 @@ else if (Current == "sidebar")
         <p class="sm muted mt-2">@Loc.T("settings.sidebarHint", "Aplica-se na próxima navegação/recarregamento.")</p>
     </div>
 }
+else if (Current == "backup")
+{
+    <DbBackupCard />
+}
 
 @code {
     [Parameter] public string? Section { get; set; }
@@ -284,7 +288,7 @@ else if (Current == "sidebar")
         ("modality-bridge","Modality bridge"), ("routing","Routing"),
         ("resilience","Resilience"), ("advanced","Advanced"), ("security","Security"),
         ("access-tokens","Access tokens"), ("feature-flags","Feature flags"),
-        ("cache","Cache"), ("sidebar","Sidebar"),
+        ("cache","Cache"), ("sidebar","Sidebar"), ("backup","Backup"),
     ];
     private static readonly string[] Accents = ["#e54d5e", "#6366f1", "#10b981", "#f59e0b", "#0ea5e9"];
     private static readonly string[] Strategies = ["priority","round-robin","sticky-round-robin","least-used","random","cost-optimized","weighted","p2c","auto"];

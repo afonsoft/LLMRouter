@@ -344,6 +344,39 @@ public static class GatewayEndpoints
                 savedDetail = JsonSerializer.SerializeToElement(new { tokensSaved = savedTokens });
         }
 
+        // SPEC-026: context compression — settings.contextCompression {enabled,maxTokens}
+        if (sdata.ValueKind == JsonValueKind.Object
+            && sdata.TryGetProperty("contextCompression", out var ccs)
+            && ccs.ValueKind == JsonValueKind.Object
+            && ccs.TryGetProperty("enabled", out var ce) && ce.ValueKind == JsonValueKind.True)
+        {
+            var maxTok = ccs.TryGetProperty("maxTokens", out var mt) && mt.ValueKind == JsonValueKind.Number
+                ? mt.GetInt32() : 8000;
+            var cr = Core.Gateway.ContextCompressor.Apply(body, maxTok);
+            if (cr.Compressed)
+            {
+                body = cr.Body;
+                _ = Core.Extras.Extras.AuditAsync(db, "context.compress", $"{inbound}: dropped {cr.Dropped} message(s)");
+            }
+        }
+
+        // SPEC-026: enabled skills injected as system-prompt context
+        // (settings.skillsInjection.enabled — default on when skills exist)
+        var injectSkills = !(sdata.ValueKind == JsonValueKind.Object
+            && sdata.TryGetProperty("skillsInjection", out var si)
+            && si.ValueKind == JsonValueKind.Object
+            && si.TryGetProperty("enabled", out var se) && se.ValueKind == JsonValueKind.False);
+        if (injectSkills)
+        {
+            var env = ctx.RequestServices.GetService<IWebHostEnvironment>();
+            if (env is not null)
+            {
+                var skillText = await Endpoints.ToolsEndpoints.SkillPromptTextAsync(db, env);
+                if (skillText is not null)
+                    body = Core.Gateway.ContextCompressor.InjectSystem(body, skillText);
+            }
+        }
+
         var model = body.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "";
         if (inbound == "gemini" && string.IsNullOrEmpty(model))
         {

@@ -110,10 +110,10 @@ public static class ExtrasEndpoints
         g.MapGet("/memory", async (LlmRouterDbContext db, string? q) =>
         {
             var raw = (await db.Kv.FindAsync("memory", "items"))?.Value;
-            var items = raw is null ? new List<JsonElement>()
-                : JsonDocument.Parse(raw).RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
-            if (q is not null)
-                items = items.Where(x => x.ToString().Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+            var arr = raw is null ? JsonDocument.Parse("[]").RootElement
+                : JsonDocument.Parse(raw).RootElement;
+            // SPEC-026: scored/ranked search (term freq + recency) via MemorySearch
+            var items = Core.Extras.MemorySearch.Search(arr, q);
             return Results.Json(new { items }, JsonOpts);
         });
         g.MapPost("/memory", async (LlmRouterDbContext db, HttpContext ctx) =>

@@ -42,6 +42,26 @@ public static class ToolsEndpoints
         return (name, desc);
     }
 
+    /// <summary>SPEC-026: system-prompt fragment listing every enabled skill
+    /// (skills/disabled kv holds opt-outs), capped per skill.</summary>
+    public static async Task<string?> SkillPromptTextAsync(LlmRouterDbContext db, IWebHostEnvironment env)
+    {
+        var disabled = (await db.Kv.FindAsync("skills", "disabled"))?.Value;
+        var dis = disabled is null ? new HashSet<string>()
+            : JsonSerializer.Deserialize<string[]>(disabled)?.ToHashSet() ?? [];
+        var dir = SkillsDir(env);
+        var lines = new List<string>();
+        foreach (var f in Directory.EnumerateFiles(dir, "SKILL.md", SearchOption.AllDirectories))
+        {
+            var (name, desc) = ParseSkill(f);
+            if (dis.Contains(name)) continue;
+            var d = desc.Length > 160 ? desc[..160] + "…" : desc;
+            lines.Add(d.Length > 0 ? $"- {name}: {d}" : $"- {name}");
+        }
+        return lines.Count == 0 ? null
+            : "Active skills:\n" + string.Join("\n", lines);
+    }
+
     public static void MapToolsEndpoints(this WebApplication app)
     {
         var g = app.MapGroup("/api").RequireAuthorization();

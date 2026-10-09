@@ -275,10 +275,10 @@ public static class McpTools
                     await db.SaveChangesAsync();
                     return new { ok = true, count = items.Count };
                 }
-                var q2 = Arg(args, "q")?.ToLowerInvariant();
-                var hits = items.Where(i => q2 is null ||
-                    (i?["content"]?.GetValue<string>().Contains(q2, StringComparison.OrdinalIgnoreCase) ?? false));
-                return new { items = hits };
+                var q2 = Arg(args, "q");
+                var scored = LLMRouter.Core.Extras.MemorySearch.Search(
+                    JsonSerializer.SerializeToElement(items), q2);
+                return new { items = scored };
             }
             case "pools.list":
             {

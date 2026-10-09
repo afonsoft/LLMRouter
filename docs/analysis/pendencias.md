@@ -6,7 +6,7 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 
 1. **Batches nunca marcam `done`** — `POST /api/batches` enfileira e dispara Task.Run mas não persiste conclusão (comentário explícito no código). Status fica `queued` para sempre. ✅ SPEC-017
 2. **OAuth sem `clientSecretDefault`** — removido do registry por push protection; providers que dependem de secret embutido só funcionam com env vars. Falta documentar/mapear `clientIdEnv`/`clientSecretEnv` por provider. ✅ SPEC-021
-3. **i18n incompleto** — páginas usam `Loc.T`; en.json completo (190 chaves injetadas), pt-BR/es traduzidos nas chaves de maior tráfego; demais caem no fallback EN. ✅ SPEC-024/029 (parcial)
+3. **i18n** — pt-BR/es agora 100% das chaves do en.json (163/163). ✅ SPEC-024/029/032
 4. **MITM real não implementado** — só forward-proxy HTTP (absolute-URI) + CA para download. Sem CONNECT, sem interceptação TLS; página `pxpipe` é alias do inspector, não pipeline de mídia. ✅ SPEC-028
 5. **Estratégias de combo** — implementado: priority/fallback, round-robin, sticky. Faltam ~17 do upstream (weighted, p2c, least-used, cost-optimized, reset-aware, headroom, quota-weighted, lkgp, context-optimized, cache-optimized, context-relay, fusion, pipeline, auto 16-factor). ✅ SPEC-020
 6. **MCP limitado** — `tools/list` expõe apenas combos como `chat__*`. Upstream tem ~45 ferramentas canônicas (providers, keys, usage, settings, memory, skills, pools…) + transportes stdio/SSE. Faltam também os módulos memory/skill/GitHub/gamification/plugin. ✅ SPEC-025
@@ -26,8 +26,8 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 
 ## Baixa prioridade (nice-to-have / fora de escopo anotado)
 
-17. **Plugins/search-tools** — rotas existem, telas são placeholder. ✅ SPEC-025 (parcial)
-18. **Local corpus, RTK, Notion/Obsidian MCP** — módulos upstream não portados. ✅ SPEC-025 (stub localCorpus; RTK/Notion/Obsidian não portados)
+17. **Plugins/search-tools** — plugins com hooks reais no gateway (onRequest/onResponse) + search-tools executáveis via MCP/CRUD/UI. ✅ SPEC-025/031
+18. **Local corpus** — busca real ranqueada (memory+docs+skills) via MCP. Restam RTK/Notion/Obsidian MCP não portados. ✅ SPEC-032 (parcial)
 19. **Electron desktop** — fora de escopo (anotado na spec).
 20. **Context compression/token-saver** — config existe; falta pipeline real de compressão de contexto no chat. ✅ SPEC-026
 21. **Chaos** — só errorPct+latency global; upstream injeta por rota/modelo. ✅ SPEC-023
@@ -39,5 +39,5 @@ Gerado após o merge das 16 specs. Classificado por impacto.
 ## Bugs/estruturais conhecidos
 
 - `kv` como storage genérico cresce sem índice por item (memory/webhooks/batches são JSON arrays num único row — risco de contention/limite sob uso pesado).
-- `ForwardProxy` ignora `Proxy-Authorization` (sem autenticação no modo proxy).
+- ~~`ForwardProxy` ignora `Proxy-Authorization`~~ — já exige Proxy-Authorization quando há apiKeys (SPEC-023).
 - Algumas páginas novas ainda podem ter armadilhas Razor latentes (CS8978 em binds com nullables) — não cobertas por build-check de render.

@@ -36,7 +36,7 @@ public static class GatewayEndpoints
             // non-chat passthrough: same resolution + cascade, no translation
             foreach (var p in new[] { "/embeddings", "/images/generations", "/audio/speech",
                 "/audio/transcriptions", "/audio/voices", "/search", "/web/fetch",
-                "/moderations", "/files", "/batches" })
+                "/moderations" })
                 g.MapMethods(p, ["POST", "GET"], (HttpContext c) => Passthrough(c));
             g.MapMethods("/{*path}", ["OPTIONS"], () => Results.Ok());
         }

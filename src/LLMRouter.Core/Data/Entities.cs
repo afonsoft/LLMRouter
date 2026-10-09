@@ -224,3 +224,15 @@ public class RateLimit
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
 }
+
+[Table("files")]
+public class FileEntry
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Filename { get; set; } = "";
+    public long Bytes { get; set; }
+    public string Purpose { get; set; } = "";
+    public string Mime { get; set; } = "";
+    public string CreatedAt { get; set; } = "";
+}

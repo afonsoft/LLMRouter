@@ -57,6 +57,7 @@ builder.Services.AddSingleton<ModelResolver>();
 builder.Services.AddSingleton<RateLimiter>();
 builder.Services.AddScoped<GatewayEngine>();
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient("batches");
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(10);
@@ -131,6 +132,7 @@ AnalyticsEndpoints.Map(app);
 DbBackupEndpoints.Map(app);
 JobsEndpoints.Map(app);
 RateLimitEndpoints.Map(app);
+FileEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

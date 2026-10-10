@@ -28,6 +28,9 @@ public abstract class WebAppTestBase : IAsyncLifetime
     /// <summary>Permite subclasses customizarem a config do host antes do build.</summary>
     protected virtual void ConfigureHost(WebHostBuilderContext ctx, IConfigurationBuilder cfg) { }
 
+    /// <summary>Permite subclasses customizarem serviços antes do build (ex: HttpClient stubs).</summary>
+    protected virtual void ConfigureTestServices(IServiceCollection services) { }
+
     /// <inheritdoc/>
     public virtual Task InitializeAsync()
     {
@@ -36,7 +39,8 @@ public abstract class WebAppTestBase : IAsyncLifetime
             {
                 c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = _dbPath });
                 ConfigureHost(ctx, c);
-            }));
+            })
+            .ConfigureServices(s => ConfigureTestServices(s)));
         _client = _factory.CreateClient();
         return Task.CompletedTask;
     }

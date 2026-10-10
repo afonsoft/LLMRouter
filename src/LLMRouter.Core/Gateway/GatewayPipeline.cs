@@ -329,7 +329,7 @@ public sealed class GatewayEngine(
                 });
                 await w.SaveChangesAsync();
                 await RollupDailyOnAsync(w, provider, model, promptTokens, completionTokens);
-                await Routing.KeyQuota.CreditDailyAsync(w, apiKey, promptTokens + completionTokens);
+                await Routing.KeyQuota.CreditDailyAsync(w, apiKey, promptTokens + completionTokens, model);
 
                 var sess = await w.ChatSessions
                     .FirstOrDefaultAsync(s => s.KeyId == apiKey && s.Model == model);
@@ -398,7 +398,7 @@ public sealed class GatewayEngine(
         }
 
         // SPEC-041: credit tokens toward the key's daily quota counter
-        await Routing.KeyQuota.CreditDailyAsync(db, apiKey, promptTokens + completionTokens);
+        await Routing.KeyQuota.CreditDailyAsync(db, apiKey, promptTokens + completionTokens, model);
 
         // SPEC-073: chat session tracking — upsert per (apiKey, model)
         var sess = await db.ChatSessions

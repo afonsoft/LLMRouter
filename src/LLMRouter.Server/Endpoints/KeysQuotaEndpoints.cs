@@ -101,6 +101,7 @@ public static class KeysQuotaEndpoints
                 keyId = k.Id,
                 limits = await KeyQuota.LimitsAsync(db, k.Key),
                 dailyUsed = await KeyQuota.DailyUsedAsync(db, k.Key),
+                modelUsage = await KeyQuota.ModelUsageAsync(db, k.Key),
             }, JsonOpts);
         });
 
@@ -109,14 +110,14 @@ public static class KeysQuotaEndpoints
             var k = await db.ApiKeys.FindAsync(id);
             if (k is null) return NotFound("key");
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var doc = new Dictionary<string, int>();
-            if (b.TryGetProperty("rpm", out var r) && r.TryGetInt32(out var rpm) && rpm > 0) doc["rpm"] = rpm;
-            if (b.TryGetProperty("tpm", out var t) && t.TryGetInt32(out var tpm) && tpm > 0) doc["tpm"] = tpm;
+            var doc = new Dictionary<string, JsonElement>();
+            if (b.TryGetProperty("rpm", out var r) && r.TryGetInt32(out var rpm) && rpm > 0) doc["rpm"] = r.Clone();
+            if (b.TryGetProperty("tpm", out var t) && t.TryGetInt32(out var tpm) && tpm > 0) doc["tpm"] = t.Clone();
             if (b.TryGetProperty("dailyTokens", out var d) && d.TryGetInt64(out var dt) && dt > 0)
-            {
-                var lim = (int)Math.Min(dt, int.MaxValue);
-                doc["dailyTokens"] = lim;
-            }
+                doc["dailyTokens"] = JsonSerializer.SerializeToElement((int)Math.Min(dt, int.MaxValue));
+            // SPEC-083: optional `models` glob list scopes the daily cap (qtSd/)
+            if (b.TryGetProperty("models", out var mdls) && mdls.ValueKind == JsonValueKind.Array)
+                doc["models"] = mdls.Clone();
             var row = await db.Kv.FindAsync(QuotaScope, k.Key);
             if (row is null) db.Kv.Add(new KvEntry { Scope = QuotaScope, Key = k.Key, Value = JsonSerializer.Serialize(doc) });
             else row.Value = JsonSerializer.Serialize(doc);
@@ -125,9 +126,9 @@ public static class KeysQuotaEndpoints
             // key with ones derived from the limits (rpm -> Rpm, tpm -> Tpm)
             db.RateLimits.RemoveRange(db.RateLimits.Where(x => x.Scope == "apiKey" && x.ScopeValue == k.Key));
             if (doc.TryGetValue("rpm", out var r2))
-                db.RateLimits.Add(new RateLimit { Id = Guid.NewGuid().ToString("N")[..12], Scope = "apiKey", ScopeValue = k.Key, Rpm = r2, Enabled = true, CreatedAt = Now(), UpdatedAt = Now() });
+                db.RateLimits.Add(new RateLimit { Id = Guid.NewGuid().ToString("N")[..12], Scope = "apiKey", ScopeValue = k.Key, Rpm = r2.GetInt32(), Enabled = true, CreatedAt = Now(), UpdatedAt = Now() });
             if (doc.TryGetValue("tpm", out var t2))
-                db.RateLimits.Add(new RateLimit { Id = Guid.NewGuid().ToString("N")[..12], Scope = "apiKey", ScopeValue = k.Key, Tpm = t2, Enabled = true, CreatedAt = Now(), UpdatedAt = Now() });
+                db.RateLimits.Add(new RateLimit { Id = Guid.NewGuid().ToString("N")[..12], Scope = "apiKey", ScopeValue = k.Key, Tpm = t2.GetInt32(), Enabled = true, CreatedAt = Now(), UpdatedAt = Now() });
             await db.SaveChangesAsync();
             await Core.Extras.Extras.AuditAsync(db, "apikey.usage_limits", k.Name ?? k.Id);
             return Results.Json(new { limits = doc }, JsonOpts);

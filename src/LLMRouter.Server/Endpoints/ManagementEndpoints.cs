@@ -490,7 +490,14 @@ public static class ManagementEndpoints
         g.MapGet("/model-combo-mappings", async (LlmRouterDbContext db) =>
         {
             var rows = await db.Kv.Where(k => k.Scope == "modelComboMappings").ToListAsync();
-            return Results.Json(new { mappings = rows.ToDictionary(k => k.Key, k => k.Value) }, JsonOpts);
+            var entries = Core.Routing.ComboMappings.Parse(rows);
+            // SPEC-083: entries carry glob/priority/enabled; `mappings` stays for back-compat
+            return Results.Json(new
+            {
+                mappings = entries.ToDictionary(e => e.Pattern, e => e.Combo),
+                entries = entries.OrderByDescending(e => e.Priority)
+                    .Select(e => new { model = e.Pattern, combo = e.Combo, priority = e.Priority, enabled = e.Enabled }),
+            }, JsonOpts);
         });
 
         g.MapPost("/model-combo-mappings", async (HttpContext ctx, LlmRouterDbContext db) =>
@@ -498,11 +505,15 @@ public static class ManagementEndpoints
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             var model = b.GetProperty("model").GetString()!;
             var combo = b.GetProperty("combo").GetString()!;
+            var priority = b.TryGetProperty("priority", out var pr) && pr.ValueKind == JsonValueKind.Number
+                ? pr.GetInt32() : 0;
+            var enabled = !b.TryGetProperty("enabled", out var en) || en.ValueKind != JsonValueKind.False;
+            var value = Core.Routing.ComboMappings.Encode(combo, priority, enabled);
             var existing = await db.Kv.FindAsync("modelComboMappings", model);
             if (existing is null)
-                db.Kv.Add(new KvEntry { Scope = "modelComboMappings", Key = model, Value = combo });
+                db.Kv.Add(new KvEntry { Scope = "modelComboMappings", Key = model, Value = value });
             else
-                existing.Value = combo;
+                existing.Value = value;
             await db.SaveChangesAsync();
             return Results.Json(new { success = true });
         });

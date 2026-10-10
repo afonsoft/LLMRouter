@@ -169,7 +169,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-041: per-key daily token cap
-        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey))
+        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey, model))
         {
             ctx.Response.StatusCode = 429;
             await WriteError(ctx, "openai", "rate_limit", "Daily token quota exhausted for this API key.");
@@ -488,9 +488,19 @@ public static class GatewayEndpoints
             {
                 var allow = (keyRow.AccessAllow ?? "")
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var ok = allow.Any(a => a.EndsWith('*')
-                    ? model.StartsWith(a[..^1], StringComparison.OrdinalIgnoreCase)
-                    : string.Equals(a, model, StringComparison.OrdinalIgnoreCase));
+                // SPEC-083: allow-list accepts model ids, globs, AND combo names
+                // (bare or "combo:"-prefixed) — a mapped combo grants access.
+                var mappedCombo = await Core.Gateway.HotReads.ComboMappingAsync(db, model);
+                var ok = allow.Any(a =>
+                {
+                    var name = a.StartsWith("combo:", StringComparison.OrdinalIgnoreCase) ? a[6..] : a;
+                    if (mappedCombo is not null && !name.Contains('/') && !name.Contains('*')
+                        && string.Equals(name, mappedCombo, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    return a.EndsWith('*')
+                        ? model.StartsWith(a[..^1], StringComparison.OrdinalIgnoreCase)
+                        : string.Equals(a, model, StringComparison.OrdinalIgnoreCase);
+                });
                 if (!ok)
                 {
                     ctx.Response.StatusCode = 403;
@@ -519,7 +529,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-041: per-key daily token cap
-        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey))
+        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey, model))
         {
             ctx.Response.StatusCode = 429;
             await WriteError(ctx, inbound, "rate_limit", "Daily token quota exhausted for this API key.");

@@ -155,6 +155,7 @@ public static class ModelRegistryEndpoints
 
             var results = new List<object>();
             var synced = 0;
+            var okProviders = new List<string>();
             foreach (var pid in providerIds)
             {
                 var p = r.GetProvider(pid) ?? await NodeResolver.ResolveAsync(db, pid, ct);
@@ -177,6 +178,7 @@ public static class ModelRegistryEndpoints
                     }
                     var count = await UpsertSyncedAsync(db, pid, ids);
                     synced++;
+                    okProviders.Add(pid);
                     results.Add(new { provider = pid, ok = true, count });
                 }
                 catch (Exception ex)
@@ -186,7 +188,30 @@ public static class ModelRegistryEndpoints
             }
             await db.SaveChangesAsync(ct);
             await Core.Extras.Extras.AuditAsync(db, "models.sync", $"{synced}/{providerIds.Count} providers");
-            return Results.Json(new { synced, total = providerIds.Count, results }, JsonOpts);
+
+            // SPEC-076: flag combo steps pinned to models a successful sync
+            // dropped; opt-in auto-prune removes them but never empties a combo.
+            // Detection must not fail the sync, so errors are swallowed.
+            var staleModelRefs = new List<StaleComboRefs.Ref>();
+            var prunedModelRefs = new List<StaleComboRefs.Ref>();
+            try
+            {
+                foreach (var pid in okProviders)
+                    staleModelRefs.AddRange(await StaleComboRefs.FindAsync(db, pid, ct));
+                var sdata = await HotReads.SettingsDataAsync(db);
+                var autoPrune = sdata.ValueKind == JsonValueKind.Object
+                    && sdata.TryGetProperty(StaleComboRefs.AutoPruneSetting, out var ap)
+                    && ap.ValueKind == JsonValueKind.True;
+                if (autoPrune && staleModelRefs.Count > 0)
+                {
+                    prunedModelRefs = await StaleComboRefs.PruneAsync(db, staleModelRefs, ct);
+                    foreach (var rf in prunedModelRefs)
+                        await Core.Extras.Extras.AuditAsync(db, "combo.stale_model_ref.pruned", rf.ComboName);
+                }
+            }
+            catch { }
+
+            return Results.Json(new { synced, total = providerIds.Count, results, staleModelRefs, prunedModelRefs }, JsonOpts);
         });
 
         // ---- free provider rankings ----

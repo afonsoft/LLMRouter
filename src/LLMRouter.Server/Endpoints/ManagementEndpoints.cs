@@ -705,21 +705,36 @@ public static class ManagementEndpoints
             var conns = await db.ProviderConnections.ToListAsync();
             var cooling = Core.Resilience.CooldownTracker.Snapshot()
                 .ToDictionary(x => x.ConnectionId, x => x);
-            return Results.Json(new
+            var now = DateTime.UtcNow;
+            var list = new List<object>(conns.Count);
+            foreach (var c in conns)
             {
-                connections = conns.Select(c =>
+                var data = JsonDocument.Parse(c.Data).RootElement;
+                cooling.TryGetValue(c.Id, out var cd);
+                var testStatus = data.TryGetProperty("testStatus", out var ts) ? ts.GetString() : null;
+                var lastTestAt = data.TryGetProperty("lastTestAt", out var lt) ? lt.GetString() : null;
+                // SPEC-076: typed availability — a live exhausted quota is fresh
+                // terminal evidence (credits_exhausted); anything else classifies
+                // from the stored test state + cooldown (upstream #15918).
+                var quota = await Core.Routing.QuotaTracker.StateAsync(db, c);
+                var rem = Core.Resilience.CooldownTracker.Remaining(c.Id);
+                var availability = Core.Resilience.ProviderAvailability.Resolve(
+                    new Core.Resilience.ProviderAvailability.Input(
+                        IsActive: c.IsActive,
+                        TestStatus: quota.Exhausted ? "credits_exhausted" : testStatus,
+                        LastErrorType: testStatus is not null and not "ok" ? testStatus : null,
+                        RateLimitedUntil: rem > TimeSpan.Zero ? (now + rem).ToString("o") : null,
+                        LastErrorAt: quota.Exhausted ? now.ToString("o") : lastTestAt));
+                list.Add(new
                 {
-                    var data = JsonDocument.Parse(c.Data).RootElement;
-                    cooling.TryGetValue(c.Id, out var cd);
-                    return new
-                    {
-                        c.Id, c.Provider, c.Name, c.IsActive,
-                        testStatus = data.TryGetProperty("testStatus", out var ts) ? ts.GetString() : null,
-                        lastError = data.TryGetProperty("lastError", out var le) ? le.GetString() : null,
-                        cooldown = cd,
-                    };
-                }),
-            }, JsonOpts);
+                    c.Id, c.Provider, c.Name, c.IsActive,
+                    testStatus,
+                    lastError = data.TryGetProperty("lastError", out var le) ? le.GetString() : null,
+                    cooldown = cd,
+                    availability,
+                });
+            }
+            return Results.Json(new { connections = list }, JsonOpts);
         });
 
         // SPEC-006: runtime info

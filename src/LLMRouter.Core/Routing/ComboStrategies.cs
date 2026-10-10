@@ -177,22 +177,22 @@ public static class ComboStrategies
             case "quota-weighted":
             case "headroom":
             {
-                var remaining = await RemainingQuotaAsync(db, models, ct);
+                var remaining = await RemainingQuotaScoreAsync(db, models, ct);
                 if (k == "headroom")
-                    return models.OrderByDescending(m => remaining.GetValueOrDefault(m)).ToList();
-                // quota-weighted: weighted-random head by remaining quota
+                    return models.OrderByDescending(m => remaining.GetValueOrDefault(m, 1)).ToList();
+                // quota-weighted: weighted-random head by remaining quota fraction
                 var totalQ = remaining.Values.Sum();
                 if (totalQ <= 0) return models;
-                var rollQ = (long)(Rng.NextDouble() * totalQ);
+                var rollQ = Rng.NextDouble() * totalQ;
                 string headQ = models[0];
-                long accQ = 0;
+                double accQ = 0;
                 foreach (var m in models)
                 {
-                    accQ += remaining.GetValueOrDefault(m);
+                    accQ += remaining.GetValueOrDefault(m, 1);
                     if (rollQ < accQ) { headQ = m; break; }
                 }
                 return new[] { headQ }
-                    .Concat(models.Where(m => m != headQ).OrderByDescending(m => remaining.GetValueOrDefault(m)))
+                    .Concat(models.Where(m => m != headQ).OrderByDescending(m => remaining.GetValueOrDefault(m, 1)))
                     .ToList();
             }
             case "reset-aware":
@@ -265,27 +265,31 @@ public static class ComboStrategies
             r => new UsageStats(r.Requests, r.AvgCost, r.AvgLatency));
     }
 
-    /// <summary>Remaining daily quota across each model's active connections.</summary>
-    private static async Task<Dictionary<string, long>> RemainingQuotaAsync(
+    /// <summary>
+    /// Remaining-quota score per model (0..1): the minimum over each active
+    /// connection's configured-limit fraction and the provider's quota-window
+    /// fraction — scoped to the requested model's own provider windows (upstream
+    /// #16054). A model with no constraints scores 1.
+    /// </summary>
+    private static async Task<Dictionary<string, double>> RemainingQuotaScoreAsync(
         LlmRouterDbContext db, List<string> models, CancellationToken ct)
     {
-        var result = new Dictionary<string, long>();
+        var result = new Dictionary<string, double>();
         var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync(ct);
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
         foreach (var m in models)
         {
             var slash = m.IndexOf('/');
             var providerId = slash > 0 ? m[..slash] : m;
-            long remaining = 0;
-            var unlimited = false;
+            var score = await QuotaWindows.RemainingFractionAsync(db, providerId, ct);
             foreach (var c in conns.Where(c => c.Provider == providerId))
             {
                 var st = await QuotaTracker.StateAsync(db, c);
-                if (st.DailyLimit is null && st.MonthlyLimit is null) { unlimited = true; continue; }
-                if (st.DailyLimit is { } d) remaining += Math.Max(0, d - st.DailyUsed);
-                if (st.MonthlyLimit is { } mo) remaining += Math.Max(0, mo - st.MonthlyUsed);
+                if (st.DailyLimit is { } d && d > 0)
+                    score = Math.Min(score, Math.Max(0, (double)(d - st.DailyUsed) / d));
+                if (st.MonthlyLimit is { } mo && mo > 0)
+                    score = Math.Min(score, Math.Max(0, (double)(mo - st.MonthlyUsed) / mo));
             }
-            result[m] = unlimited && remaining == 0 ? long.MaxValue / 4 : remaining;
+            result[m] = score;
         }
         return result;
     }

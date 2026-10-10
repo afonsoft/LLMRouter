@@ -45,19 +45,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var ks = await Api.GetAsync("api/combos/auto/strategies");
-        if (ks.ValueKind == JsonValueKind.Object && ks.TryGetProperty("strategies", out var arr))
-            _strategies = arr.EnumerateArray().Select(x => x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : x.GetString() ?? "").Where(s => s.Length > 0).ToList();
-        else if (ks.ValueKind == JsonValueKind.Array)
-            _strategies = ks.EnumerateArray().Select(x => x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "").Where(s => s.Length > 0).ToList();
-        _pool = await Api.GetAsync("api/combos/auto/pool");
-        if (_pool.ValueKind == JsonValueKind.Object && _pool.TryGetProperty("pool", out var pa)) _pool = pa;
+        var ks = await Api.GetAsync("api/combos/auto");
+        if (ks.ValueKind == JsonValueKind.Object && ks.TryGetProperty("combos", out var arr))
+            _strategies = arr.EnumerateArray().Select(x => x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "").Where(s => s.Length > 0).ToList();
+        _pool = await Api.GetAsync("api/combos/auto/pool?name=auto/best");
+        if (_pool.ValueKind == JsonValueKind.Object && _pool.TryGetProperty("candidates", out var pa)) _pool = pa;
         if (_strategies.Count > 0) await Select(_strategies[0]);
     }
 
     private async Task Select(string s)
     {
         _sel = s;
-        _preview = await Api.GetAsync($"api/combos/auto/{Uri.EscapeDataString(s)}");
+        _preview = await Api.GetAsync($"api/combos/auto/pool?name={Uri.EscapeDataString(s)}");
     }
 }

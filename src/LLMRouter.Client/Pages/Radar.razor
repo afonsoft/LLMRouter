@@ -70,8 +70,8 @@
     private async Task Load(string t)
     {
         _tab = t; _items = default;
-        var path = t is "combos" or "setup" ? t == "setup" ? "settings" : "combos" : t;
-        try { _items = await Api.GetAsync($"api/radar/{path}"); } catch (Exception ex) { _msg = ex.Message; }
+        var path = t is "combos" or "setup" ? t == "setup" ? "settings" : "combos" : t == "intel" ? "intels" : t;
+        try { _items = await Api.GetAsync($"api/radar/{path}"); _msg = null; } catch (Exception ex) { _items = new JsonElement(); _msg = ex.Message; }
     }
 
     private async Task SyncAll()

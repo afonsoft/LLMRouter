@@ -65,6 +65,12 @@ public static class InspectorEndpoints
         });
 
         // Self-signed CA for HTTPS interception (install to trust)
+        g.MapGet("/mitm/status", () => Results.Json(new
+        {
+            enabled = Environment.GetEnvironmentVariable("LLMROUTER_MITM") == "1",
+            ca = "/api/mitm/ca",
+        }, JsonOpts));
+
         g.MapGet("/mitm/ca", () =>
         {
             var ca = ForwardProxy.GetOrCreateCa();

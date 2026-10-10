@@ -52,6 +52,10 @@
         : Enumerable.Empty<JsonElement>();
     private static string? P(JsonElement e, string k) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) ? v.GetString() : null;
-    private static string Fmt(JsonElement e) =>
-        e.ValueKind == JsonValueKind.Undefined ? "—" : JsonSerializer.Serialize(e, new JsonSerializerOptions { WriteIndented = true })[..Math.Min(3000, JsonSerializer.Serialize(e).Length + 8)];
+    private static string Fmt(JsonElement e)
+    {
+        if (e.ValueKind == JsonValueKind.Undefined) return "—";
+        var s = JsonSerializer.Serialize(e, new JsonSerializerOptions { WriteIndented = true });
+        return s[..Math.Min(3000, s.Length)];
+    }
 }

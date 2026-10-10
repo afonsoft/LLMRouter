@@ -7,7 +7,7 @@ namespace LLMRouter.Tests;
 /// <summary>SPEC-067: todo link da sidebar resolve p/ rota @page não-placeholder.</summary>
 public partial class Spec067NavSweepTests
 {
-    private static string RepoRoot()
+    internal static string RepoRoot()
     {
         var d = new DirectoryInfo(AppContext.BaseDirectory);
         while (d is not null && !Directory.Exists(Path.Combine(d.FullName, ".specs"))) d = d.Parent;
@@ -48,4 +48,17 @@ public partial class Spec067NavSweepTests
 
     [GeneratedRegex("\"(/[a-z0-9/{}-]+)\"")]
     private static partial Regex UrlRe();
+}
+
+public sealed class Spec067RouteDupTests : WebAppTestBase
+{
+    [Fact]
+    public void NenhumaRotaDeveSerDuplicada()
+    {
+        var dir = Path.Combine(Spec067NavSweepTests.RepoRoot(), "src", "LLMRouter.Client", "Pages");
+        var dups = Directory.GetFiles(dir, "*.razor", SearchOption.AllDirectories)
+            .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(f), "@page\\s+\"([^\"]+)\"").Select(m => m.Groups[1].Value))
+            .GroupBy(r => r).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        Xunit.Assert.True(dups.Count == 0, "rotas duplicadas: " + string.Join(", ", dups));
+    }
 }

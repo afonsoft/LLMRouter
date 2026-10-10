@@ -8,10 +8,16 @@
         <h1 class="page-title">@Loc.T("providers.title", "Providers")</h1>
         <p class="page-desc">@Loc.T("providers.subtitle", "Provider catalog — pick a provider to manage connections")</p>
     </div>
-    <button class="btn btn-primary" @onclick="() => _nodeModal = true">
-        <span class="material-symbols-outlined" style="font-size:17px">add</span>
-        @Loc.T("providers.customNode", "Custom endpoint")
-    </button>
+    <div class="flex gap-2">
+        <button class="btn" @onclick="OpenBulk">
+            <span class="material-symbols-outlined" style="font-size:17px">upload</span>
+            @Loc.T("providers.bulkImport", "Bulk import")
+        </button>
+        <button class="btn btn-primary" @onclick="() => _nodeModal = true">
+            <span class="material-symbols-outlined" style="font-size:17px">add</span>
+            @Loc.T("providers.customNode", "Custom endpoint")
+        </button>
+    </div>
 </div>
 
 <div class="mt-4 flex gap-2" style="max-width:440px">
@@ -115,15 +121,64 @@
     </div>
 }
 
+@if (_bulkModal)
+{
+    <div class="modal-back" @onclick="CloseBulk">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-head"><span class="modal-title">@Loc.T("providers.bulkImport", "Bulk import")</span>
+                <button class="icon-btn" @onclick="CloseBulk"><span class="material-symbols-outlined" style="font-size:17px">close</span></button>
+            </div>
+            <div class="modal-body">
+                <label class="lbl">@Loc.T("providers.provider", "Provider")</label>
+                <select class="input" @bind="_bulkProvider">
+                    @foreach (var p in _providers.OrderBy(p => p.Name ?? p.Id))
+                    {
+                        <option value="@p.Id">@(p.Name ?? p.Id)</option>
+                    }
+                </select>
+                <div class="mt-4">
+                    <label class="lbl">@Loc.T("providers.keysPerLine", "API keys (one per line)")</label>
+                    <textarea class="input mono" rows="6" @bind="_bulkKeys" placeholder="sk-..."></textarea>
+                </div>
+                @if (_bulkResults is not null)
+                {
+                    <div class="card card-p mt-4" style="max-height:200px;overflow:auto">
+                        @foreach (var r in _bulkResults)
+                        {
+                            <div class="flex gap-2 sm" style="align-items:center">
+                                <span class="badge @(r.Ok ? "ok" : "err")">@(r.Ok ? "ok" : "fail")</span>
+                                <span class="mono">@r.Masked</span>
+                                <span class="muted">@(r.Name ?? r.Error)</span>
+                            </div>
+                        }
+                    </div>
+                    <p class="muted sm mt-2">@_bulkCreated / @_bulkTotal @Loc.T("providers.imported", "imported")</p>
+                }
+            </div>
+            <div class="modal-foot">
+                <button class="btn" @onclick="CloseBulk">@Loc.T("common.close", "Close")</button>
+                <button class="btn btn-primary" @onclick="BulkImport" disabled="@(_bulkBusy || string.IsNullOrEmpty(_bulkProvider) || string.IsNullOrWhiteSpace(_bulkKeys))">
+                    @(_bulkBusy ? Loc.T("providers.importing", "Importing…") : Loc.T("common.import", "Import"))
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private record P(string Id, string? Name, string? Icon, string? Color, string Category, bool Backend, bool Connected, int ConnectionCount);
     private record Node(string Id, string? Name, string? Type, string? BaseUrl);
+    private record BulkResult(int Index, bool Ok, string Masked, string? Name, string? Error);
     private List<P> _providers = [];
     private List<Node> _nodes = [];
     private string _q = "";
     private string? _cat;
     private bool _nodeModal;
     private string _nodeKind = "openai-compatible-chat", _nodeName = "", _nodeBaseUrl = "", _nodeModels = "";
+    private bool _bulkModal, _bulkBusy;
+    private string _bulkProvider = "", _bulkKeys = "";
+    private List<BulkResult>? _bulkResults;
+    private int _bulkCreated, _bulkTotal;
 
     protected override async Task OnInitializedAsync()
     {
@@ -145,6 +200,38 @@
                     p.GetProperty("connectionCount").GetInt32()));
             }
         }
+    }
+
+    private void OpenBulk()
+    {
+        _bulkModal = true;
+        _bulkResults = null;
+        _bulkKeys = "";
+        if (string.IsNullOrEmpty(_bulkProvider))
+            _bulkProvider = _providers.OrderBy(p => p.Name ?? p.Id).FirstOrDefault()?.Id ?? "";
+    }
+
+    private void CloseBulk() { _bulkModal = false; _bulkResults = null; }
+
+    private async Task BulkImport()
+    {
+        _bulkBusy = true;
+        try
+        {
+            var keys = _bulkKeys.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var r = await Api.PostAsync("api/providers/bulk", new { provider = _bulkProvider, keys });
+            _bulkCreated = r.TryGetProperty("created", out var cr) ? cr.GetInt32() : 0;
+            _bulkTotal = r.TryGetProperty("total", out var t) ? t.GetInt32() : keys.Length;
+            _bulkResults = r.TryGetProperty("results", out var rs)
+                ? rs.EnumerateArray().Select(x => new BulkResult(
+                    x.GetProperty("index").GetInt32(),
+                    x.GetProperty("ok").GetBoolean(),
+                    x.TryGetProperty("masked", out var m) ? m.GetString() ?? "" : "",
+                    x.TryGetProperty("name", out var n) ? n.GetString() : null,
+                    x.TryGetProperty("error", out var e) ? e.GetString() : null)).ToList()
+                : [];
+        }
+        finally { _bulkBusy = false; }
     }
 
     private async Task LoadNodes()

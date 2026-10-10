@@ -27,19 +27,29 @@
             </p>
         </div>
     </div>
-    <button class="btn btn-primary" @onclick="() => _adding = true">
-        <span class="material-symbols-outlined" style="font-size:17px">add</span>
-        @Loc.T("providers.add", "Add connection")
-    </button>
+    <div class="flex gap-2">
+        <button class="btn" @onclick="TestSelected" disabled="@(_selected.Count == 0 || _batchBusy)">
+            <span class="material-symbols-outlined" style="font-size:17px">bolt</span>
+            @(_batchBusy ? Loc.T("providers.testing", "Testing…") : $"{Loc.T("providers.testSelected", "Test selected")} ({_selected.Count})")
+        </button>
+        <button class="btn btn-primary" @onclick="() => _adding = true">
+            <span class="material-symbols-outlined" style="font-size:17px">add</span>
+            @Loc.T("providers.add", "Add connection")
+        </button>
+    </div>
 </div>
 
 <div class="card mt-6 scroll-x">
     <table class="table">
-        <thead><tr><th>@Loc.T("providers.name", "Name")</th><th>@Loc.T("providers.email", "Email")</th><th>@Loc.T("providers.priority", "Priority")</th><th>@Loc.T("providers.status", "Status")</th><th>@Loc.T("providers.lastTest", "Last test")</th><th></th></tr></thead>
+        <thead><tr>
+            <th style="width:32px"><input type="checkbox" checked="@(_conns.Count > 0 && _selected.Count == _conns.Count)" @onchange="ToggleAll" /></th>
+            <th>@Loc.T("providers.name", "Name")</th><th>@Loc.T("providers.email", "Email")</th><th>@Loc.T("providers.priority", "Priority")</th><th>@Loc.T("providers.status", "Status")</th><th>@Loc.T("providers.lastTest", "Last test")</th><th></th>
+        </tr></thead>
         <tbody>
             @foreach (var c in _conns)
             {
                 <tr>
+                    <td><input type="checkbox" checked="@_selected.Contains(c.Id)" @onchange="e => Toggle(c.Id, e)" /></td>
                     <td>@c.Name</td>
                     <td class="muted sm">@(c.Email ?? "—")</td>
                     <td>
@@ -61,11 +71,31 @@
             }
             @if (_conns.Count == 0)
             {
-                <tr><td colspan="6"><div class="empty"><span class="material-symbols-outlined">dns</span>@Loc.T("providers.empty", "No connections yet")</div></td></tr>
+                <tr><td colspan="7"><div class="empty"><span class="material-symbols-outlined">dns</span>@Loc.T("providers.empty", "No connections yet")</div></td></tr>
             }
         </tbody>
     </table>
 </div>
+
+@if (_batchResults is not null)
+{
+    <div class="card card-p mt-4">
+        <h3 class="bold">@Loc.T("providers.batchResults", "Batch test results")</h3>
+        @foreach (var r in _batchResults)
+        {
+            var name = _conns.FirstOrDefault(c => c.Id == r.Id)?.Name ?? r.Id;
+            <div class="flex gap-2 sm" style="align-items:center">
+                <span class="badge @(r.Ok ? "ok" : "err")">@(r.Ok ? "ok" : (r.Error == "not found" ? "missing" : "fail"))</span>
+                <span>@name</span>
+                <span class="muted mono">@r.LatencyMs ms</span>
+                @if (r.Error is not null && !r.Ok)
+                {
+                    <span class="muted sm" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@r.Error">@r.Error</span>
+                }
+            </div>
+        }
+    </div>
+}
 
 @if (_test is not null)
 {
@@ -136,6 +166,11 @@
     private string? _test, _testStatus;
     private bool _testOk;
     private long _testLatency;
+    private readonly HashSet<string> _selected = [];
+    private bool _batchBusy;
+    private List<BatchResult>? _batchResults;
+
+    private record BatchResult(string Id, bool Ok, long LatencyMs, string? Error);
 
     protected override async Task OnInitializedAsync()
     {
@@ -227,6 +262,35 @@
     }
 
     private async Task Delete(string id) { await Api.DeleteAsync($"api/provider-connections/{id}"); await Reload(); }
+
+    private void Toggle(string id, ChangeEventArgs e)
+    {
+        if (e.Value is true) _selected.Add(id); else _selected.Remove(id);
+    }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        _selected.Clear();
+        if (e.Value is true) foreach (var c in _conns) _selected.Add(c.Id);
+    }
+
+    private async Task TestSelected()
+    {
+        _batchBusy = true; _batchResults = null; _test = null;
+        try
+        {
+            var r = await Api.PostAsync("api/providers/test-batch", new { ids = _selected.ToArray() });
+            _batchResults = r.TryGetProperty("results", out var rs)
+                ? rs.EnumerateArray().Select(x => new BatchResult(
+                    x.GetProperty("id").GetString() ?? "",
+                    x.GetProperty("ok").GetBoolean(),
+                    x.TryGetProperty("latencyMs", out var l) ? l.GetInt64() : 0,
+                    x.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null)).ToList()
+                : [];
+        }
+        finally { _batchBusy = false; }
+        await Reload();
+    }
 
     private async Task Test(Conn c)
     {

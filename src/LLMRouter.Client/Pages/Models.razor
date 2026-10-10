@@ -18,7 +18,7 @@
     <table class="table">
         <thead><tr><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.context", "Context")</th><th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("providers.name", "Connection")</th></tr></thead>
         <tbody>
-            @foreach (var m in Filtered())
+            @foreach (var m in Filtered().Take(500))
             {
                 <tr>
                     <td class="mono sm">@m.Model</td>
@@ -31,6 +31,10 @@
             @if (!_models.Any())
             {
                 <tr><td colspan="5"><div class="empty"><span class="material-symbols-outlined">view_list</span>@Loc.T("models.empty", "No models — add a provider connection first")</div></td></tr>
+            }
+            else if (Filtered().Count() > 500)
+            {
+                <tr><td colspan="5" class="muted sm">@Loc.T("models.showingFirst", "Showing first 500 of") @Filtered().Count() — @Loc.T("models.useSearch", "use the search box to filter")</td></tr>
             }
         </tbody>
     </table>

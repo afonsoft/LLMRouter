@@ -222,8 +222,15 @@ static string? FrameworkDir(IWebHostEnvironment env)
     {
         var client = Path.Combine(d.FullName, "LLMRouter.Client");
         if (Directory.Exists(client))
-            return Directory.EnumerateDirectories(client, "_framework", SearchOption.AllDirectories)
-                .OrderByDescending(x => x).FirstOrDefault();
+        {
+            // Dev-mode UseBlazorFrameworkFiles serves the Debug build — a stale
+            // bin/Release _framework would rewrite dotnet.js to a fingerprint
+            // dev can't serve (404 → WASM never boots). Prefer by env.
+            var want = env.IsDevelopment() ? "Debug" : "Release";
+            var dirs = Directory.EnumerateDirectories(client, "_framework", SearchOption.AllDirectories);
+            return dirs.FirstOrDefault(x => x.Contains($"bin/{want}", StringComparison.OrdinalIgnoreCase))
+                ?? dirs.OrderByDescending(x => x).FirstOrDefault();
+        }
     }
     return null;
 }

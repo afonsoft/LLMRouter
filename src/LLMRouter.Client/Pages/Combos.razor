@@ -7,7 +7,7 @@
         <h1 class="page-title">@Loc.T("combos.title", "Combos")</h1>
         <p class="page-desc">@Loc.T("combos.subtitle", "Ordered model cascades with automatic fallback")</p>
     </div>
-    <button class="btn btn-primary" @onclick='() => _editing = new() { Kind = "fallback" }'>
+    <button class="btn btn-primary" @onclick="NewCombo">
         <span class="material-symbols-outlined" style="font-size:17px">add</span>
         @Loc.T("combos.new", "New combo")
     </button>
@@ -76,7 +76,7 @@
                         <button class="btn btn-sm" title="Move down" @onclick="() => Move(c, 1)">↓</button>
                         <button class="btn btn-sm" @onclick="() => TestPool(c.Id!)">Test</button>
                         <a class="btn btn-sm" href="/dashboard/combos/live?id=@c.Id">Live</a>
-                        <button class="btn btn-sm" @onclick="() => _editing = c">Edit</button>
+                        <button class="btn btn-sm" @onclick="() => Edit(c)">Edit</button>
                         <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id!)">Delete</button>
                     </div>
                 </div>
@@ -281,7 +281,8 @@ else
             .Select(kv => new MappingVm { Model = kv.Name, Combo = kv.Value.GetString() ?? "" }).ToList();
     }
 
-    private void EditOpened() { _modelsText = string.Join("\n", _editing?.ModelsList ?? []); }
+    private void NewCombo() { _editing = new ComboVm { Kind = "fallback" }; _modelsText = ""; }
+    private void Edit(ComboVm c) { _editing = c; _modelsText = string.Join("\n", c.ModelsList); }
 
     private async Task Save()
     {
@@ -353,5 +354,5 @@ else
     }
 
     private ComboVm? _prev;
-    protected override void OnAfterRender(bool first) { if (_editing != _prev) { _prev = _editing; EditOpened(); } }
+
 }

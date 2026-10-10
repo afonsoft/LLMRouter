@@ -40,6 +40,15 @@ public class LlmRouterDbContext : DbContext
     public DbSet<EvalRun> EvalRuns => Set<EvalRun>();
     public DbSet<A2aTask> A2aTasks => Set<A2aTask>();
     public DbSet<ConductorTask> ConductorTasks => Set<ConductorTask>();
+    public DbSet<ModelCooldown> ModelCooldowns => Set<ModelCooldown>();
+    public DbSet<FallbackChain> FallbackChains => Set<FallbackChain>();
+    public DbSet<CapabilityOverride> CapabilityOverrides => Set<CapabilityOverride>();
+    public DbSet<SyncedModel> SyncedModels => Set<SyncedModel>();
+    public DbSet<QuotaWindow> QuotaWindows => Set<QuotaWindow>();
+    public DbSet<CredentialExpiration> CredentialExpirations => Set<CredentialExpiration>();
+    public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<Policy> Policies => Set<Policy>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -112,6 +121,15 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS evalRuns (Id TEXT NOT NULL PRIMARY KEY, SuiteId TEXT NOT NULL, Target TEXT NOT NULL, Status TEXT NOT NULL DEFAULT 'running', Score REAL NOT NULL DEFAULT 0, Results TEXT NOT NULL DEFAULT '[]', StartedAt TEXT NOT NULL, DurationMs INTEGER NOT NULL DEFAULT 0)""",
                 """CREATE TABLE IF NOT EXISTS a2aTasks (Id TEXT NOT NULL PRIMARY KEY, Agent TEXT NULL, Payload TEXT NOT NULL DEFAULT '{}', State TEXT NOT NULL DEFAULT 'queued', Result TEXT NULL, Error TEXT NULL, CreatedAt TEXT NOT NULL, StartedAt TEXT NULL, FinishedAt TEXT NULL)""",
                 """CREATE TABLE IF NOT EXISTS conductorTasks (Id TEXT NOT NULL PRIMARY KEY, Goal TEXT NOT NULL, Model TEXT NULL, Steps TEXT NOT NULL DEFAULT '[]', State TEXT NOT NULL DEFAULT 'queued', Result TEXT NULL, Error TEXT NULL, CreatedAt TEXT NOT NULL, FinishedAt TEXT NULL)""",
+                """CREATE TABLE IF NOT EXISTS modelCooldowns (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Model TEXT NOT NULL, Until TEXT NOT NULL, Reason TEXT NULL, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS fallbackChains (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Steps TEXT NOT NULL DEFAULT '[]', Active INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS capabilityOverrides (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Model TEXT NOT NULL, Capabilities TEXT NOT NULL DEFAULT '{}', UpdatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS syncedModels (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Model TEXT NOT NULL, Available INTEGER NOT NULL DEFAULT 1, LastSyncAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS quotaWindows (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Name TEXT NOT NULL, WindowMinutes INTEGER NOT NULL, MaxTokens INTEGER NOT NULL, MaxRequests INTEGER NOT NULL, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS credentialExpirations (Id TEXT NOT NULL PRIMARY KEY, ConnectionId TEXT NOT NULL, ExpiresAt TEXT NOT NULL, WarnDays INTEGER NOT NULL DEFAULT 7)""",
+                """CREATE TABLE IF NOT EXISTS tags (Id TEXT NOT NULL PRIMARY KEY, TargetType TEXT NOT NULL, TargetId TEXT NOT NULL, Value TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS policies (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Priority INTEGER NOT NULL DEFAULT 0, Rule TEXT NOT NULL DEFAULT '{}', Enabled INTEGER NOT NULL DEFAULT 1)""",
+                """CREATE TABLE IF NOT EXISTS chatSessions (Id TEXT NOT NULL PRIMARY KEY, KeyId TEXT NOT NULL, Model TEXT NOT NULL, StartedAt TEXT NOT NULL, LastSeenAt TEXT NOT NULL, MessageCount INTEGER NOT NULL DEFAULT 0)""",
             })
             {
                 cmd.CommandText = ddl;

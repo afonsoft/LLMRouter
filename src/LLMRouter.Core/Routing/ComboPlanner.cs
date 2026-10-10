@@ -76,9 +76,33 @@ public class ComboPlanner
     }
 
     /// <summary>Capability lookup for a "provider/model" ref from the embedded registry.
-    /// A capabilityOverrides row for that pair REPLACES the detected set (SPEC-071).</summary>
+    /// A capabilityOverrides row for that pair REPLACES the detected set (SPEC-071).
+    /// SPEC-093: a syncedModels row merges provider-reported caps over registry data.</summary>
     public HashSet<string> GetCapabilitiesForModel(string providerModel,
-        IReadOnlyDictionary<string, HashSet<string>>? overrides = null)
+        IReadOnlyDictionary<string, HashSet<string>>? overrides = null,
+        IReadOnlyDictionary<string, SyncedModel>? synced = null)
+    {
+        var caps = GetCapabilitiesForModelInner(providerModel, overrides);
+        if (synced is not null && synced.TryGetValue(providerModel, out var s))
+        {
+            if (s.Vision == true) caps.Add("vision");
+            if (s.Tools == true) caps.Add("tools");
+            if (s.Reasoning == true) caps.Add("reasoning");
+            if (s.MaxOutputTokens is { } mot) caps.Add($"maxOut:{mot}");
+        }
+        return caps;
+    }
+
+    /// <summary>SPEC-093: syncedModels rows as a provider/model → caps lookup.</summary>
+    public static async Task<Dictionary<string, SyncedModel>> LoadSyncedCapsAsync(
+        LlmRouterDbContext db, CancellationToken ct = default)
+    {
+        var rows = await db.SyncedModels.Where(s => s.Available).ToListAsync(ct);
+        return rows.ToDictionary(s => $"{s.Provider}/{s.Model}", StringComparer.Ordinal);
+    }
+
+    private HashSet<string> GetCapabilitiesForModelInner(string providerModel,
+        IReadOnlyDictionary<string, HashSet<string>>? overrides)
     {
         var caps = new HashSet<string>(StringComparer.Ordinal);
         var slash = providerModel.IndexOf('/');

@@ -194,7 +194,7 @@ public static class Translators
         else o["max_tokens"] = 1024;
         foreach (var k in new[] { "temperature", "top_p", "stream" })
             if (req[k] is { } v) o[k] = v.DeepClone();
-        if (req["stop"] is { } stop) o["stop_sequences"] = stop.DeepClone();
+        if (req["stop"] is { } stop) o["stop_sequences"] = DropNullStops(stop);
         // openai tools[].function → claude tools with input_schema
         if (req["tools"] is JsonArray { Count: > 0 } oTools)
         {
@@ -318,7 +318,7 @@ public static class Translators
         o["messages"] = messages;
         foreach (var k in new[] { "max_tokens", "temperature", "top_p", "stream" })
             if (req[k] is { } v) o[k] = v.DeepClone();
-        if (req["stop_sequences"] is { } ss) o["stop"] = ss.DeepClone();
+        if (req["stop_sequences"] is { } ss) o["stop"] = DropNullStops(ss);
         // claude tools → openai tools[].function
         if (req["tools"] is JsonArray { Count: > 0 } cTools)
             o["tools"] = new JsonArray(cTools.Select(t => (JsonNode)new JsonObject
@@ -682,6 +682,18 @@ public static class Translators
         return type switch
         {
             "response.output_text.delta" => TextDeltaChunk(ev),
+            // SPEC-093: opaque reasoning deltas surface as progress events
+            // (phase:"reasoning" marker), never as user-visible content.
+            "response.reasoning_text.delta" or "response.reasoning_summary_text.delta"
+                or "response.reasoning.delta" => new JsonObject
+            {
+                ["choices"] = new JsonArray(new JsonObject
+                {
+                    ["index"] = 0,
+                    ["delta"] = new JsonObject { ["phase"] = "reasoning", ["reasoning"] = true },
+                    ["finish_reason"] = (JsonNode?)null,
+                }),
+            },
             // SPEC-075: refusal deltas surface as delta.refusal (OpenAI shape), not content.
             "response.refusal.delta" => new JsonObject
             {
@@ -749,6 +761,19 @@ public static class Translators
             },
             _ => null,
         };
+    }
+
+    /// <summary>SPEC-093: strip null entries from stop/stop_sequences —
+    /// bedrock/claude 400 on [null]. Returns null when nothing valid remains.</summary>
+    public static JsonNode? DropNullStops(JsonNode? node)
+    {
+        if (node is null) return null;
+        if (node is JsonArray arr)
+        {
+            var clean = new JsonArray(arr.Where(x => x is not null).Select(x => x!.DeepClone()).ToArray<JsonNode?>());
+            return clean.Count == 0 ? null : clean;
+        }
+        return node.GetValueKind() == JsonValueKind.Null ? null : node.DeepClone();
     }
 
     private static JsonObject TextDeltaChunk(JsonObject ev)

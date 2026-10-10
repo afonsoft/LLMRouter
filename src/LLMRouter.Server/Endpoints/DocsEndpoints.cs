@@ -133,6 +133,7 @@ public static class DocsEndpoints
             version = "0.1.0",
             uptimeSec = (int)(DateTime.UtcNow - Started).TotalSeconds,
             providers = db.ProviderConnections.Count(c => c.IsActive),
+            headless = Core.Security.HeadlessMode.Enabled,
         }, JsonOpts)).AllowAnonymous();
 
         g.MapGet("/docs", (IWebHostEnvironment env) =>
@@ -175,7 +176,7 @@ public static class VersionEndpoints
                 latest = r.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
             }
             catch { }
-            return Results.Json(new { version = current, latest, updateAvailable = latest is not null && latest.TrimStart('v') != current });
+            return Results.Json(new { version = current, latest, updateAvailable = latest is not null && latest.TrimStart('v') != current, headless = Core.Security.HeadlessMode.Enabled });
         }).AllowAnonymous();
     }
 }

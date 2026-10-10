@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LLMRouter.Server;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Registry;
@@ -23,7 +24,7 @@ if (args is ["mcp-stdio", ..])
     Environment.Exit(await LLMRouter.Server.Cli.McpStdioAsync());
     return;
 }
-args = args.Where(a => a != "serve").ToArray();
+args = args.Where(a => a != "serve" && a != "--headless").ToArray();
 
 var builder = WebApplication.CreateBuilder(args);
 // SPEC-028: CONNECT/TLS-intercept proxy on LLMROUTER_PROXY_PORT (default 8889)
@@ -163,9 +164,21 @@ app.Use(async (ctx, next) =>
     }
     await next();
 });
-app.UseBlazorFrameworkFiles();
+// SPEC-086 headless mode: LLMROUTER_HEADLESS=1 (or Db:Headless / --headless)
+// serves only the gateway + management APIs — no Blazor assets or UI routes.
+var headless = builder.Configuration.GetValue<bool>("Db:Headless")
+    || Environment.GetEnvironmentVariable("LLMROUTER_HEADLESS") == "1";
+LLMRouter.Core.Security.HeadlessMode.Enabled = headless;
+
+if (!headless)
+{
+    app.UseBlazorFrameworkFiles();
+}
 app.Use(ForwardProxy.Invoke);
-app.UseStaticFiles();
+if (!headless)
+{
+    app.UseStaticFiles();
+}
 app.UseStatusCodePagesWithReExecute("/error/{0}");
 
 app.MapAuthEndpoints();
@@ -212,7 +225,35 @@ app.MapInspectorEndpoints();
 app.MapExtrasEndpoints();
 app.MapVersionEndpoints();
 
-app.MapFallbackToFile("index.html");
+// SPEC-086: loopback-only rail for destructive/probing admin routes
+// (settings.data.adminLocalOnly, default on).
+app.Use(async (ctx, next) =>
+{
+    var p = ctx.Request.Path.Value ?? "";
+    if (LLMRouter.Core.Security.SecurityRails.IsLocalOnlyPath(p))
+    {
+        var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
+        var localOnly = true; // default ON for destructive/probing ops
+        var row = await db.Kv.FindAsync("settings", "data");
+        if (row?.Value is { } raw
+            && JsonSerializer.Deserialize<JsonElement>(raw) is { ValueKind: JsonValueKind.Object } data
+            && data.TryGetProperty("adminLocalOnly", out var alo))
+            localOnly = alo.ValueKind != JsonValueKind.False;
+        if (localOnly && !LLMRouter.Core.Security.SecurityRails.IsLocal(ctx.Connection.RemoteIpAddress))
+        {
+            ctx.Response.StatusCode = 403;
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.WriteAsync("{\"error\":\"admin_local_only\"}");
+            return;
+        }
+    }
+    await next();
+});
+
+if (!headless)
+{
+    app.MapFallbackToFile("index.html");
+}
 app.Run();
 
 // locate the real _framework dir: publish wwwroot, else the client bin tree in dev.

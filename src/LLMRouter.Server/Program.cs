@@ -35,6 +35,7 @@ builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.DbBackupJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.QuotaSchedulesJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.LogExportJob());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.AutoReenableJob());
     return sched;
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Jobs.JobScheduler>());
@@ -141,6 +142,7 @@ LogExportEndpoints.Map(app);
 PlaygroundEndpoints.Map(app);
 OpenApiExplorerEndpoints.Map(app);
 CacheEndpoints.Map(app);
+SettingsOpsEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

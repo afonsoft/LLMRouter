@@ -28,7 +28,7 @@
         }
     </div>
     <div class="card card-p">
-        <h3 class="bold" style="margin:0 0 14px">@Loc.T("caveman.rules", "Rules") (@_rules?.Length ?? 0)</h3>
+        <h3 class="bold" style="margin:0 0 14px">@Loc.T("caveman.rules", "Rules") (@(_rules?.Length ?? 0))</h3>
         @if (_rules is not null)
         {
             <div style="max-height:420px;overflow:auto">

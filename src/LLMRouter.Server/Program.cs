@@ -224,6 +224,7 @@ MediaEndpoints.Map(app);
 V1ExtrasEndpoints.Map(app);
 AdminOpsEndpoints.Map(app);
 MemoryVectorEndpoints.Map(app);
+AuditOpsEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

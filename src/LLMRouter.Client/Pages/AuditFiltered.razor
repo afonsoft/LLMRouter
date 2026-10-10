@@ -1,5 +1,6 @@
 @page "/dashboard/audit/a2a"
 @page "/dashboard/audit/mcp"
+@page "/dashboard/audit/compliance"
 @inject Api Api
 @inject Loc Loc
 @inject NavigationManager Nav
@@ -35,12 +36,25 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var isMcp = Nav.Uri.Contains("/audit/mcp", StringComparison.OrdinalIgnoreCase);
-        _key = isMcp ? "auditMcp" : "auditA2a";
-        _fallback = isMcp ? "MCP audit" : "A2A audit";
-        _subFallback = isMcp ? "Tool calls and server events" : "Task lifecycle and conductor events";
-        await Load(isMcp ? "mcp" : "a2a");
+        var uri = Nav.Uri;
+        var isMcp = uri.Contains("/audit/mcp", StringComparison.OrdinalIgnoreCase);
+        var isCompliance = uri.Contains("/audit/compliance", StringComparison.OrdinalIgnoreCase);
+        _key = isCompliance ? "auditCompliance" : isMcp ? "auditMcp" : "auditA2a";
+        _fallback = isCompliance ? "Compliance audit" : isMcp ? "MCP audit" : "A2A audit";
+        _subFallback = isCompliance ? "Structured audit events (actor/action/target/ip)"
+            : isMcp ? "Tool calls and server events" : "Task lifecycle and conductor events";
+        if (isCompliance) await LoadCompliance(); else await Load(isMcp ? "mcp" : "a2a");
         _loaded = true;
+    }
+
+    private async Task LoadCompliance()
+    {
+        var r = await Api.GetAsync("api/compliance/audit-log");
+        if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("events", out var ev)) return;
+        foreach (var e in ev.EnumerateArray())
+            _events.Add(new(Str(e, "at"), Str(e, "action"),
+                $"{Str(e, "actor")} → {Str(e, "target")}{(Str(e, "ip") is { Length: > 0 } ip ? $" ({ip})" : "")}"));
+        _events = _events.OrderByDescending(x => x.At).Take(500).ToList();
     }
 
     private async Task Load(string prefix)

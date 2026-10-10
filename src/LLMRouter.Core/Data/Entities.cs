@@ -638,3 +638,41 @@ public class ChatSession
     public string LastSeenAt { get; set; } = "";
     public int MessageCount { get; set; }
 }
+
+/// <summary>SPEC-057: evento de auditoria estruturado {actor,action,target,meta,ip,at}.</summary>
+[Table("auditEvents")]
+public class AuditEvent
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Quem agiu: "dashboard", "apiKey:sk-a…", "system" ou null.</summary>
+    public string? Actor { get; set; }
+    /// <summary>Ação no formato dominio.verbo (ex.: auth.login, apikey.reveal).</summary>
+    public string Action { get; set; } = "";
+    /// <summary>Alvo afetado (id/nome do recurso), quando houver.</summary>
+    public string? Target { get; set; }
+    /// <summary>Metadados JSON opcionais.</summary>
+    public string? Meta { get; set; }
+    /// <summary>IP remoto do chamador, quando houver.</summary>
+    public string? Ip { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}
+
+/// <summary>SPEC-057: trilha de chamadas de ferramentas MCP (proxy /mcp).</summary>
+[Table("mcpToolCalls")]
+public class McpToolCall
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Servidor MCP alvo ("builtin" ou nome do upstream).</summary>
+    public string? Server { get; set; }
+    /// <summary>Nome da ferramenta chamada.</summary>
+    public string Tool { get; set; } = "";
+    /// <summary>SHA-256 dos argumentos (não guarda payload — pode conter segredos).</summary>
+    public string? ArgsHash { get; set; }
+    public long DurationMs { get; set; }
+    public bool Ok { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}

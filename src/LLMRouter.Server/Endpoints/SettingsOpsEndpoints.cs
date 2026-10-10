@@ -25,6 +25,7 @@ public static class SettingsOpsEndpoints
             var before = ctx.Request.Query["before"].FirstOrDefault();
             var n = await SettingsOps.PurgeAsync(db, target, before);
             if (n < 0) return Results.Json(new { error = $"unknown target '{target}'", targets = PurgeTargets }, JsonOpts, statusCode: 404);
+            await Core.Extras.Extras.AuditAsync(db, "settings.purge", $"{target}:{n}");
             return Results.Json(new { target, deleted = n, before = before ?? "now" }, JsonOpts);
         });
 

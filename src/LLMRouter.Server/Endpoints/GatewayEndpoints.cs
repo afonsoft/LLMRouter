@@ -321,7 +321,7 @@ public static class GatewayEndpoints
         await ctx.Response.WriteAsJsonAsync(new { @object = "list", data = models });
     }
 
-    private static async Task Chat(HttpContext ctx, string inbound)
+    internal static async Task Chat(HttpContext ctx, string inbound, string? forcedKey = null)
     {
         var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
         var engine = ctx.RequestServices.GetRequiredService<GatewayEngine>();
@@ -329,7 +329,11 @@ public static class GatewayEndpoints
         var registry = ctx.RequestServices.GetRequiredService<ProviderRegistry>();
         var sw = Stopwatch.StartNew();
 
-        var (apiKey, authed) = await AuthenticatedKey(ctx, db);
+        // forcedKey: relay endpoint already validated its own token — attribute
+        // usage to "relay:{id}" and skip apiKeys lookup
+        var (apiKey, authed) = forcedKey is not null
+            ? (forcedKey, true)
+            : await AuthenticatedKey(ctx, db);
         if (!authed)
         {
             ctx.Response.StatusCode = 401;

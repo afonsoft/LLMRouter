@@ -169,6 +169,7 @@ OpenApiExplorerEndpoints.Map(app);
 CacheEndpoints.Map(app);
 SettingsOpsEndpoints.Map(app);
 SettingsRoutingEndpoints.Map(app);
+RelayEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

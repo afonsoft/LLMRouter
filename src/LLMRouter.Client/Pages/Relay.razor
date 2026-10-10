@@ -1,0 +1,138 @@
+@page "/dashboard/relay"
+@inject Api Api
+@inject Loc Loc
+@inject IJSRuntime JS
+
+<div>
+    <h1 class="page-title">@Loc.T("relay.title", "Relay")</h1>
+    <p class="page-desc">@Loc.T("relay.subtitle", "Share gateway access with external clients via per-client tokens")</p>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 class="section-title">@Loc.T("relay.new", "New token")</h3>
+    <div class="flex gap-2 wrap items-end mt-2">
+        <input class="input" style="width:200px" @bind="_name" placeholder="name" />
+        <input class="input" style="width:220px" @bind="_models" placeholder="allowed models (csv, empty = all)" />
+        <input class="input" style="width:110px" @bind="_quotaReq" placeholder="req/day" />
+        <input class="input" style="width:110px" @bind="_quotaTok" placeholder="tok/day" />
+        <input class="input" style="width:150px" @bind="_expires" placeholder="expires (ISO, opt)" />
+        <button class="btn" @onclick="Create" disabled="@_busy">@Loc.T("relay.create", "Create")</button>
+    </div>
+    @if (_newToken is not null)
+    {
+        <div class="mt-3 p-3" style="border:1px solid var(--border);border-radius:8px">
+            <div class="dim" style="font-size:12px">@Loc.T("relay.revealOnce", "Copy now — shown only once:")</div>
+            <div class="flex gap-2 items-center mt-1">
+                <code class="mono">@_newToken</code>
+                <button class="btn ghost sm" @onclick="CopyToken">@Loc.T("relay.copy", "Copy")</button>
+            </div>
+            <pre class="code-block mono mt-2" style="font-size:11px">curl @BaseUrl/v1/relay/chat/completions \
+  -H "Authorization: Bearer @_newToken" \
+  -d '{"model":"MODEL","messages":[{"role":"user","content":"hi"}]}'</pre>
+        </div>
+    }
+</div>
+
+<div class="card card-p mt-6">
+    @if (_tokens.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">key</span>@Loc.T("relay.none", "No relay tokens")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>Name</th><th>Token</th><th>Models</th><th>Quota/day</th><th>Usage today</th><th>Expires</th><th>Active</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var t in _tokens)
+            {
+                <tr>
+                    <td>@(t.Name ?? "—")</td>
+                    <td class="mono dim">@t.Token</td>
+                    <td class="dim" style="font-size:12px">@(t.AllowedModels.Length == 0 ? "all" : string.Join(", ", t.AllowedModels))</td>
+                    <td class="dim mono" style="font-size:12px">@(t.QuotaRequests > 0 ? $"{t.QuotaRequests} req" : "∞") / @(t.QuotaTokens > 0 ? $"{t.QuotaTokens} tok" : "∞")</td>
+                    <td class="mono dim" style="font-size:12px">@t.RequestsToday req · @t.TokensToday tok</td>
+                    <td class="dim mono" style="font-size:12px">@(t.ExpiresAt ?? "—")</td>
+                    <td><input type="checkbox" checked="@t.Active" @onchange="e => Toggle(t, (bool)(e.Value ?? false))" /></td>
+                    <td><button class="btn ghost sm" @onclick="() => Revoke(t)">@Loc.T("relay.revoke", "Revoke")</button></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private bool _busy;
+    private string _name = "", _models = "", _quotaReq = "", _quotaTok = "", _expires = "";
+    private string? _newToken;
+    private List<T> _tokens = new();
+
+    private string BaseUrl => Api.Raw.BaseAddress?.ToString().TrimEnd('/') ?? "";
+
+    private sealed record T(string Id, string? Name, string Token, string[] AllowedModels,
+        int QuotaRequests, long QuotaTokens, string? ExpiresAt, bool Active,
+        int RequestsToday, long TokensToday);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/relay/tokens");
+        _tokens = new();
+        if (!r.TryGetProperty("tokens", out var arr)) return;
+        foreach (var t in arr.EnumerateArray())
+        {
+            var id = t.GetProperty("id").GetString() ?? "";
+            var usage = await Api.GetAsync($"api/relay/tokens/{id}/usage");
+            _tokens.Add(new T(id,
+                t.TryGetProperty("name", out var n) ? n.GetString() : null,
+                t.GetProperty("token").GetString() ?? "",
+                t.TryGetProperty("allowedModels", out var am) && am.ValueKind == System.Text.Json.JsonValueKind.Array
+                    ? am.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : [],
+                t.TryGetProperty("quotaRequests", out var qr) ? qr.GetInt32() : 0,
+                t.TryGetProperty("quotaTokens", out var qt) ? qt.GetInt64() : 0,
+                t.TryGetProperty("expiresAt", out var ex) ? ex.GetString() : null,
+                t.TryGetProperty("active", out var ac) && ac.GetBoolean(),
+                usage.TryGetProperty("requestsToday", out var rt) ? rt.GetInt32() : 0,
+                usage.TryGetProperty("tokensToday", out var tt) ? tt.GetInt64() : 0));
+        }
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        var models = _models.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var r = await Api.PostAsync("api/relay/tokens", new
+        {
+            name = string.IsNullOrWhiteSpace(_name) ? (string?)null : _name,
+            allowedModels = models,
+            quotaRequests = int.TryParse(_quotaReq, out var qr) ? qr : 0,
+            quotaTokens = long.TryParse(_quotaTok, out var qt) ? qt : 0,
+            expiresAt = string.IsNullOrWhiteSpace(_expires) ? (string?)null : _expires,
+        });
+        if (r.TryGetProperty("token", out var tk)) _newToken = tk.GetString();
+        _name = _models = _quotaReq = _quotaTok = _expires = "";
+        _busy = false;
+        await Load();
+    }
+
+    private async Task Toggle(T t, bool on)
+    {
+        await Api.PutAsync($"api/relay/tokens/{t.Id}", new { active = on });
+        await Load();
+    }
+
+    private async Task Revoke(T t)
+    {
+        await Api.DeleteAsync($"api/relay/tokens/{t.Id}");
+        await Load();
+    }
+
+    private async Task CopyToken()
+    {
+        if (_newToken is not null)
+            try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _newToken); } catch { }
+    }
+}

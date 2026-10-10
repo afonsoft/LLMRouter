@@ -194,6 +194,7 @@ V1LeftoversEndpoints.Map(app);
 UsageDepthEndpoints.Map(app);
 ComboAnalyticsEndpoints.Map(app);
 MgmtBatchEndpoints.Map(app);
+MediumFeaturesEndpoints.Map(app);
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);

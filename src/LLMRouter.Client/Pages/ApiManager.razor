@@ -14,6 +14,21 @@
     </button>
 </div>
 
+@if (_expiring.Count > 0)
+{
+    <div class="card card-p mt-4" style="border-left:3px solid var(--warn,#e6a23c)">
+        <div class="bold sm">@Loc.T("keys.expiring", "Credentials expiring soon")</div>
+        @foreach (var e in _expiring)
+        {
+            <div class="sm mt-1">
+                <span class="badge @(e.Expired ? "err" : "warn")">@(e.Expired ? "expired" : "expiring")</span>
+                <span class="mono sm ml-2">@e.Name</span>
+                <span class="muted sm ml-2">@e.ExpiresAt</span>
+            </div>
+        }
+    </div>
+}
+
 <div class="card mt-6 scroll-x">
     <table class="table">
         <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.key", "Key")</th><th>@Loc.T("keys.status", "Status")</th><th>@Loc.T("keys.limits", "Limits")</th><th>@Loc.T("keys.created", "Created")</th><th></th></tr></thead>
@@ -115,7 +130,25 @@
     private string _groupName = "";
     private readonly Dictionary<string, JsonElement> _limits = new();
 
-    protected override async Task OnInitializedAsync() => await Load();
+    private sealed class Exp { public string Name = ""; public string ExpiresAt = ""; public bool Expired; }
+    private List<Exp> _expiring = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        try
+        {
+            var r = await Api.GetAsync("api/credentials/expiring");
+            _expiring = r.GetProperty("expiring").EnumerateArray().Select(x => new Exp
+            {
+                Name = x.TryGetProperty("connection", out var cn) && cn.ValueKind == JsonValueKind.Object
+                    && cn.TryGetProperty("name", out var nm) ? nm.GetString() ?? x.GetProperty("connectionId").GetString()! : x.GetProperty("connectionId").GetString()!,
+                ExpiresAt = x.GetProperty("expiresAt").GetString() ?? "",
+                Expired = x.TryGetProperty("expired", out var ex) && ex.GetBoolean(),
+            }).ToList();
+        }
+        catch { }
+    }
 
     private async Task Load()
     {

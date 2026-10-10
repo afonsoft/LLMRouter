@@ -98,6 +98,8 @@ public sealed class GatewayEngine(
             if (provider is null) continue;
             // SPEC-021: provider circuit breaker — skip OPEN providers entirely
             if (!Resilience.ProviderBreaker.CanExecute(provider.Id, provider.AuthType)) continue;
+            // SPEC-073: sliding quota windows — provider skipped while a window is saturated
+            if (await Routing.QuotaWindows.ExceededAsync(db, provider.Id, ct)) continue;
             var conns = await db.ProviderConnections
                 .Where(c => c.Provider == provider.Id && c.IsActive)
                 .OrderBy(c => c.Priority).ThenBy(c => c.Name)
@@ -305,6 +307,21 @@ public sealed class GatewayEngine(
 
         // SPEC-041: credit tokens toward the key's daily quota counter
         await Routing.KeyQuota.CreditDailyAsync(db, apiKey, promptTokens + completionTokens);
+
+        // SPEC-073: chat session tracking — upsert per (apiKey, model)
+        var sess = await db.ChatSessions
+            .FirstOrDefaultAsync(s => s.KeyId == apiKey && s.Model == model);
+        if (sess is null)
+        {
+            db.ChatSessions.Add(new ChatSession
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                KeyId = apiKey, Model = model,
+                StartedAt = now, LastSeenAt = now, MessageCount = 1,
+            });
+        }
+        else { sess.LastSeenAt = now; sess.MessageCount++; }
+
         await db.SaveChangesAsync();
     }
 

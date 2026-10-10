@@ -201,6 +201,7 @@ ModelRegistryEndpoints.Map(app);
 AutoCombosEndpoints.Map(app);
 RoutingOpsEndpoints.Map(app);
 CoreMiscEndpoints.Map(app);
+MediaEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

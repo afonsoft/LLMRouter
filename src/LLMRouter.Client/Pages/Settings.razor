@@ -192,6 +192,31 @@ else if (Current == "advanced")
             <button class="btn btn-primary btn-sm mt-4" @onclick="Save">@Loc.T("common.save", "Save")</button>
         </div>
         <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 14px">@Loc.T("settings.routing", "Routing rules")</h3>
+            <div class="mt-2"><label class="lbl">IP filter ({ mode, cidrs })</label>
+                <textarea class="input mono" rows="2" @bind="_ipf" placeholder='{"mode":"deny","cidrs":["10.0.0.0/8"]}'></textarea></div>
+            <div class="mt-2"><label class="lbl">Payload rules</label>
+                <textarea class="input mono" rows="3" @bind="_payload" placeholder='[{"match":{"model":"gpt"},"action":"redact","field":"metadata.token"}]'></textarea></div>
+            <div class="mt-2"><label class="lbl">Reasoning routing rules</label>
+                <textarea class="input mono" rows="3" @bind="_reason" placeholder='[{"pattern":"o1|deepseek-r","effort":"budget","budgetTokens":1024}]'></textarea>
+                <div class="flex" style="gap:6px;margin-top:4px">
+                    <input class="input" style="max-width:200px" placeholder="model" @bind="_simModel" />
+                    <button class="btn btn-sm" @onclick="Simulate">Simulate</button>
+                    @if (_simOut is not null) { <span class="xs muted">@_simOut</span> }
+                </div></div>
+            <div class="mt-2"><label class="lbl">Task routing ({ taskType: model })</label>
+                <textarea class="input mono" rows="2" @bind="_task" placeholder='{"code-review":"openai/gpt-4o"}'></textarea></div>
+            <div class="mt-2"><label class="lbl">OneProxy ({ urls })</label>
+                <textarea class="input mono" rows="1" @bind="_onepx" placeholder='{"urls":["http://10.0.0.1:8888"],"rotateOnFail":true}'></textarea>
+                <span class="xs muted">current: @_onepxCur</span></div>
+            <div class="flex" style="gap:6px;margin-top:10px">
+                <button class="btn btn-primary btn-sm" @onclick="SaveRouting">@Loc.T("common.save", "Save")</button>
+                <button class="btn btn-sm" @onclick="FetchFree">Fetch free proxies</button>
+                <button class="btn btn-sm" @onclick="Rotate">Rotate proxy</button>
+            </div>
+            @if (_routingMsg is not null) { <p class="xs muted mt-2">@_routingMsg</p> }
+        </div>
+        <div class="card card-p">
             <h3 class="bold" style="margin:0 0 14px">Export / import</h3>
             <a class="btn btn-sm" href="api/settings/export" download="llmrouter-settings.json">Export settings JSON</a>
             <div class="mt-4"><label class="lbl">Import JSON</label>
@@ -358,6 +383,7 @@ else if (Current == "backup")
             var ep = await Api.GetAsync("api/endpoint");
             if (ep.TryGetProperty("baseUrl", out var b)) _baseUrl = b.GetString() ?? "";
             var rt = await Api.GetAsync("api/runtime");
+            await LoadRouting();
             if (rt.TryGetProperty("dbPath", out var p)) _dbPath = p.GetString() ?? "";
             if (rt.TryGetProperty("dbSizeBytes", out var sz)) _dbSize = sz.GetInt64();
         }
@@ -390,6 +416,68 @@ else if (Current == "backup")
             ? e.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone()) : [];
         o[key] = JsonSerializer.SerializeToElement(v);
         _data![obj] = JsonSerializer.SerializeToElement(o);
+    }
+
+    private string? _routingMsg, _simOut, _simModel, _onepxCur;
+    private string _ipf = "", _payload = "", _reason = "", _task = "", _onepx = "";
+
+    private async Task LoadRouting()
+    {
+        try
+        {
+            foreach (var (seg, set) in new (string, Action<string>)[] {
+                ("ip-filter", v => _ipf = v), ("payload-rules", v => _payload = v),
+                ("reasoning-routing-rules", v => _reason = v),
+                ("task-routing", v => _task = v), ("oneproxy", v => _onepx = v) })
+            {
+                var r = await Api.GetAsync($"api/settings/{seg}");
+                set(r.TryGetProperty("value", out var v) && v.ValueKind != JsonValueKind.Null
+                    ? v.GetRawText() : "");
+            }
+            var cur = await Api.GetAsync("api/proxy/oneproxy");
+            _onepxCur = cur.TryGetProperty("current", out var c) ? c.GetString() ?? "-" : "-";
+        }
+        catch { }
+    }
+
+    private async Task SaveRouting()
+    {
+        try
+        {
+            foreach (var (seg, text, isArr) in new (string, string, bool)[] {
+                ("ip-filter", _ipf, false), ("payload-rules", _payload, true),
+                ("reasoning-routing-rules", _reason, true),
+                ("task-routing", _task, false), ("oneproxy", _onepx, false) })
+            {
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                using var doc = JsonDocument.Parse(isArr ? text : text);
+                await Api.PutAsync($"api/settings/{seg}", new { value = doc.RootElement.Clone() });
+            }
+            _routingMsg = "Routing settings saved.";
+        }
+        catch (Exception ex) { _routingMsg = ex.Message; }
+    }
+
+    private async Task Simulate()
+    {
+        if (string.IsNullOrWhiteSpace(_simModel)) return;
+        var r = await Api.PostAsync("api/settings/reasoning-rules/simulate", new { model = _simModel });
+        _simOut = r.TryGetProperty("matched", out var m) && m.ValueKind == JsonValueKind.String
+            ? $"{m.GetString()} → {r.GetProperty("effort").GetString()}" : "no match";
+    }
+
+    private async Task FetchFree()
+    {
+        var r = await Api.PostAsync("api/proxy-pools/fetch-free", new { });
+        _routingMsg = r.TryGetProperty("count", out var n)
+            ? $"free-proxies pool: {n.GetInt32()} entries"
+            : "no source configured — pass entries via API";
+    }
+
+    private async Task Rotate()
+    {
+        var r = await Api.PostAsync("api/proxy/oneproxy/rotate", new { });
+        _onepxCur = r.TryGetProperty("current", out var c) ? c.GetString() ?? "-" : "-";
     }
 
     private string? _purgeBefore, _purgeMsg;

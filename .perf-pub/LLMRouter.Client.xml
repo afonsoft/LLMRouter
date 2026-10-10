@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>LLMRouter.Client</name>
+    </assembly>
+    <members>
+        <member name="T:LLMRouter.Client.Layout.SidebarData">
+            <summary>Sidebar nav model — verbatim port of upstream sections.ts (96 items, 10 sections).</summary>
+        </member>
+        <member name="T:LLMRouter.Client.Services.Api">
+            <summary>Thin typed wrapper over the management API.</summary>
+        </member>
+        <member name="M:LLMRouter.Client.Services.Api.#ctor(System.Net.Http.HttpClient)">
+            <summary>Thin typed wrapper over the management API.</summary>
+        </member>
+        <member name="T:LLMRouter.Client.Services.AuthState">
+            <summary>Dashboard auth state (requireLogin flag + session check).</summary>
+        </member>
+        <member name="M:LLMRouter.Client.Services.AuthState.#ctor(System.Net.Http.HttpClient)">
+            <summary>Dashboard auth state (requireLogin flag + session check).</summary>
+        </member>
+        <member name="T:LLMRouter.Client.Services.Loc">
+            <summary>
+            Localization — loads /locales/{lang}.json (upstream flat files),
+            nested key lookup "sidebar.home". Languages: en, pt-BR, es.
+            </summary>
+        </member>
+        <member name="M:LLMRouter.Client.Services.Loc.#ctor(System.Net.Http.HttpClient,Microsoft.JSInterop.IJSRuntime)">
+            <summary>
+            Localization — loads /locales/{lang}.json (upstream flat files),
+            nested key lookup "sidebar.home". Languages: en, pt-BR, es.
+            </summary>
+        </member>
+        <member name="M:LLMRouter.Client.Services.Loc.T(System.String,System.String)">
+            <summary>Translate a dotted key with fallback to English then the key itself.</summary>
+        </member>
+        <member name="T:LLMRouter.Client.Services.ThemeService">
+            <summary>Theme service — same localStorage contract as upstream (zustand JSON under "theme").</summary>
+        </member>
+        <member name="M:LLMRouter.Client.Services.ThemeService.#ctor(Microsoft.JSInterop.IJSRuntime)">
+            <summary>Theme service — same localStorage contract as upstream (zustand JSON under "theme").</summary>
+        </member>
+    </members>
+</doc>

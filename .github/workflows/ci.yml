@@ -46,6 +46,28 @@ jobs:
           cp .env.example .env
           docker compose config -q
 
+  perf:
+    runs-on: ubuntu-latest
+    env:
+      DURATION: "20"
+      MIN_RPS: "30"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Gateway load test (6 keys x 4 combos, 24 sessions)
+        run: bash scripts/perf/run.sh
+      - name: Upload perf results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: perf-results.txt
+
   e2e:
     runs-on: ubuntu-latest
     steps:

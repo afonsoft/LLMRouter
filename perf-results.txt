@@ -1,0 +1,27 @@
+t+1s rps=907 total=907
+t+2s rps=279 total=1186
+t+3s rps=190 total=1376
+t+4s rps=220 total=1596
+t+5s rps=211 total=1807
+t+6s rps=241 total=2048
+t+7s rps=234 total=2282
+t+8s rps=270 total=2552
+t+9s rps=249 total=2801
+t+10s rps=258 total=3059
+t+11s rps=250 total=3309
+t+12s rps=255 total=3564
+t+13s rps=238 total=3802
+t+14s rps=272 total=4074
+t+15s rps=256 total=4330
+t+16s rps=253 total=4583
+t+17s rps=268 total=4851
+t+18s rps=266 total=5117
+t+19s rps=271 total=5388
+t+20s rps=245 total=5633
+
+=== RESULT ===
+duration=20s total=5659 ok=5657 err=2
+throughput=279.0 rps
+latency ms: p50=9 p95=458 p99=916 max=1996
+errors: {'IncompleteRead': 2}
+RESULT_JSON={"rps": 278.96355578367525, "p50": 8.833816000333172, "p95": 458.30251000006683, "errors": 2}

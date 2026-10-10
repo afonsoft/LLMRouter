@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLMRouter</title>
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <script>
+        // Pre-paint theme — mirrors upstream: localStorage["theme"] zustand JSON.
+        (function () {
+            try {
+                var raw = localStorage.getItem("theme");
+                var t = "system";
+                if (raw) {
+                    var p = JSON.parse(raw);
+                    t = (p && p.state && p.state.theme) || "system";
+                }
+                var dark = t === "dark" || (t === "system" &&
+                    window.matchMedia("(prefers-color-scheme: dark)").matches);
+                if (dark) document.documentElement.classList.add("dark");
+            } catch (e) { }
+        })();
+    </script>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#e54d5e" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <link href="css/app.css" rel="stylesheet" />
+</head>
+<body>
+    <div id="app">
+        <div class="app-loading">
+            <div class="app-loading-spinner"></div>
+        </div>
+    </div>
+    <script src="_framework/blazor.webassembly#{.[fingerprint]}.js"></script>
+    <script>
+        window.llmrouter = {
+            setTheme: function (theme) {
+                var dark = theme === "dark" || (theme === "system" &&
+                    window.matchMedia("(prefers-color-scheme: dark)").matches);
+                document.documentElement.classList.toggle("dark", dark);
+                try {
+                    localStorage.setItem("theme", JSON.stringify({ state: { theme: theme }, version: 0 }));
+                } catch (e) { }
+            },
+            getTheme: function () {
+                try {
+                    var p = JSON.parse(localStorage.getItem("theme") || "null");
+                    return (p && p.state && p.state.theme) || "system";
+                } catch (e) { return "system"; }
+            },
+            get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+            set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { } },
+            copy: async function (text) {
+                try { await navigator.clipboard.writeText(text); return true; }
+                catch (e) { return false; }
+            },
+            registerHotkeys: function (ref) {
+                if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+                window.__cmdk = ref;
+                document.addEventListener("keydown", function (e) {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+                        e.preventDefault();
+                        window.__cmdk.invokeMethodAsync("Toggle");
+                    }
+                });
+            },
+        };
+    </script>
+</body>
+</html>

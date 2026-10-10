@@ -34,7 +34,8 @@ public sealed class GatewayEngine(
     ProviderRegistry registry,
     ComboPlanner planner,
     ModelResolver resolver,
-    Routing.RateLimiter? rateLimiter = null)
+    Routing.RateLimiter? rateLimiter = null,
+    UsageWriter? writer = null)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -54,21 +55,20 @@ public sealed class GatewayEngine(
         bool allowChains,
         CancellationToken ct)
     {
-        var settings = await db.Settings.FirstOrDefaultAsync(ct);
-        var aliases = LoadAliases(settings?.Data ?? "{}");
+        var sdata = await HotReads.SettingsDataAsync(db);
+        var aliases = LoadAliases(
+            sdata.ValueKind == JsonValueKind.Object ? sdata.GetRawText() : "{}");
 
         // model-combo mappings: upstream-facing model name → combo name (auto-wrap)
-        var mapping = await db.Kv
-            .Where(k => k.Scope == "modelComboMappings" && k.Key == model)
-            .Select(k => k.Value).FirstOrDefaultAsync(ct);
+        var mapping = await HotReads.ComboMappingAsync(db, model);
         var effectiveModel = mapping ?? model;
 
-        var combo = await db.Combos.FirstOrDefaultAsync(c => c.Name == effectiveModel, ct);
+        var combo = await HotReads.ComboAsync(db, effectiveModel);
         List<string> models;
         if (Routing.AutoCombos.IsAuto(effectiveModel))
         {
             // SPEC-072: virtual auto/* combo — pool resolved live, no persisted row
-            models = await Routing.AutoCombos.ResolveCandidatesAsync(db, registry, effectiveModel, ct);
+            models = await HotReads.AutoPoolAsync(db, registry, effectiveModel);
         }
         else if (combo is not null)
         {
@@ -88,7 +88,7 @@ public sealed class GatewayEngine(
             if (required.Count > 0)
             {
                 // SPEC-071: capabilityOverrides replace registry-detected caps
-                var overrides = await ComboPlanner.LoadOverridesAsync(db, ct);
+                var overrides = await HotReads.CapabilityOverridesAsync(db);
                 models = planner.ReorderByCapabilities(models, required, overrides);
             }
         }
@@ -103,11 +103,8 @@ public sealed class GatewayEngine(
             // SPEC-021: provider circuit breaker — skip OPEN providers entirely
             if (!Resilience.ProviderBreaker.CanExecute(provider.Id, provider.AuthType)) continue;
             // SPEC-073: sliding quota windows — provider skipped while a window is saturated
-            if (await Routing.QuotaWindows.ExceededAsync(db, provider.Id, ct)) continue;
-            var conns = await db.ProviderConnections
-                .Where(c => c.Provider == provider.Id && c.IsActive)
-                .OrderBy(c => c.Priority).ThenBy(c => c.Name)
-                .ToListAsync(ct);
+            if (await HotReads.QuotaWindowExceededAsync(db, provider.Id)) continue;
+            var conns = await HotReads.ActiveConnsAsync(db, provider.Id);
             foreach (var c in conns.Where(c => !Resilience.CooldownTracker.IsCooling(c.Id)))
             {
                 if (await Routing.QuotaTracker.ExhaustedAsync(db, c)) continue;
@@ -118,9 +115,7 @@ public sealed class GatewayEngine(
         }
 
         // SPEC-070: per-model cooldowns — provider/model pairs cooling are skipped
-        var nowIso = DateTime.UtcNow.ToString("o");
-        var cooling = await db.ModelCooldowns
-            .Where(mc => string.Compare(mc.Until, nowIso) > 0).ToListAsync(ct);
+        var cooling = await HotReads.LiveModelCooldownsAsync(db);
         if (cooling.Count > 0)
             targets = targets.Where(t => !cooling.Any(mc =>
                 (string.Equals(mc.Provider, t.Provider.Id, StringComparison.OrdinalIgnoreCase)
@@ -133,7 +128,7 @@ public sealed class GatewayEngine(
         // exhausted, try each active chain's steps (model or combo names)
         if (allowChains && targets.Count == 0)
         {
-            var chains = await db.FallbackChains.Where(fc => fc.Active).ToListAsync(ct);
+            var chains = await HotReads.FallbackChainsAsync(db);
             foreach (var chain in chains)
             {
                 var steps = JsonSerializer.Deserialize<List<JsonElement>>(chain.Steps) ?? [];
@@ -269,8 +264,79 @@ public sealed class GatewayEngine(
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
         var cost = Usage.PricingService.ComputeCost(
-            await Usage.PricingService.SettingsDataAsync(db), registry,
+            await HotReads.SettingsDataAsync(db), registry,
             provider, model, promptTokens, completionTokens) ?? 0;
+
+        // SPEC-074: usage lands via the writer — cached quota/daily-cap
+        // verdicts for this provider+key are now stale.
+        HotCache.Default.Invalidate($"qwx:{provider}");
+        HotCache.Default.Invalidate($"dcap:{apiKey}");
+
+        // SPEC-074: all DB writes funnel through the UsageWriter's dedicated
+        // context — no SaveChanges on the request-scoped context per request.
+        if (writer is not null)
+        {
+            var detailText = detail?.GetRawText() ?? error;
+            await writer.PostAsync(async w =>
+            {
+                w.UsageHistory.Add(new UsageRecord
+                {
+                    Timestamp = now,
+                    Provider = provider,
+                    Model = model,
+                    ConnectionId = connectionId,
+                    ApiKey = apiKey,
+                    Endpoint = endpoint,
+                    PromptTokens = promptTokens,
+                    CompletionTokens = completionTokens,
+                    Tokens = (promptTokens + completionTokens).ToString(),
+                    Status = status,
+                    Cost = cost,
+                    LatencyMs = latencyMs,
+                    Meta = detail?.GetRawText() ?? error,
+                });
+                w.RequestDetails.Add(new RequestDetail
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    Timestamp = now,
+                    Provider = provider,
+                    Model = model,
+                    ConnectionId = connectionId,
+                    Status = status,
+                    Data = detailText ?? "{}",
+                });
+                await w.SaveChangesAsync();
+                await RollupDailyOnAsync(w, provider, model, promptTokens, completionTokens);
+                await Routing.KeyQuota.CreditDailyAsync(w, apiKey, promptTokens + completionTokens);
+
+                var sess = await w.ChatSessions
+                    .FirstOrDefaultAsync(s => s.KeyId == apiKey && s.Model == model);
+                if (sess is null)
+                {
+                    w.ChatSessions.Add(new ChatSession
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        KeyId = apiKey, Model = model,
+                        StartedAt = now, LastSeenAt = now, MessageCount = 1,
+                    });
+                }
+                else { sess.LastSeenAt = now; sess.MessageCount++; }
+                await w.SaveChangesAsync();
+                // verdict keys now reflect the row we just wrote
+                HotCache.Default.Invalidate($"qwx:{provider}");
+                HotCache.Default.Invalidate($"dcap:{apiKey}");
+            });
+
+            if (rateLimiter is not null)
+            {
+                var rlRules = await HotReads.EnabledRateLimitsAsync(db);
+                if (rlRules.Count > 0)
+                    rateLimiter.RecordTokens(rlRules, apiKey, provider, model,
+                        promptTokens + completionTokens);
+            }
+            return;
+        }
+
         db.UsageHistory.Add(new UsageRecord
         {
             Timestamp = now,
@@ -329,11 +395,14 @@ public sealed class GatewayEngine(
         await db.SaveChangesAsync();
     }
 
-    private async Task RollupDailyAsync(string provider, string model, int prompt, int completion)
+    private Task RollupDailyAsync(string provider, string model, int prompt, int completion) =>
+        RollupDailyOnAsync(db, provider, model, prompt, completion);
+
+    private static async Task RollupDailyOnAsync(LlmRouterDbContext w, string provider, string model, int prompt, int completion)
     {
         var key = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        var row = await db.UsageDaily.FirstOrDefaultAsync(r => r.DateKey == key);
-        row ??= db.UsageDaily.Add(new UsageDaily { DateKey = key, Data = "{}" }).Entity;
+        var row = await w.UsageDaily.FirstOrDefaultAsync(r => r.DateKey == key);
+        row ??= w.UsageDaily.Add(new UsageDaily { DateKey = key, Data = "{}" }).Entity;
         var data = JsonDocument.Parse(row.Data).RootElement;
         var dict = data.ValueKind == JsonValueKind.Object
             ? data.EnumerateObject().ToDictionary(kv => kv.Name, kv => kv.Value.Clone())
@@ -372,6 +441,6 @@ public sealed class GatewayEngine(
             ["requests"] = (dict.TryGetValue("totals", out var t2) && t2.TryGetProperty("requests", out var tr) && tr.ValueKind == JsonValueKind.Number ? tr.GetInt32() : 0) + 1,
         });
         row.Data = JsonSerializer.Serialize(dict);
-        await db.SaveChangesAsync();
+        await w.SaveChangesAsync();
     }
 }

@@ -191,6 +191,7 @@ app.UseStatusCodePagesWithReExecute("/error/{0}");
 app.MapAuthEndpoints();
 ProviderScopedEndpoints.Map(app);
 V1LeftoversEndpoints.Map(app);
+UsageDepthEndpoints.Map(app);
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);

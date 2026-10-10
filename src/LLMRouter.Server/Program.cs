@@ -59,7 +59,16 @@ builder.Services.AddSingleton<ProviderRegistry>();
 builder.Services.AddSingleton<ComboPlanner>();
 builder.Services.AddSingleton<ModelResolver>();
 builder.Services.AddSingleton<RateLimiter>();
-builder.Services.AddScoped<GatewayEngine>();
+// SPEC-074: serialized off-path writer for usage/telemetry/config writes
+builder.Services.AddSingleton<LLMRouter.Core.Gateway.UsageWriter>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Gateway.UsageWriter>());
+builder.Services.AddScoped<GatewayEngine>(sp => new GatewayEngine(
+    sp.GetRequiredService<LlmRouterDbContext>(),
+    sp.GetRequiredService<ProviderRegistry>(),
+    sp.GetRequiredService<ComboPlanner>(),
+    sp.GetRequiredService<ModelResolver>(),
+    sp.GetRequiredService<RateLimiter>(),
+    sp.GetRequiredService<LLMRouter.Core.Gateway.UsageWriter>()));
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("batches");
 builder.Services.AddHttpClient("logexport");

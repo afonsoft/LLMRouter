@@ -158,7 +158,7 @@ public static class GatewayEndpoints
         // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
         // scope is enforced per-target inside the dispatch loop below.
         var rateLimiter = ctx.RequestServices.GetRequiredService<RateLimiter>();
-        var rlRules = await db.RateLimits.Where(r => r.Enabled).ToListAsync();
+        var rlRules = await Core.Gateway.HotReads.EnabledRateLimitsAsync(db);
         if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } ptVio)
         {
             ctx.Response.StatusCode = 429;
@@ -169,7 +169,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-041: per-key daily token cap
-        if (await Core.Routing.KeyQuota.DailyCapExceededAsync(db, apiKey))
+        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey))
         {
             ctx.Response.StatusCode = 429;
             await WriteError(ctx, "openai", "rate_limit", "Daily token quota exhausted for this API key.");
@@ -180,7 +180,7 @@ public static class GatewayEndpoints
         if (body.ValueKind == JsonValueKind.Object && rawBody is not null)
         {
             var bj = JsonNode.Parse(rawBody)!.AsObject();
-            var plugins = await Core.Extras.PluginHooks.RegisteredAsync(db);
+            var plugins = await Core.Gateway.HotReads.RegisteredPluginsAsync(db);
             var pluginHeaders = await Core.Extras.PluginHooks.ApplyRequestAsync(db, bj, plugins);
             if (pluginHeaders.Count > 0) ctx.Items["pluginHeaders"] = pluginHeaders;
             ctx.Items["plugins"] = plugins;
@@ -194,7 +194,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-015: chaos fault injection (latency + random 5xx, rules per route)
-        if (await Core.Extras.Extras.ChaosDelayAsync(db, model) is { } chaosStatus)
+        if (await ChaosCheckAsync(db, model) is { } chaosStatus)
         {
             ctx.Response.StatusCode = chaosStatus;
             await WriteError(ctx, "openai", "chaos", "Injected fault (chaos mode).");
@@ -358,7 +358,7 @@ public static class GatewayEndpoints
 
         // SPEC-023: prompt-injection guard — settings.guardrails or env:
         // INPUT_SANITIZER_ENABLED (default true), _MODE (block|warn|log), _BLOCK_THRESHOLD (low|medium|high)
-        var sdata = await Core.Usage.PricingService.SettingsDataAsync(db);
+        var sdata = await Core.Gateway.HotReads.SettingsDataAsync(db);
         string? S(string k) => sdata.ValueKind == JsonValueKind.Object
             && sdata.TryGetProperty("guardrails", out var g) && g.ValueKind == JsonValueKind.Object
             && g.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
@@ -376,8 +376,10 @@ public static class GatewayEndpoints
                     ?? Environment.GetEnvironmentVariable("INPUT_SANITIZER_BLOCK_THRESHOLD") ?? "high";
                 var block = gmode == "block"
                     && Core.Guardrails.PromptGuard.ShouldBlock(hits, threshold);
-                _ = Core.Extras.Extras.AuditAsync(db, block ? "guardrail.block" : "guardrail.flag",
-                    $"{inbound}: {string.Join(",", hits.Select(h => h.Name))}");
+                var writer0 = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+                var auditAction = block ? "guardrail.block" : "guardrail.flag";
+                var auditDetail = $"{inbound}: {string.Join(",", hits.Select(h => h.Name))}";
+                _ = writer0.PostAsync(d => Core.Extras.Extras.AuditAsync(d, auditAction, auditDetail));
                 if (block)
                 {
                     ctx.Response.StatusCode = 400;
@@ -430,7 +432,9 @@ public static class GatewayEndpoints
             if (cr.Compressed)
             {
                 body = cr.Body;
-                _ = Core.Extras.Extras.AuditAsync(db, "context.compress", $"{inbound}: dropped {cr.Dropped} message(s)");
+                var writer1 = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+                var compressDetail = $"{inbound}: dropped {cr.Dropped} message(s)";
+                _ = writer1.PostAsync(d => Core.Extras.Extras.AuditAsync(d, "context.compress", compressDetail));
             }
         }
 
@@ -452,7 +456,8 @@ public static class GatewayEndpoints
             var env = ctx.RequestServices.GetService<IWebHostEnvironment>();
             if (env is not null)
             {
-                var skillText = await Endpoints.ToolsEndpoints.SkillPromptTextAsync(db, env);
+                var skillText = await Core.Gateway.HotReads.SkillsPromptAsync(db,
+                    () => Endpoints.ToolsEndpoints.SkillPromptTextAsync(db, env));
                 if (skillText is not null)
                     body = Core.Gateway.ContextCompressor.InjectSystem(body, skillText);
             }
@@ -462,7 +467,7 @@ public static class GatewayEndpoints
         // SPEC-069: requests with no/blank model fall through to the configured default combo
         if (string.IsNullOrEmpty(model))
         {
-            var cd = JsonNode.Parse((await db.Settings.FirstOrDefaultAsync())?.Data ?? "{}")?.AsObject();
+            var cd = sdata.ValueKind == JsonValueKind.Object ? JsonNode.Parse(sdata.GetRawText())?.AsObject() : null;
             model = (cd?["comboDefaults"] as JsonObject)?["defaultCombo"]?.GetValue<string>() ?? "";
         }
         if (inbound == "gemini" && string.IsNullOrEmpty(model))
@@ -473,7 +478,7 @@ public static class GatewayEndpoints
         // SPEC-023: API key policy — restricted keys only reach AccessAllow providers/models
         if (model.Length > 0 && apiKey != "dashboard")
         {
-            var keyRow = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == apiKey);
+            var keyRow = await Core.Gateway.HotReads.ApiKeyAsync(db, apiKey);
             if (keyRow is { AccessRestricted: true })
             {
                 var allow = (keyRow.AccessAllow ?? "")
@@ -498,7 +503,7 @@ public static class GatewayEndpoints
         // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
         // scope is enforced per-target inside the dispatch loop below.
         var rateLimiter = ctx.RequestServices.GetRequiredService<RateLimiter>();
-        var rlRules = await db.RateLimits.Where(r => r.Enabled).ToListAsync();
+        var rlRules = await Core.Gateway.HotReads.EnabledRateLimitsAsync(db);
         if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } rlVio)
         {
             ctx.Response.StatusCode = 429;
@@ -509,7 +514,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-041: per-key daily token cap
-        if (await Core.Routing.KeyQuota.DailyCapExceededAsync(db, apiKey))
+        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey))
         {
             ctx.Response.StatusCode = 429;
             await WriteError(ctx, inbound, "rate_limit", "Daily token quota exhausted for this API key.");
@@ -517,7 +522,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-015/023: chaos fault injection (rules match provider/model)
-        if (await Core.Extras.Extras.ChaosDelayAsync(db, model) is { } chatChaos)
+        if (await ChaosCheckAsync(db, model) is { } chatChaos)
         {
             ctx.Response.StatusCode = chatChaos;
             await WriteError(ctx, inbound, "chaos", "Injected fault (chaos mode).");
@@ -526,7 +531,7 @@ public static class GatewayEndpoints
 
         // vision-adapter combo: stage-1 imageToText call rewrites the image into
         // a text description, then the remaining combo models serve the request
-        var comboEntity = await db.Combos.FirstOrDefaultAsync(c => c.Name == model);
+        var comboEntity = await Core.Gateway.HotReads.ComboAsync(db, model);
         if (comboEntity?.Kind == "vision-adapter"
             && ComboPlanner.DetectRequiredCapabilities(body).Contains("vision"))
         {
@@ -542,10 +547,10 @@ public static class GatewayEndpoints
             var compNode = JsonNode.Parse(cv.GetRawText()) as JsonObject;
             var routingComboId = comboEntity?.Id ?? model;
             var assigned = routingComboId is null ? null
-                : await db.CompressionComboAssignments.FirstOrDefaultAsync(a => a.RoutingComboId == routingComboId);
+                : await Core.Gateway.HotReads.CompressionAssignmentAsync(db, routingComboId);
             JsonObject? comboPipeline = null;
             if (assigned is not null
-                && await db.CompressionCombos.FindAsync(assigned.CompressionComboId) is { } comboRow)
+                && await Core.Gateway.HotReads.CompressionComboAsync(db, assigned.CompressionComboId) is { } comboRow)
                 comboPipeline = JsonNode.Parse(comboRow.Pipeline) as JsonObject;
 
             var steps = Core.Compression.CompressionPipeline.ResolvePlan(compNode, routingComboId, comboPipeline);
@@ -564,19 +569,23 @@ public static class GatewayEndpoints
                     {
                         body = JsonSerializer.SerializeToElement(outBody);
                         var now = DateTime.UtcNow.ToString("o");
-                        foreach (var r in runs.Where(r => r.SavedChars > 0))
-                            db.CompressionRuns.Add(new Core.Data.CompressionRun
-                            {
-                                Id = Guid.NewGuid().ToString("n")[..12],
-                                Timestamp = now,
-                                PrincipalId = apiKey,
-                                Model = model,
-                                EngineId = r.Engine,
-                                BeforeChars = r.BeforeChars,
-                                AfterChars = r.AfterChars,
-                                ComboId = assigned?.CompressionComboId,
-                            });
-                        await db.SaveChangesAsync();
+                        var writer2 = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+                        var toAdd = runs.Where(r => r.SavedChars > 0).Select(r => new Core.Data.CompressionRun
+                        {
+                            Id = Guid.NewGuid().ToString("n")[..12],
+                            Timestamp = now,
+                            PrincipalId = apiKey,
+                            Model = model,
+                            EngineId = r.Engine,
+                            BeforeChars = r.BeforeChars,
+                            AfterChars = r.AfterChars,
+                            ComboId = assigned?.CompressionComboId,
+                        }).ToList();
+                        _ = writer2.PostAsync(async d =>
+                        {
+                            d.CompressionRuns.AddRange(toAdd);
+                            await d.SaveChangesAsync();
+                        });
                     }
                 }
             }
@@ -599,7 +608,7 @@ public static class GatewayEndpoints
         if (body.ValueKind == JsonValueKind.Object)
         {
             var bj = JsonNode.Parse(body.GetRawText())!.AsObject();
-            var plugins = await Core.Extras.PluginHooks.RegisteredAsync(db);
+            var plugins = await Core.Gateway.HotReads.RegisteredPluginsAsync(db);
             var pluginHeaders = await Core.Extras.PluginHooks.ApplyRequestAsync(db, bj, plugins);
             if (pluginHeaders.Count > 0) ctx.Items["pluginHeaders"] = pluginHeaders;
             ctx.Items["plugins"] = plugins;
@@ -610,7 +619,7 @@ public static class GatewayEndpoints
         // SPEC-046: tier rules — model allow-list + daily cap for the api key's tier
         if (apiKey != "dashboard")
         {
-            var (tierModels, tierDaily) = await Core.Routing.SettingsOps.TierRulesAsync(db, sdata, apiKey);
+            var (tierModels, tierDaily) = await Core.Gateway.HotReads.TierRulesAsync(db, sdata, apiKey);
             if (tierModels is not null && !tierModels.Any(m =>
                     m == model || model.StartsWith(m + "/", StringComparison.Ordinal)))
             {
@@ -637,7 +646,7 @@ public static class GatewayEndpoints
         // SPEC-047: oneproxy — all upstream traffic through a single proxy
         var oneProxy = ctx.RequestServices.GetService<Core.Routing.OneProxyState>();
         if (oneProxy is not null)
-            oneProxy.Set(await Core.Routing.RoutingOps.OneProxyCurrentAsync(db, sdata));
+            oneProxy.Set(await Core.Gateway.HotReads.OneProxyCurrentAsync(db, sdata));
 
         // SPEC-045: prompt cache — replay stored responses for identical
         // non-stream requests (identity = canonical body minus volatile keys)
@@ -685,8 +694,7 @@ public static class GatewayEndpoints
             // SPEC-049: session pool — lease a warm session for providers that
             // have an active pool; released with the outcome below
             Core.Data.PoolSession? pooled = null;
-            var sp = await db.SessionPools.FirstOrDefaultAsync(
-                p => p.Provider == target.Provider.Id && p.IsActive);
+            var sp = await Core.Gateway.HotReads.SessionPoolAsync(db, target.Provider.Id);
             if (sp is not null)
                 pooled = await Core.Routing.SessionPoolOps.AcquireAsync(db, sp);
             try
@@ -723,7 +731,7 @@ public static class GatewayEndpoints
                         lastError = new HttpRequestException($"upstream {(int)resp.StatusCode}: {errBody[..Math.Min(200, errBody.Length)]}");
                         continue; // cascade to next target
                     }
-                    try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
+                    try { await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: false); } catch { }
                     if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));
                     ctx.Response.StatusCode = (int)resp.StatusCode;
                     await WriteError(ctx, inbound, "upstream_error", errBody);
@@ -747,7 +755,7 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
-                    await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: true);
+                    await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail);
@@ -761,7 +769,7 @@ public static class GatewayEndpoints
                         Core.Extras.PluginHooks.ApplyResponse(plArr, tj);
                     var (pt, ct) = ExtractUsage(translated, inbound);
                     if (cacheHash is not null)
-                        await Core.Cache.PromptCache.StoreAsync(db, sdata, cacheHash,
+                        await CacheStoreAsync(ctx, sdata, cacheHash,
                             target.Provider.Id, model, body.GetRawText(), translated.ToJsonString(JsonOpts),
                             Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
                     ctx.Response.ContentType = "application/json";
@@ -772,7 +780,7 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
-                    await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: true);
+                    await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -785,7 +793,7 @@ public static class GatewayEndpoints
                 if (pooled is not null)
                     await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: false);
                 lastError = ex;
-                try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
+                try { await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: false); } catch { }
                     if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));
                 if (target == targets[^1]) break;
             }
@@ -1160,6 +1168,31 @@ public static class GatewayEndpoints
             new() { Element = n is null ? default : JsonDocument.Parse(n.ToJsonString()).RootElement.Clone() };
     }
 
+    /// <summary>SPEC-074: cached chaos config → per-request evaluation.</summary>
+    private static async Task<int?> ChaosCheckAsync(LlmRouterDbContext db, string? model)
+    {
+        var raw = await Core.Gateway.HotReads.ChaosConfigAsync(db);
+        return await Core.Extras.Extras.EvaluateChaosAsync(raw, model);
+    }
+
+    /// <summary>SPEC-074: conn health write off the request path.</summary>
+    private static async Task ReportConnAsync(HttpContext ctx, LlmRouterDbContext db,
+        JsonElement sdata, string connId, bool success)
+    {
+        var writer = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+        await writer.PostAsync(d => Core.Routing.SettingsOps.ReportConnectionAsync(d, sdata, connId, success));
+    }
+
+    /// <summary>SPEC-074: prompt-cache store off the request path.</summary>
+    private static async Task CacheStoreAsync(HttpContext ctx, JsonElement sdata, string hash,
+        string provider, string model, string request, string response, bool reasoning,
+        int tokens, CancellationToken ct)
+    {
+        var writer = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+        await writer.PostAsync(d => Core.Cache.PromptCache.StoreAsync(d, sdata, hash,
+            provider, model, request, response, reasoning, tokens, CancellationToken.None));
+    }
+
     private static async Task<bool> Authorized(HttpContext ctx, LlmRouterDbContext db) =>
         (await AuthenticatedKey(ctx, db)).Authed;
 
@@ -1172,8 +1205,8 @@ public static class GatewayEndpoints
             : ctx.Request.Headers["x-api-key"].FirstOrDefault()
               ?? ctx.Request.Query["key"].FirstOrDefault();
         if (string.IsNullOrEmpty(key)) return ("", false);
-        var found = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == key && k.IsActive);
-        return (key, found is not null);
+        var found = await Core.Gateway.HotReads.ApiKeyAsync(db, key);
+        return (key, found is { IsActive: true });
     }
 
     /// <summary>SPEC-031: merge plugin addHeaders into the upstream request.</summary>

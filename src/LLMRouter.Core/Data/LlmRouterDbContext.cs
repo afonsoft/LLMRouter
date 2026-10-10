@@ -71,6 +71,46 @@ public class LlmRouterDbContext : DbContext
         mb.Entity<EvalRun>().HasIndex(e => e.SuiteId);
         mb.Entity<A2aTask>().HasIndex(e => e.State);
         mb.Entity<ConductorTask>().HasIndex(e => e.State);
+        mb.Entity<UsageRecord>().HasIndex(e => e.ApiKey);
+        mb.Entity<ChatSession>().HasIndex(e => new { e.KeyId, e.Model });
+        mb.Entity<ProviderConnection>().HasIndex(e => new { e.Provider, e.IsActive });
+        mb.Entity<QuotaWindow>().HasIndex(e => e.Provider);
+    }
+
+    // SPEC-074: telemetry entity types never bust the hot cache — they are
+    // written every request. Any other entity change invalidates the whole
+    // hot cache (config writes are rare). SuppressCacheBust is set on the
+    // UsageWriter's dedicated context so offloaded usage writes never bust.
+    private static readonly HashSet<Type> TelemetryTypes =
+    [
+        typeof(UsageRecord), typeof(RequestDetail), typeof(UsageDaily),
+        typeof(CompressionRun), typeof(JobRun), typeof(JobState),
+        typeof(ChatSession), typeof(A2aTask), typeof(ConductorTask),
+        typeof(EvalRun), typeof(CacheEntry), typeof(FileEntry),
+        typeof(MetaEntry), typeof(PoolSession), typeof(ModelCooldown),
+    ];
+    private static readonly HashSet<string> TelemetryKvScopes =
+        new(StringComparer.OrdinalIgnoreCase)
+        { "audit", "quota", "quotaDaily", "connErrors", "usage", "stats", "keyusage", "connstate" };
+
+    public bool SuppressCacheBust { get; set; }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var configChange = !SuppressCacheBust && ChangeTracker.Entries()
+            .Any(e => e.State != EntityState.Unchanged && e.State != EntityState.Detached
+                && (e.Entity is not KvEntry kv
+                    ? !TelemetryTypes.Contains(e.Entity.GetType())
+                    : !TelemetryKvScopes.Contains(kv.Scope.Split(':')[0])));
+        var n = await base.SaveChangesAsync(cancellationToken);
+        if (configChange) Gateway.HotCache.Default.InvalidateAll();
+        return n;
+    }
+
+    public override int SaveChanges()
+    {
+        var n = base.SaveChanges();
+        return n;
     }
 
     // EnsureCreated isn't atomic across concurrent contexts (parallel WebApplicationFactory
@@ -130,6 +170,10 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS tags (Id TEXT NOT NULL PRIMARY KEY, TargetType TEXT NOT NULL, TargetId TEXT NOT NULL, Value TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS policies (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Priority INTEGER NOT NULL DEFAULT 0, Rule TEXT NOT NULL DEFAULT '{}', Enabled INTEGER NOT NULL DEFAULT 1)""",
                 """CREATE TABLE IF NOT EXISTS chatSessions (Id TEXT NOT NULL PRIMARY KEY, KeyId TEXT NOT NULL, Model TEXT NOT NULL, StartedAt TEXT NOT NULL, LastSeenAt TEXT NOT NULL, MessageCount INTEGER NOT NULL DEFAULT 0)""",
+                """CREATE INDEX IF NOT EXISTS IX_usageHistory_ApiKey ON usageHistory (ApiKey)""",
+                """CREATE INDEX IF NOT EXISTS IX_chatSessions_KeyId_Model ON chatSessions (KeyId, Model)""",
+                """CREATE INDEX IF NOT EXISTS IX_providerConnections_Provider_IsActive ON providerConnections (Provider, IsActive)""",
+                """CREATE INDEX IF NOT EXISTS IX_quotaWindows_Provider ON quotaWindows (Provider)""",
             })
             {
                 cmd.CommandText = ddl;

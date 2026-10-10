@@ -28,6 +28,13 @@ public static class Extras
     public static async Task<int?> ChaosDelayAsync(LlmRouterDbContext db, string? model = null)
     {
         var raw = await KvGet(db, "chaos", "config");
+        return await EvaluateChaosAsync(raw, model);
+    }
+
+    /// <summary>SPEC-074: evaluate chaos config already fetched (cached) —
+    /// latency delay + random 5xx, rules per route.</summary>
+    public static async Task<int?> EvaluateChaosAsync(string? raw, string? model = null)
+    {
         if (raw is null) return null;
         try
         {

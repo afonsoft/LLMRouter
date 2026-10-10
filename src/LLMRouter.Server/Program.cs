@@ -192,6 +192,8 @@ app.MapAuthEndpoints();
 ProviderScopedEndpoints.Map(app);
 V1LeftoversEndpoints.Map(app);
 UsageDepthEndpoints.Map(app);
+ComboAnalyticsEndpoints.Map(app);
+MgmtBatchEndpoints.Map(app);
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);

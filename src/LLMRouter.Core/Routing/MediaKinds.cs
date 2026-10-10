@@ -11,7 +11,8 @@ public static class MediaKinds
 {
     /// <summary>Kinds shown on the media-providers page (upstream VISIBLE_MEDIA_KINDS).</summary>
     public static readonly string[] Visible =
-        ["embedding", "image", "video", "tts", "stt", "search", "fetch", "systemone"];
+        ["embedding", "image", "video", "tts", "stt", "search", "fetch", "systemone",
+         "music", "rerank", "ocr", "segment", "moderation"];
 
     /// <summary>Map a /v1 path to its media kind, or null for chat-ish paths.</summary>
     public static string? KindForPath(string path)
@@ -19,13 +20,20 @@ public static class MediaKinds
         var p = path.ToLowerInvariant();
         return p switch
         {
-            _ when p.Contains("/audio/speech") || p.Contains("/audio/voices") => "tts",
-            _ when p.Contains("/audio/transcriptions") || p.Contains("/audio/translations") => "stt",
+            _ when p.Contains("/audio/speech") || p.Contains("/audio/voices")
+                || p.Contains("/text-to-speech") || p.Contains("/voices") => "tts",
+            _ when p.Contains("/audio/transcriptions") || p.Contains("/audio/translations")
+                || p.Contains("/speech-to-text") => "stt",
             _ when p.Contains("/images/") => "image",
             _ when p.Contains("/videos") => "video",
+            _ when p.Contains("/music/") => "music",
+            _ when p.Contains("/ocr") => "ocr",
+            _ when p.Contains("/segment") => "segment",
+            _ when p.Contains("/moderations") => "moderation",
+            _ when p.Contains("/rerank") => "rerank",
             _ when p.Contains("/embeddings") => "embedding",
             _ when p.Contains("/search") => "search",
-            _ when p.Contains("/web/fetch") || p.Contains("/fetch") => "fetch",
+            _ when p.Contains("/web/fetch") || p.Contains("/web/map") || p.Contains("/fetch") => "fetch",
             _ when p.Contains("/systemone") => "systemone",
             _ => null,
         };

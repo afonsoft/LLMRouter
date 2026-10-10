@@ -39,6 +39,11 @@ public static class GatewayEndpoints
                 "/moderations" })
                 g.MapMethods(p, ["POST", "GET"], (HttpContext c) => Passthrough(c));
             g.MapMethods("/{*path}", ["OPTIONS"], () => Results.Ok());
+            // unknown /v1 paths → 404 (upstream parity; explicit routes win over fallback)
+            g.MapFallback(() => Results.NotFound(new
+            {
+                error = new { type = "not_found", message = "Unknown endpoint." },
+            }));
         }
         // Gemini inbound
         app.MapMethods("/v1beta/models/{model}:generateContent", ["POST"], (HttpContext c) => Chat(c, "gemini"));
@@ -124,11 +129,15 @@ public static class GatewayEndpoints
     /// resolve a provider connection for the requested model, forward the body
     /// verbatim to the provider's endpoint for that service, stream the
     /// response back (may be binary/multipart). No format translation.
+    /// SPEC-063: unified passthrough/media forward. <paramref name="kind"/> is the
+    /// media kind (auto-derived from path when null); media requests get
+    /// kind-aware resolution with fallback to kind-declaring connections.
     /// </summary>
-    private static async Task Passthrough(HttpContext ctx)
+    internal static async Task Passthrough(HttpContext ctx, string? kind = null)
     {
         var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
         var engine = ctx.RequestServices.GetRequiredService<GatewayEngine>();
+        var registry = ctx.RequestServices.GetRequiredService<ProviderRegistry>();
         var httpFactory = ctx.RequestServices.GetRequiredService<IHttpClientFactory>();
         var sw = Stopwatch.StartNew();
 
@@ -201,9 +210,16 @@ public static class GatewayEndpoints
             return;
         }
 
-        var targets = await engine.ResolveAsync(model, body, ctx.RequestAborted);
-        targets = Core.Routing.MediaKinds.Filter(targets,
-            Core.Routing.MediaKinds.KindForPath(ctx.Request.Path.Value ?? ""), t => t.Connection);
+        kind ??= Core.Routing.MediaKinds.KindForPath(ctx.Request.Path.Value ?? "");
+        var (targets, unsupported) = await Core.Media.MediaRouter.ResolveAsync(
+            db, engine, registry, kind, model, body, ctx.RequestAborted);
+        if (unsupported)
+        {
+            ctx.Response.StatusCode = 422;
+            await WriteError(ctx, "openai", "media_kind_unsupported",
+                $"No active provider connection supports media kind '{kind}'.");
+            return;
+        }
         if (targets.Count == 0)
         {
             ctx.Response.StatusCode = 400;
@@ -248,7 +264,7 @@ public static class GatewayEndpoints
                 {
                     req.Content = new ByteArrayContent(rawBody);
                     req.Content.Headers.ContentType =
-                        new System.Net.Http.Headers.MediaTypeHeaderValue(
+                        System.Net.Http.Headers.MediaTypeHeaderValue.Parse(
                             ctx.Request.ContentType ?? "application/json");
                 }
                 using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
@@ -273,10 +289,10 @@ public static class GatewayEndpoints
                 });
                 ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
                 await resp.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
-                if (!resp.IsSuccessStatusCode)
-                    await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
-                        target.Connection.Id, apiKey, path, 0, 0,
-                        ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds);
+                // SPEC-063: usage rows carry the media kind as Endpoint
+                await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
+                    target.Connection.Id, apiKey, kind ?? path, 0, 0,
+                    ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds);
                 return;
             }
             catch (Exception) when (target != targets[^1]) { /* best-effort: failure is non-fatal */ }

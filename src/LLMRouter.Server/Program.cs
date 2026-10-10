@@ -226,6 +226,7 @@ AdminOpsEndpoints.Map(app);
 MemoryVectorEndpoints.Map(app);
 AuditOpsEndpoints.Map(app);
 TunnelEndpoints.Map(app);
+VersionManagerEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

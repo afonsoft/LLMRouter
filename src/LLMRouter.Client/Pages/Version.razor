@@ -1,0 +1,53 @@
+@page "/dashboard/version"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("version.title", "Version")</h1>
+<p class="page-desc">@Loc.T("version.subtitle", "Version manager, self-update and power")</p>
+
+<div class="card card-p mt-4">
+    @if (_st.ValueKind == JsonValueKind.Undefined) { <p>Loading…</p> }
+    else
+    {
+        <table class="table"><tbody>
+            <tr><td>Version</td><td><code>@P(_st,"version")</code></td></tr>
+            <tr><td>Commit</td><td><code>@P(_st,"commitSha")</code></td></tr>
+            <tr><td>Channel</td><td>@P(_st,"channel")</td></tr>
+            <tr><td>Runtime</td><td>@P(_st,"runtime")</td></tr>
+            <tr><td>OS</td><td>@P(_st,"os") (@P(_st,"arch"))</td></tr>
+        </tbody></table>
+    }
+    <div class="flex gap-2 mt-4">
+        <button class="btn btn-primary" @onclick="Check" disabled="@_busy">Check update</button>
+        <button class="btn" @onclick="DoRestart">Restart</button>
+        <button class="btn" @onclick="DoShutdown">Shutdown</button>
+    </div>
+    @if (_msg is not null) { <p class="mt-2">@_msg</p> }
+    @if (_upd.ValueKind != JsonValueKind.Undefined)
+    {
+        <div class="mt-4">
+            <b>@P(_upd,"latest")</b> — update available: @P(_upd,"updateAvailable")
+            <pre class="mt-2" style="max-height:160px;overflow:auto">@P(_upd,"changelogPreview")</pre>
+        </div>
+    }
+</div>
+
+@code {
+    private JsonElement _st, _upd; private string? _msg; private bool _busy;
+    protected override async Task OnInitializedAsync() => _st = await Api.GetAsync("api/version-manager/status");
+    private static string? P(JsonElement e, string k) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) ? v.GetRawText().Trim('"') : "—";
+    private async Task Check()
+    {
+        _busy = true;
+        try { _upd = await Api.GetAsync("api/version-manager/check-update"); } catch (Exception ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+    private Task DoRestart() => Power("restart");
+    private Task DoShutdown() => Power("shutdown");
+    private async Task Power(string a)
+    {
+        try { var r = await Api.PostAsync($"api/{a}", new { }); _msg = $"{a}: {r.GetRawText()}"; }
+        catch (Exception ex) { _msg = ex.Message; }
+    }
+}

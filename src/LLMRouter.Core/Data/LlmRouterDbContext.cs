@@ -154,6 +154,12 @@ public class LlmRouterDbContext : DbContext
                 "ALTER TABLE combos ADD COLUMN AllowedProviders TEXT NULL",
                 "ALTER TABLE combos ADD COLUMN AllowedFamilies TEXT NULL",
                 "ALTER TABLE combos ADD COLUMN Tiers TEXT NULL",
+                // SPEC-093: provider-reported caps persisted on syncedModels
+                "ALTER TABLE syncedModels ADD COLUMN MaxOutputTokens INTEGER NULL",
+                "ALTER TABLE syncedModels ADD COLUMN Vision INTEGER NULL",
+                "ALTER TABLE syncedModels ADD COLUMN Tools INTEGER NULL",
+                "ALTER TABLE syncedModels ADD COLUMN Reasoning INTEGER NULL",
+                "ALTER TABLE syncedModels ADD COLUMN ReasoningEfforts TEXT NULL",
             })
             {
                 cmd.CommandText = col;

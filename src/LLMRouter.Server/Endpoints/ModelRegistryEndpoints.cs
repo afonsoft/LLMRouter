@@ -170,13 +170,13 @@ public static class ModelRegistryEndpoints
                 {
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     cts.CancelAfter(SyncTimeout);
-                    var ids = await FetchModelIdsAsync(p, conn, modelsUrl, hf, cts.Token);
-                    if (ids is null)
+                    var items = await FetchModelIdsAsync(p, conn, modelsUrl, hf, cts.Token);
+                    if (items is null)
                     {
                         results.Add(new { provider = pid, ok = false, count = 0, error = "upstream fetch failed" });
                         continue;
                     }
-                    var count = await UpsertSyncedAsync(db, pid, ids);
+                    var count = await UpsertSyncedAsync(db, pid, items);
                     synced++;
                     okProviders.Add(pid);
                     results.Add(new { provider = pid, ok = true, count });
@@ -292,7 +292,7 @@ public static class ModelRegistryEndpoints
     }
 
     /// <summary>Fetch the provider's live model id list from its models endpoint.</summary>
-    private static async Task<List<string>?> FetchModelIdsAsync(
+    private static async Task<List<JsonElement>?> FetchModelIdsAsync(
         ProviderEntry p, ProviderConnection conn, string modelsUrl,
         IHttpClientFactory hf, CancellationToken ct)
     {
@@ -312,26 +312,62 @@ public static class ModelRegistryEndpoints
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
         if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
             return [];
+        // SPEC-093: keep the whole item so provider-reported caps persist on sync
         return data.EnumerateArray()
-            .Select(x => x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "")
-            .Where(id => id.Length > 0)
+            .Where(x => x.TryGetProperty("id", out var i) && i.ValueKind == JsonValueKind.String
+                && (i.GetString()?.Length ?? 0) > 0)
+            .Select(x => x.Clone())
             .ToList();
     }
 
-    /// <summary>Upsert syncedModels rows for one provider; stale rows become Available=false.</summary>
-    private static async Task<int> UpsertSyncedAsync(LlmRouterDbContext db, string provider, List<string> ids)
+    /// <summary>SPEC-093: pull provider-reported caps out of a model-list item.</summary>
+    private static (int? MaxOut, bool? Vision, bool? Tools, bool? Reasoning, string? Efforts) ReadCaps(JsonElement x)
+    {
+        int? maxOut = x.TryGetProperty("max_output_tokens", out var mo) && mo.TryGetInt32(out var mov) ? mov
+            : x.TryGetProperty("maxOutputTokens", out var mo2) && mo2.TryGetInt32(out var mov2) ? mov2
+            : x.TryGetProperty("top_provider", out var tp) && tp.ValueKind == JsonValueKind.Object
+                && tp.TryGetProperty("max_output_tokens", out var tpv) && tpv.TryGetInt32(out var tpvi) ? tpvi
+            : (int?)null;
+        bool? vision = x.TryGetProperty("vision", out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean()
+            : x.TryGetProperty("supports_vision", out var v2) && v2.ValueKind is JsonValueKind.True or JsonValueKind.False ? v2.GetBoolean()
+            : (bool?)null;
+        bool? tools = x.TryGetProperty("tools", out var t) && t.ValueKind is JsonValueKind.True or JsonValueKind.False ? t.GetBoolean()
+            : x.TryGetProperty("supports_tool_calling", out var t2) && t2.ValueKind is JsonValueKind.True or JsonValueKind.False ? t2.GetBoolean()
+            : (bool?)null;
+        bool? reasoning = x.TryGetProperty("reasoning", out var r) && r.ValueKind is JsonValueKind.True or JsonValueKind.False ? r.GetBoolean()
+            : x.TryGetProperty("supports_reasoning", out var r2) && r2.ValueKind is JsonValueKind.True or JsonValueKind.False ? r2.GetBoolean()
+            : (bool?)null;
+        string? efforts = null;
+        JsonElement? arr = x.TryGetProperty("reasoning_efforts", out var re) && re.ValueKind == JsonValueKind.Array ? re
+            : x.TryGetProperty("reasoning", out var rj) && rj.ValueKind == JsonValueKind.Object
+                && rj.TryGetProperty("efforts", out var re2) && re2.ValueKind == JsonValueKind.Array ? re2
+            : null;
+        if (arr is { } a) efforts = a.GetRawText();
+        return (maxOut, vision, tools, reasoning, efforts);
+    }
+
+    /// <summary>Upsert syncedModels rows for one provider; stale rows become Available=false.
+    /// SPEC-093: provider-reported caps (maxOutputTokens/vision/tools/reasoning/efforts) persist on the row.</summary>
+    private static async Task<int> UpsertSyncedAsync(LlmRouterDbContext db, string provider, List<JsonElement> items)
     {
         var now = Now();
         var existing = await db.SyncedModels.Where(s => s.Provider == provider).ToListAsync();
         var byModel = existing.ToDictionary(s => s.Model, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var id in ids)
+        foreach (var item in items)
         {
+            var id = item.GetProperty("id").GetString()!;
             if (!seen.Add(id)) continue;
+            var (maxOut, vision, tools, reasoning, efforts) = ReadCaps(item);
             if (byModel.TryGetValue(id, out var row))
             {
                 row.Available = true;
                 row.LastSyncAt = now;
+                row.MaxOutputTokens = maxOut;
+                row.Vision = vision;
+                row.Tools = tools;
+                row.Reasoning = reasoning;
+                row.ReasoningEfforts = efforts;
             }
             else
             {
@@ -342,6 +378,11 @@ public static class ModelRegistryEndpoints
                     Model = id,
                     Available = true,
                     LastSyncAt = now,
+                    MaxOutputTokens = maxOut,
+                    Vision = vision,
+                    Tools = tools,
+                    Reasoning = reasoning,
+                    ReasoningEfforts = efforts,
                 });
             }
         }

@@ -579,6 +579,13 @@ public class SyncedModel
     public string Model { get; set; } = "";
     public bool Available { get; set; } = true;
     public string LastSyncAt { get; set; } = "";
+    /// <summary>SPEC-093: provider-reported caps kept on sync (null = unknown → registry fallback).</summary>
+    public int? MaxOutputTokens { get; set; }
+    public bool? Vision { get; set; }
+    public bool? Tools { get; set; }
+    public bool? Reasoning { get; set; }
+    /// <summary>JSON array of advertised reasoning_effort values.</summary>
+    public string? ReasoningEfforts { get; set; }
 }
 
 [Table("quotaWindows")]

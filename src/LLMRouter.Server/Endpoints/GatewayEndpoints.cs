@@ -738,6 +738,15 @@ public static class GatewayEndpoints
                 $"No active provider connection can serve '{model}'.");
             return;
         }
+        // SPEC-093: ToS-style warn-once for steps pointing at uncataloged models
+        // (absent from the embedded registry AND from syncedModels rows).
+        foreach (var t in targets)
+        {
+            if (t.Provider.Models.Any(m => m.Id == t.UpstreamModel)) continue;
+            if (await db.SyncedModels.AnyAsync(s => s.Provider == t.Provider.Id
+                    && s.Model == t.UpstreamModel && s.Available, ctx.RequestAborted)) continue;
+            WarnUncatalogedOnce(ctx, $"{t.Provider.Id}/{t.UpstreamModel}");
+        }
 
         Exception? lastError = null;
         foreach (var target in targets)
@@ -776,10 +785,15 @@ public static class GatewayEndpoints
                 {
                     Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
                     var errBody = await resp.Content.ReadAsStringAsync(ctx.RequestAborted);
+                    // SPEC-093: buffered Responses-API errors are classified by their
+                    // JSON error.type so the breaker sees the real status semantics.
+                    var effectiveStatus = !stream && inbound == "responsesApi"
+                        ? ClassifyResponsesError((int)resp.StatusCode, errBody)
+                        : (int)resp.StatusCode;
                     // SPEC-021: provider breaker (408/5xx) + model lockout (404/model-429)
                     Core.Resilience.ProviderBreaker.ReportStatus(target.Provider.Id,
-                        (int)resp.StatusCode, target.Provider.AuthType);
-                    if (Core.Resilience.ModelLockout.IsModelScoped((int)resp.StatusCode, errBody))
+                        effectiveStatus, target.Provider.AuthType);
+                    if (Core.Resilience.ModelLockout.IsModelScoped(effectiveStatus, errBody))
                         Core.Resilience.ModelLockout.Lock(target.Provider.Id,
                             target.Connection.Id, target.UpstreamModel);
                     if (pooled is not null)
@@ -1130,6 +1144,39 @@ public static class GatewayEndpoints
     private static bool ShouldCascade(HttpStatusCode s) =>
         s == HttpStatusCode.TooManyRequests || (int)s >= 500 ||
         s is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound;
+
+    /// <summary>SPEC-093: warn once per uncataloged model id (static set, per process).</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> WarnedModels = new();
+    private static void WarnUncatalogedOnce(HttpContext ctx, string providerModel)
+    {
+        if (!WarnedModels.TryAdd(providerModel, 0)) return;
+        ctx.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("gateway")
+            .LogWarning("model {Model} is not in the catalog (registry or synced)", providerModel);
+    }
+
+    /// <summary>SPEC-093: map a buffered Responses-API error body's error.type
+    /// to HTTP semantics for breaker/lockout classification.</summary>
+    public static int ClassifyResponsesError(int status, string errBody)
+    {
+        if (status is 429 or 401 or 403 or 408 or >= 500) return status;
+        try
+        {
+            var type = JsonDocument.Parse(errBody).RootElement
+                .TryGetProperty("error", out var e)
+                && e.TryGetProperty("type", out var t) ? t.GetString() : null;
+            return type switch
+            {
+                "rate_limit_error" or "rate_limit_exceeded" or "insufficient_quota"
+                    or "overloaded_error" or "tokens_rate_limit_exceeded" => 429,
+                "invalid_request_error" or "invalid_request" or "validation_error" => 400,
+                "authentication_error" or "permission_error" => 401,
+                "not_found_error" or "model_not_found" => 404,
+                "server_error" or "internal_error" or "api_error" => 500,
+                _ => status,
+            };
+        }
+        catch (JsonException) { return status; }
+    }
 
     /// <summary>Pipe upstream SSE to the client, translating events; returns (promptTokens, completionTokens).</summary>
     private static async Task<(int, int)> StreamThrough(

@@ -87,16 +87,18 @@ public static class ProviderScopedEndpoints
             await BadRequest(ctx, $"Unknown provider: {p}");
             return;
         }
-        if (ctx.Request.Method == "POST" && !await RewriteBodyModel(ctx, entry, p, alias, ct))
+        if (ctx.Request.Method == "POST" && !await RewriteBodyModel(ctx, db, entry, p, alias, ct))
             return;
 
         if (chat) await GatewayEndpoints.Chat(ctx, "openai");
         else await GatewayEndpoints.Passthrough(ctx, upstreamPath: upstreamPath);
     }
 
-    /// <summary>Prefix-validate/rewrite body.model; false when a 400 was written.</summary>
+    /// <summary>Prefix-validate/rewrite body.model; false when a 400 was written.
+    /// SPEC-093: clamps max_tokens to the synced provider cap (never fabricates one)
+    /// and warns via header when reasoning_effort is outside the advertised set.</summary>
     private static async Task<bool> RewriteBodyModel(
-        HttpContext ctx, ProviderEntry entry, string p, string alias, CancellationToken ct)
+        HttpContext ctx, LlmRouterDbContext db, ProviderEntry entry, string p, string alias, CancellationToken ct)
     {
         var raw = await new StreamReader(ctx.Request.Body, Encoding.UTF8).ReadToEndAsync(ct);
         JsonNode? node = null;
@@ -109,9 +111,44 @@ public static class ProviderScopedEndpoints
                 $"Model \"{model}\" does not belong to provider \"{p}\". Expected prefix: {alias}/");
             return false;
         }
+        if (node is JsonObject o)
+            bytes = await ApplySyncedCapsAsync(ctx, db, entry, o, ct) ?? bytes;
         ctx.Request.Body = new MemoryStream(bytes);
         ctx.Request.ContentLength = bytes.Length;
         return true;
+    }
+
+    /// <summary>SPEC-093: synced-caps enforcement on the scoped request body.
+    /// max_tokens clamps ONLY when the provider reported a cap — no 4096 floor.
+    /// Returns the final body bytes when caps were applied, else null.</summary>
+    public static async Task<byte[]?> ApplySyncedCapsAsync(
+        HttpContext ctx, LlmRouterDbContext db, ProviderEntry entry, JsonObject o, CancellationToken ct)
+    {
+        var full = o[Model]?.GetValue<string>();
+        var bare = full is not null && full.IndexOf('/') is var i && i > 0 ? full[(i + 1)..] : full;
+        if (bare is null) return null;
+        var synced = await db.SyncedModels
+            .Where(s => s.Provider == entry.Id && s.Model == bare)
+            .FirstOrDefaultAsync(ct);
+        if (synced is null) return null;
+        if (synced.MaxOutputTokens is { } cap)
+        {
+            var req = o["max_tokens"]?.GetValue<int?>() ?? o["max_completion_tokens"]?.GetValue<int?>();
+            if (req is { } r && r > cap)
+            {
+                if (o["max_tokens"] is not null) o["max_tokens"] = cap;
+                else o["max_completion_tokens"] = cap;
+            }
+        }
+        var effort = o["reasoning_effort"]?.GetValue<string>();
+        if (effort is not null && synced.ReasoningEfforts is { } re)
+        {
+            var set = JsonSerializer.Deserialize<string[]>(re) ?? [];
+            if (set.Length > 0 && !set.Contains(effort, StringComparer.OrdinalIgnoreCase))
+                ctx.Response.Headers["X-Reasoning-Effort-Warn"] =
+                    $"reasoning_effort '{effort}' not in advertised set";
+        }
+        return JsonSerializer.SerializeToUtf8Bytes(o);
     }
 
     /// <summary>Returns rewritten bytes, or null on prefix mismatch.</summary>
@@ -144,11 +181,16 @@ public static class ProviderScopedEndpoints
                 ["id"] = m.Id, ["object"] = Model, ["owned_by"] = entry.Id, ["parent"] = null,
             }));
         var synced = await db.SyncedModels
-            .Where(s => s.Provider == entry.Id && s.Available)
-            .Select(s => s.Model).ToListAsync(ct);
+            .Where(s => s.Provider == entry.Id && s.Available).ToListAsync(ct);
         var seen = new HashSet<string>(models.Select(m => m["id"]!.GetValue<string>()));
-        foreach (var s in synced.Where(s => seen.Add(s)))
-            models.Add(new JsonObject { ["id"] = s, ["object"] = Model, ["owned_by"] = entry.Id, ["parent"] = null });
+        foreach (var s in synced.Where(s => seen.Add(s.Model)))
+        {
+            var item = new JsonObject { ["id"] = s.Model, ["object"] = Model, ["owned_by"] = entry.Id, ["parent"] = null };
+            // SPEC-093: surface synced caps + reasoning_efforts the provider advertised
+            if (s.MaxOutputTokens is { } mot) item["max_output_tokens"] = mot;
+            if (s.ReasoningEfforts is { } re && JsonNode.Parse(re) is { } arr) item["reasoning_efforts"] = arr;
+            models.Add(item);
+        }
         ctx.Response.ContentType = Json;
         await ctx.Response.WriteAsync(JsonSerializer.Serialize(
             new JsonObject { ["object"] = "list", ["data"] = new JsonArray(models.ToArray<JsonNode>()) }, JsonOpts), ct);

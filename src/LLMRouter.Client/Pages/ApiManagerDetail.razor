@@ -1,0 +1,56 @@
+@page "/dashboard/api-manager/{Id}/access"
+@page "/dashboard/api-manager/{Id}/routing"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">API key — @Id</h1>
+<div class="flex gap-2 mt-2">
+    <a class="tab @(!_routing ? "on" : "")" href="/dashboard/api-manager/@Id/access">Access</a>
+    <a class="tab @(_routing ? "on" : "")" href="/dashboard/api-manager/@Id/routing">Routing</a>
+</div>
+
+@if (_key.ValueKind == JsonValueKind.Undefined) { <div class="card card-p mt-4">Loading…</div> }
+else if (!_routing)
+{
+    <div class="card card-p mt-4">
+        <h3>Access</h3>
+        <table class="table"><tbody>
+            <tr><td>Name</td><td>@P(_key, "name")</td></tr>
+            <tr><td>Prefix</td><td><code>@P(_key, "prefix")</code></td></tr>
+            <tr><td>Groups</td><td>@P(_key, "groups")</td></tr>
+            <tr><td>Models</td><td>@P(_key, "models")</td></tr>
+            <tr><td>Rate limit</td><td>@P(_key, "rateLimit")</td></tr>
+            <tr><td>Usage limit</td><td>@P(_key, "usageLimit")</td></tr>
+            <tr><td>Enabled</td><td>@P(_key, "enabled")</td></tr>
+        </tbody></table>
+        <a class="btn btn-sm" href="/dashboard/api-manager">← API manager</a>
+    </div>
+}
+else
+{
+    <div class="card card-p mt-4">
+        <h3>Routing overrides</h3>
+        <pre style="max-height:300px;overflow:auto">@JsonSerializer.Serialize(_key, new JsonSerializerOptions { WriteIndented = true })</pre>
+        <p class="muted mt-2">Combo/model mappings aplicadas a esta key.</p>
+        <a class="btn btn-sm" href="/dashboard/settings/routing">Global routing →</a>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    private bool _routing => Nav.Uri.EndsWith("/routing");
+    private JsonElement _key;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _key = await Api.GetAsync($"api/keys/{Id}"); }
+        catch
+        {
+            var all = await Api.GetAsync("api/keys");
+            _key = all;
+        }
+    }
+    private static string? P(JsonElement e, string k) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) ? v.GetRawText() : "—";
+}

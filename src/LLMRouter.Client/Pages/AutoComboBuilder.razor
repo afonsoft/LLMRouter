@@ -1,0 +1,63 @@
+@page "/dashboard/auto-combo"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("autocombo.title", "Auto-combo builder")</h1>
+<p class="page-desc">@Loc.T("autocombo.subtitle", "Pick a strategy, preview resolved candidates, inspect pools")</p>
+
+<div class="card card-p mt-4">
+    <div class="flex gap-2" style="flex-wrap:wrap">
+        @foreach (var s in _strategies)
+        {
+            <button class="tab @(_sel == s ? "on" : "")" @onclick="() => Select(s)">@s</button>
+        }
+    </div>
+    @if (_preview.ValueKind != JsonValueKind.Undefined)
+    {
+        <h3 class="mt-4">@_sel — @_preview.GetProperty("count").GetInt32() candidates</h3>
+        <ul class="mt-2">
+        @foreach (var c in _preview.GetProperty("candidates").EnumerateArray().Take(30))
+        {
+            <li><code>@c.ToString()</code></li>
+        }
+        </ul>
+    }
+</div>
+
+<div class="card card-p mt-4">
+    <h3>Candidate pool</h3>
+    @if (_pool.ValueKind == JsonValueKind.Undefined) { <p>Loading…</p> }
+    else
+    {
+        <div class="flex gap-2" style="flex-wrap:wrap">
+        @foreach (var p in _pool.EnumerateArray().Take(60))
+        {
+            <span class="badge">@p.ToString()</span>
+        }
+        </div>
+    }
+</div>
+
+@code {
+    private List<string> _strategies = [];
+    private string _sel = "";
+    private JsonElement _preview, _pool;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ks = await Api.GetAsync("api/combos/auto/strategies");
+        if (ks.ValueKind == JsonValueKind.Object && ks.TryGetProperty("strategies", out var arr))
+            _strategies = arr.EnumerateArray().Select(x => x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : x.GetString() ?? "").Where(s => s.Length > 0).ToList();
+        else if (ks.ValueKind == JsonValueKind.Array)
+            _strategies = ks.EnumerateArray().Select(x => x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "").Where(s => s.Length > 0).ToList();
+        _pool = await Api.GetAsync("api/combos/auto/pool");
+        if (_pool.ValueKind == JsonValueKind.Object && _pool.TryGetProperty("pool", out var pa)) _pool = pa;
+        if (_strategies.Count > 0) await Select(_strategies[0]);
+    }
+
+    private async Task Select(string s)
+    {
+        _sel = s;
+        _preview = await Api.GetAsync($"api/combos/auto/{Uri.EscapeDataString(s)}");
+    }
+}

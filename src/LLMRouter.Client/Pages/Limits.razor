@@ -1,0 +1,57 @@
+@page "/dashboard/limits"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("limits.title", "Limits")</h1>
+<p class="page-desc">@Loc.T("limits.subtitle", "Rate limits, per-key usage limits and quota pools in one view")</p>
+
+<div class="card card-p mt-4">
+    <h3>Rate limits <a class="btn btn-sm" href="/dashboard/rate-limits" style="float:right">edit →</a></h3>
+    @if (_rl.ValueKind == JsonValueKind.Undefined) { <p>Loading…</p> }
+    else { <pre style="max-height:220px;overflow:auto">@Fmt(_rl)</pre> }
+</div>
+
+<div class="card card-p mt-4">
+    <h3>Key usage limits <a class="btn btn-sm" href="/dashboard/api-manager" style="float:right">keys →</a></h3>
+    @if (_keys.ValueKind == JsonValueKind.Undefined) { <p>Loading…</p> }
+    else
+    {
+        <table class="table"><thead><tr><th>Key</th><th>Limits</th></tr></thead><tbody>
+        @foreach (var k in Enumerate(_keys))
+        {
+            <tr><td><code>@P(k, "prefix")@P(k, "name")</code></td><td><pre>@Fmt(k)</pre></td></tr>
+        }
+        </tbody></table>
+    }
+</div>
+
+<div class="card card-p mt-4">
+    <h3>Quota pools <a class="btn btn-sm" href="/dashboard/quota" style="float:right">quota →</a></h3>
+    @if (_quota.ValueKind == JsonValueKind.Undefined) { <p>Loading…</p> }
+    else { <pre style="max-height:220px;overflow:auto">@Fmt(_quota)</pre> }
+</div>
+
+@code {
+    private JsonElement _rl, _keys, _quota;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _rl = await Try("api/rate-limits");
+        _keys = await Try("api/keys");
+        _quota = await Try("api/quota");
+    }
+
+    private async Task<JsonElement> Try(string u)
+    {
+        try { return await Api.GetAsync(u); } catch { return default; }
+    }
+    private static IEnumerable<JsonElement> Enumerate(JsonElement e) =>
+        e.ValueKind == JsonValueKind.Array ? e.EnumerateArray()
+        : e.ValueKind == JsonValueKind.Object && e.TryGetProperty("keys", out var a) ? a.EnumerateArray()
+        : e.ValueKind == JsonValueKind.Object && e.TryGetProperty("items", out var a2) ? a2.EnumerateArray()
+        : Enumerable.Empty<JsonElement>();
+    private static string? P(JsonElement e, string k) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) ? v.GetString() : null;
+    private static string Fmt(JsonElement e) =>
+        e.ValueKind == JsonValueKind.Undefined ? "—" : JsonSerializer.Serialize(e, new JsonSerializerOptions { WriteIndented = true })[..Math.Min(3000, JsonSerializer.Serialize(e).Length + 8)];
+}

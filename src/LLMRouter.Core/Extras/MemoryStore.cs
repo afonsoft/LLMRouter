@@ -107,8 +107,14 @@ public static class MemoryStore
         && o.TryGetProperty("obsidian", out var ob) && ob.TryGetProperty("vaultPath", out var v)
             ? v.GetString() : null;
 
-    private static string FileFor(string dir, string id) =>
-        Path.Combine(dir, $"llmrouter-{id}.md");
+    // SPEC-086: note ids are user-controlled — clamp to a safe file name so a
+    // "../x" or absolute-path id cannot escape the vault root.
+    private static string FileFor(string dir, string id)
+    {
+        var full = Path.Combine(dir, $"llmrouter-{Security.SecurityRails.SafeFileName(id)}.md");
+        return Security.SecurityRails.InsideRoot(dir, full) ? full
+            : Path.Combine(dir, "llmrouter-note.md");
+    }
 
     private static List<Item> ObsidianList(string? dir)
     {

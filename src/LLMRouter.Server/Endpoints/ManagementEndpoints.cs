@@ -177,6 +177,9 @@ public static class ManagementEndpoints
             var p = r.GetProvider(provider)
                 ?? (NodeResolver.IsNodeProviderId(provider) ? await NodeResolver.ResolveAsync(db, provider) : null);
             if (p is null) return Results.BadRequest(new { error = "unknown provider" });
+            if (b.TryGetProperty("data", out var dataEl)
+                && Core.Security.SecurityRails.PublicCredRejection(dataEl) is { } pubErr)
+                return Results.BadRequest(new { error = pubErr });
             var c = new ProviderConnection
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
@@ -204,7 +207,12 @@ public static class ManagementEndpoints
             if (b.TryGetProperty("email", out _)) c.Email = Get(b, "email");
             if (b.TryGetProperty("priority", out var pr) && pr.TryGetInt32(out var pi)) c.Priority = pi;
             if (b.TryGetProperty("isActive", out var ia)) c.IsActive = ia.GetBoolean();
-            if (b.TryGetProperty("data", out var d)) c.Data = d.GetRawText();
+            if (b.TryGetProperty("data", out var d))
+            {
+                if (Core.Security.SecurityRails.PublicCredRejection(d) is { } pubErr)
+                    return Results.BadRequest(new { error = pubErr });
+                c.Data = d.GetRawText();
+            }
             c.UpdatedAt = Now();
             await db.SaveChangesAsync();
             await Core.Extras.Extras.AuditAsync(db, "connection.update", $"{c.Provider} ({c.Id})");

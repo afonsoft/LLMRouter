@@ -568,6 +568,8 @@ public static class GatewayEndpoints
         // vision-adapter combo: stage-1 imageToText call rewrites the image into
         // a text description, then the remaining combo models serve the request
         var comboEntity = await Core.Gateway.HotReads.ComboAsync(db, model);
+        // SPEC-091: budget gate — 429 budget_exceeded when the resolved scope is over cap
+        if (!await ComboAnalyticsEndpoints.BudgetGate(ctx, db, model, comboEntity?.Name)) return;
         if (comboEntity?.Kind == "vision-adapter"
             && ComboPlanner.DetectRequiredCapabilities(body).Contains("vision"))
         {

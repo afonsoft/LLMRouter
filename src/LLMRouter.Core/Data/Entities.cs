@@ -309,3 +309,23 @@ public class PlaygroundPreset
     public string ParamsJson { get; set; } = "{}";
     public string CreatedAt { get; set; } = "";
 }
+
+// ---- SPEC-045: prompt cache ----
+
+[Table("cacheEntries")]
+public class CacheEntry
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Hash { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Request { get; set; } = "{}";
+    public string Response { get; set; } = "{}";
+    // 1 when the request carried a reasoning/thinking block
+    public int Reasoning { get; set; }
+    public int TokensSaved { get; set; }
+    public int Hits { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string ExpiresAt { get; set; } = "";
+}

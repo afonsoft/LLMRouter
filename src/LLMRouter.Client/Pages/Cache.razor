@@ -1,0 +1,79 @@
+@page "/dashboard/cache"
+@page "/dashboard/cache/media"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">@Loc.T("cache.title", "Prompt cache")</h1>
+<p class="page-desc">@(_media
+    ? Loc.T("cache.mediaSubtitle", "Cached media-kind responses")
+    : Loc.T("cache.subtitle", "Replayed responses, hit rate and tokens saved"))</p>
+
+<div class="grid mt-4" style="grid-template-columns:repeat(4,minmax(0,1fr));max-width:860px">
+    <div class="card card-p"><div class="xs muted">@Loc.T("cache.size", "Entries")</div><div class="xl bold">@_size</div></div>
+    <div class="card card-p"><div class="xs muted">@Loc.T("cache.hits", "Hits")</div><div class="xl bold">@_hits</div></div>
+    <div class="card card-p"><div class="xs muted">@Loc.T("cache.hitRate", "Hit rate")</div><div class="xl bold">@_hitRate%</div></div>
+    <div class="card card-p"><div class="xs muted">@Loc.T("cache.tokensSaved", "Tokens saved")</div><div class="xl bold">@_tokens</div></div>
+</div>
+
+<div class="card card-p mt-4">
+    <div class="flex mb-3" style="gap:8px;align-items:center">
+        <input class="input" style="max-width:220px" placeholder="@Loc.T("cache.model", "model filter")" @bind="_model" />
+        <button class="btn btn-sm" @onclick="Refresh">@Loc.T("common.apply", "Apply")</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-danger btn-sm" @onclick="Purge">@Loc.T("cache.purge", "Purge all")</button>
+    </div>
+    @if (_entries.Count == 0) { <p class="empty">@Loc.T("cache.empty", "No cached entries")</p> }
+    else
+    {
+        <table class="table">
+            <thead><tr><th>@Loc.T("cache.provider", "Provider")</th><th>@Loc.T("cache.model", "Model")</th><th>@Loc.T("cache.hits", "Hits")</th><th>@Loc.T("cache.tokensSaved", "Tokens")</th><th>@Loc.T("cache.expires", "Expires")</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td>@e.Provider</td>
+                        <td><code class="xs">@e.Model</code></td>
+                        <td>@e.Hits</td>
+                        <td>@e.TokensSaved</td>
+                        <td class="xs muted">@e.ExpiresAt</td>
+                        <td><button class="icon-btn" @onclick="() => Delete(e.Id)"><span class="material-symbols-outlined" style="font-size:15px">delete</span></button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private record E(string Id, string Provider, string Model, int Hits, long TokensSaved, string ExpiresAt);
+    private List<E> _entries = [];
+    private int _size, _hits; private long _tokens; private double _hitRate;
+    private string _model = "";
+    private bool _media => Nav.Uri.EndsWith("/media");
+
+    protected override async Task OnInitializedAsync() => await Refresh();
+
+    private async Task Refresh()
+    {
+        try
+        {
+            var q = string.IsNullOrWhiteSpace(_model) ? "" : $"&model={Uri.EscapeDataString(_model)}";
+            var r = await Api.GetAsync($"api/cache/entries?take=200{q}");
+            _entries = r.GetProperty("entries").EnumerateArray()
+                .Select(e => new E(e.GetProperty("id").GetString()!,
+                    e.GetProperty("provider").GetString()!, e.GetProperty("model").GetString()!,
+                    e.GetProperty("hits").GetInt32(), e.GetProperty("tokensSaved").GetInt64(),
+                    e.GetProperty("expiresAt").GetString()!)).ToList();
+            var st = await Api.GetAsync("api/cache/stats");
+            _size = st.GetProperty("size").GetInt32();
+            _hits = st.GetProperty("hits").GetInt32();
+            _tokens = st.GetProperty("tokensSaved").GetInt64();
+            _hitRate = st.GetProperty("hitRate").GetDouble() * 100;
+        }
+        catch { }
+    }
+
+    private async Task Delete(string id) { await Api.DeleteAsync($"api/cache/entries/{id}"); await Refresh(); }
+    private async Task Purge() { await Api.PostAsync("api/cache/purge", new { }); await Refresh(); }
+}

@@ -56,7 +56,7 @@ public static class ProviderScopedEndpoints
     {
         var e = registry.GetProvider(p);
         if (e is not null) return (e, e.Alias ?? e.Id);
-        var node = await Core.Routing.NodeResolver.ResolveAsync(db, p);
+        var node = await Core.Routing.NodeResolver.ResolveAsync(db, p, ct);
         if (node is not null) return (node, node.Id);
         if (await db.ProviderConnections.AnyAsync(c => c.Provider == p && c.IsActive, ct))
             return (new ProviderEntry { Id = p }, p);

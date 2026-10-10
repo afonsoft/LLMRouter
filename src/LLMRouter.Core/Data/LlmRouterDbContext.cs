@@ -14,6 +14,7 @@ public class LlmRouterDbContext : DbContext
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Combo> Combos => Set<Combo>();
     public DbSet<KvEntry> Kv => Set<KvEntry>();
+    public DbSet<DiscoveryResult> DiscoveryResults => Set<DiscoveryResult>();
     public DbSet<UsageRecord> UsageHistory => Set<UsageRecord>();
     public DbSet<UsageDaily> UsageDaily => Set<UsageDaily>();
     public DbSet<RequestDetail> RequestDetails => Set<RequestDetail>();
@@ -135,12 +136,24 @@ public class LlmRouterDbContext : DbContext
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "ALTER TABLE usageHistory ADD COLUMN LatencyMs INTEGER NOT NULL DEFAULT 0";
             try { cmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+            // SPEC-082: combo invariants + composite tiers columns
+            foreach (var col in new[]
+            {
+                "ALTER TABLE combos ADD COLUMN AllowedProviders TEXT NULL",
+                "ALTER TABLE combos ADD COLUMN AllowedFamilies TEXT NULL",
+                "ALTER TABLE combos ADD COLUMN Tiers TEXT NULL",
+            })
+            {
+                cmd.CommandText = col;
+                try { cmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+            }
             // SPEC-034: context-compression tables (no-op when EnsureCreated already made them)
             foreach (var ddl in new[]
             {
                 """CREATE TABLE IF NOT EXISTS compressionCombos (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Description TEXT NULL, Pipeline TEXT NOT NULL DEFAULT '[]', LanguagePacks TEXT NOT NULL DEFAULT '[]', OutputMode INTEGER NOT NULL DEFAULT 0, OutputModeIntensity TEXT NULL, IsDefault INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS compressionComboAssignments (Id TEXT NOT NULL PRIMARY KEY, CompressionComboId TEXT NOT NULL, RoutingComboId TEXT NOT NULL, CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS compressionRuns (Id TEXT NOT NULL PRIMARY KEY, Timestamp TEXT NOT NULL, PrincipalId TEXT NULL, Model TEXT NULL, EngineId TEXT NOT NULL, BeforeChars INTEGER NOT NULL, AfterChars INTEGER NOT NULL, ComboId TEXT NULL)""",
+                """CREATE TABLE IF NOT EXISTS discoveryResults (Id TEXT NOT NULL PRIMARY KEY, ProviderId TEXT NOT NULL, Method TEXT NOT NULL, Endpoint TEXT NULL, AuthType TEXT NOT NULL DEFAULT 'none', Models TEXT NOT NULL DEFAULT '[]', RateLimit TEXT NULL, Feasibility INTEGER NOT NULL DEFAULT 3, RiskLevel TEXT NOT NULL DEFAULT 'none', Status TEXT NOT NULL DEFAULT 'pending', Notes TEXT NULL, DiscoveredAt TEXT NOT NULL, VerifiedAt TEXT NULL)""",
                 """CREATE TABLE IF NOT EXISTS jobStates (Id TEXT NOT NULL PRIMARY KEY, Enabled INTEGER NOT NULL DEFAULT 1, LastRun TEXT NULL, NextRun TEXT NULL, LastStatus TEXT NULL, LastError TEXT NULL, LastDurationMs INTEGER NOT NULL DEFAULT 0)""",
                 """CREATE TABLE IF NOT EXISTS jobRuns (Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, JobId TEXT NOT NULL, StartedAt TEXT NOT NULL, DurationMs INTEGER NOT NULL, Status TEXT NOT NULL, Output TEXT NULL)""",
                 """CREATE TABLE IF NOT EXISTS rateLimits (Id TEXT NOT NULL PRIMARY KEY, Scope TEXT NOT NULL, ScopeValue TEXT NOT NULL, Rpm INTEGER NOT NULL DEFAULT 0, Tpm INTEGER NOT NULL DEFAULT 0, Burst INTEGER NOT NULL DEFAULT 0, Enabled INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",

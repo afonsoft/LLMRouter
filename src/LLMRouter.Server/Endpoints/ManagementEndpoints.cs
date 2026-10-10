@@ -347,23 +347,57 @@ public static class ManagementEndpoints
             return Results.Json(new { combos = all.Select(ComboDto) }, JsonOpts);
         });
 
-        g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db) =>
+        g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db, ProviderRegistry r) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var name = b.GetProperty("name").GetString()!;
+            var modelsJson = b.TryGetProperty("models", out var m) ? m.GetRawText() : "[]";
+
+            // SPEC-082: invariants + composite tiers validation
+            try
+            {
+                JsonElement[] steps;
+                using (var md = JsonDocument.Parse(modelsJson))
+                    steps = md.RootElement.ValueKind == JsonValueKind.Array
+                        ? md.RootElement.EnumerateArray().Select(e => e.Clone()).ToArray() : [];
+                var inv = b.TryGetProperty("invariant", out var iv) && iv.ValueKind == JsonValueKind.Object
+                    ? iv : b;
+                var providers = StrList(inv, "allowedProviders");
+                var families = StrList(inv, "allowedModelFamilies");
+                Core.Routing.ComboSteps.ValidateInvariant(name, steps, providers, families);
+                if (b.TryGetProperty("tiers", out var tiers))
+                {
+                    var errs = Core.Routing.ComboSteps.ValidateCompositeTiers(tiers);
+                    if (errs.Count > 0)
+                        return Results.Json(new { error = "Invalid composite tiers", details = errs }, JsonOpts, statusCode: 400);
+                }
+            }
+            catch (Core.Routing.ComboSteps.ComboInvariantError ex)
+            {
+                return Results.Json(new { error = ex.Message }, JsonOpts, statusCode: 400);
+            }
+
             var c = new Combo
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
-                Name = b.GetProperty("name").GetString()!,
+                Name = name,
                 Kind = Get(b, "kind") ?? "fallback",
                 StickyLimit = b.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number
                     ? Math.Max(1, sl.GetInt32()) : 1,
-                Models = b.TryGetProperty("models", out var m) ? m.GetRawText() : "[]",
+                Models = modelsJson,
+                AllowedProviders = b.TryGetProperty("allowedProviders", out var ap) ? ap.GetRawText() : null,
+                AllowedFamilies = b.TryGetProperty("allowedModelFamilies", out var af) ? af.GetRawText() : null,
+                Tiers = b.TryGetProperty("tiers", out var t) ? t.GetRawText() : null,
                 CreatedAt = Now(), UpdatedAt = Now(),
             };
             db.Combos.Add(c);
             await db.SaveChangesAsync();
             await Core.Extras.Extras.AuditAsync(db, "combo.create", c.Name);
-            return Results.Json(new { combo = c }, JsonOpts);
+            // SPEC-082 modelNameCollision: combo name identical to a bare
+            // registry model id is the supported per-model fallback mechanism
+            var nameCollision = !name.Contains('/') && r.Providers.Values.Any(p =>
+                p.Models?.Any(m => string.Equals(m.Id, name, StringComparison.OrdinalIgnoreCase)) == true);
+            return Results.Json(new { combo = c, nameCollision }, JsonOpts);
         });
 
         g.MapPut("/combos/{id}", async (string id, HttpContext ctx, LlmRouterDbContext db) =>
@@ -456,7 +490,14 @@ public static class ManagementEndpoints
         g.MapGet("/model-combo-mappings", async (LlmRouterDbContext db) =>
         {
             var rows = await db.Kv.Where(k => k.Scope == "modelComboMappings").ToListAsync();
-            return Results.Json(new { mappings = rows.ToDictionary(k => k.Key, k => k.Value) }, JsonOpts);
+            var entries = Core.Routing.ComboMappings.Parse(rows);
+            // SPEC-083: entries carry glob/priority/enabled; `mappings` stays for back-compat
+            return Results.Json(new
+            {
+                mappings = entries.ToDictionary(e => e.Pattern, e => e.Combo),
+                entries = entries.OrderByDescending(e => e.Priority)
+                    .Select(e => new { model = e.Pattern, combo = e.Combo, priority = e.Priority, enabled = e.Enabled }),
+            }, JsonOpts);
         });
 
         g.MapPost("/model-combo-mappings", async (HttpContext ctx, LlmRouterDbContext db) =>
@@ -464,13 +505,62 @@ public static class ManagementEndpoints
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             var model = b.GetProperty("model").GetString()!;
             var combo = b.GetProperty("combo").GetString()!;
+            var priority = b.TryGetProperty("priority", out var pr) && pr.ValueKind == JsonValueKind.Number
+                ? pr.GetInt32() : 0;
+            var enabled = !b.TryGetProperty("enabled", out var en) || en.ValueKind != JsonValueKind.False;
+            var value = Core.Routing.ComboMappings.Encode(combo, priority, enabled);
             var existing = await db.Kv.FindAsync("modelComboMappings", model);
             if (existing is null)
-                db.Kv.Add(new KvEntry { Scope = "modelComboMappings", Key = model, Value = combo });
+                db.Kv.Add(new KvEntry { Scope = "modelComboMappings", Key = model, Value = value });
             else
-                existing.Value = combo;
+                existing.Value = value;
             await db.SaveChangesAsync();
             return Results.Json(new { success = true });
+        });
+
+        // ---- SPEC-085: combo presets (9router comboPresets.js) — Cursor/Claude
+        // default combos named after client-native model ids, seeded cu//cc routes
+        g.MapPost("/combos/presets", async (HttpContext ctx, LlmRouterDbContext db, ProviderRegistry r) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var source = b.TryGetProperty("source", out var s) ? s.GetString() ?? "claude" : "claude";
+            if (source is not ("cursor" or "claude"))
+                return Results.Json(new { error = "source must be 'cursor' or 'claude'" }, JsonOpts, statusCode: 400);
+
+            var alias = source == "cursor" ? "cu" : "cc";
+            var provider = r.GetProvider(alias); // alias resolves to canonical id
+            if (provider is null)
+                return Results.Json(new { error = $"provider '{alias}' not in registry" }, JsonOpts, statusCode: 400);
+
+            var items = new List<(string name, string route)>();
+            foreach (var m in provider.Models ?? [])
+                items.Add((m.Id, $"{alias}/{m.Id}"));
+            // upstream CLAUDE_EXTRA_ALIAS_TARGETS
+            if (source == "claude")
+            {
+                items.Add(("default", $"{alias}/claude-sonnet-5"));
+                items.Add(("opusplan", $"{alias}/claude-opus-5"));
+            }
+
+            var nameRx = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z0-9_.\-]+$");
+            var existing = await db.Combos.Select(c => c.Name).ToListAsync();
+            var seen = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+            var created = 0; var skipped = 0;
+            foreach (var (name, route) in items)
+            {
+                if (!nameRx.IsMatch(name) || seen.Contains(name)) { skipped++; continue; }
+                seen.Add(name);
+                db.Combos.Add(new Combo
+                {
+                    Id = Guid.NewGuid().ToString("N")[..12], Name = name, Kind = "fallback",
+                    Models = JsonSerializer.Serialize(new[] { route }),
+                    CreatedAt = Now(), UpdatedAt = Now(),
+                });
+                created++;
+            }
+            await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "combo.presets", $"{source}:{created}");
+            return Results.Json(new { created, skipped }, JsonOpts);
         });
 
         g.MapDelete("/model-combo-mappings/{model}", async (string model, LlmRouterDbContext db) =>
@@ -773,6 +863,109 @@ public static class ManagementEndpoints
             return Results.Json(new { ok = true });
         });
 
+        // SPEC-081: reset all breakers + model lockouts + cooldowns (upstream /api/resilience/reset)
+        g.MapPost("/resilience/reset", () =>
+        {
+            Core.Resilience.ProviderBreaker.ClearAll();
+            Core.Resilience.ModelLockout.ClearAll();
+            Core.Resilience.CooldownTracker.ClearAll();
+            return Results.Json(new { ok = true });
+        });
+
+        // SPEC-081: free model budgets (upstream /api/free-models — FREE_MODEL_BUDGETS)
+        g.MapGet("/free-models", () => Results.Json(new
+        {
+            curatedAt = Core.Registry.FreeModelCatalog.CuratedAt,
+            models = Core.Registry.FreeModelCatalog.Budgets.Select(b => new
+            {
+                provider = b.Provider,
+                modelId = b.ModelId,
+                displayName = b.DisplayName,
+                monthlyTokens = b.MonthlyTokens,
+                creditTokens = b.CreditTokens,
+                freeType = b.FreeType,
+                poolKey = b.PoolKey,
+                tos = b.Tos,
+            }),
+        }, JsonOpts));
+
+        // SPEC-081: disabled models (9router disabledModelsDb)
+        g.MapGet("/models/disabled", async (LlmRouterDbContext db) =>
+            Results.Json(new { disabled = await Core.Routing.DisabledModels.AllAsync(db) }, JsonOpts));
+        g.MapPut("/models/disabled/{provider}", async (string provider, HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var models = body.ValueKind == JsonValueKind.Array
+                ? body.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+                : (body.TryGetProperty("models", out var m) && m.ValueKind == JsonValueKind.Array
+                    ? m.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+                    : []);
+            await Core.Routing.DisabledModels.SetForProviderAsync(db, provider, models);
+            return Results.Json(new { ok = true, provider, disabled = models });
+        });
+        g.MapDelete("/models/disabled/{provider}", async (string provider, LlmRouterDbContext db) =>
+        {
+            await Core.Routing.DisabledModels.SetForProviderAsync(db, provider, []);
+            return Results.Json(new { ok = true });
+        });
+
+        // SPEC-081: effective context window of a combo (upstream comboContext.ts)
+        g.MapGet("/combos/{id}/context-window", async (string id, LlmRouterDbContext db, ProviderRegistry r) =>
+        {
+            var combo = await db.Combos.AsNoTracking().FirstOrDefaultAsync(c => c.Name == id || c.Id == id);
+            if (combo is null) return Results.Json(new { error = "combo not found" }, JsonOpts, statusCode: 404);
+            var steps = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+            var windows = new List<int>();
+            foreach (var s in steps)
+            {
+                var modelId = s.Split('~')[0];
+                var slash = modelId.IndexOf('/');
+                if (slash <= 0) continue;
+                var p = r.GetProvider(modelId[..slash]);
+                var m = p?.Models?.FirstOrDefault(x =>
+                    string.Equals(x.Id, modelId[(slash + 1)..], StringComparison.OrdinalIgnoreCase));
+                if (m?.ContextLength is > 0) windows.Add(m.ContextLength.Value);
+            }
+            return Results.Json(new
+            {
+                combo = combo.Name,
+                models = windows.Count,
+                min = windows.Count > 0 ? windows.Min() : (int?)null,
+                max = windows.Count > 0 ? windows.Max() : (int?)null,
+                effective = windows.Count > 0 ? windows.Min() : (int?)null,
+            }, JsonOpts);
+        });
+
+        // SPEC-081: dead config keys (upstream deadConfigKeys.ts) — settings.data
+        // keys not in the known schema; DELETE prunes them.
+        g.MapGet("/settings/dead-config-keys", async (LlmRouterDbContext db) =>
+        {
+            var row = await db.Settings.FirstOrDefaultAsync();
+            if (row is null) return Results.Json(new { dead = Array.Empty<string>() });
+            using var doc = JsonDocument.Parse(row.Data);
+            var dead = doc.RootElement.EnumerateObject()
+                .Select(p => p.Name)
+                .Where(n => !Core.Routing.KnownConfigKeys.Set.Contains(n))
+                .ToArray();
+            return Results.Json(new { dead }, JsonOpts);
+        });
+        g.MapDelete("/settings/dead-config-keys", async (LlmRouterDbContext db) =>
+        {
+            var row = await db.Settings.FirstOrDefaultAsync();
+            if (row is null) return Results.Json(new { removed = 0 });
+            using var doc = JsonDocument.Parse(row.Data);
+            var kept = new Dictionary<string, JsonElement>();
+            var removed = 0;
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                if (Core.Routing.KnownConfigKeys.Set.Contains(p.Name)) kept[p.Name] = p.Value.Clone();
+                else removed++;
+            }
+            row.Data = JsonSerializer.Serialize(kept);
+            await db.SaveChangesAsync();
+            return Results.Json(new { removed }, JsonOpts);
+        });
+
         // SPEC-006: retention — prune requestDetails beyond cap
         g.MapPost("/logs/prune", async (LlmRouterDbContext db, int? keep) =>
         {
@@ -828,13 +1021,17 @@ public static class ManagementEndpoints
                     }
                     catch { /* best-effort: failure is non-fatal */ }
                 }
+                var disabledMap = await Core.Gateway.HotReads.DisabledModelsAsync(db);
                 foreach (var m in list)
+                {
+                    if (Core.Routing.DisabledModels.IsDisabled(disabledMap, p.Id, m.id)) continue;
                     models.Add(new
                     {
                         id = $"{p.Id}/{m.id}", provider = p.Id, model = m.id,
                         name = m.name, contextLength = m.ctx, capabilities = m.caps,
                         connection = conn.Name,
                     });
+                }
             }
             return Results.Json(new { models }, JsonOpts);
         });
@@ -1124,6 +1321,11 @@ public static class ManagementEndpoints
             return Results.Json(new { ok = true }, JsonOpts);
         });
     }
+
+    private static string[] StrList(JsonElement el, string prop) =>
+        el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+            : [];
 
     private static string? Get(JsonElement el, string name) =>
         el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

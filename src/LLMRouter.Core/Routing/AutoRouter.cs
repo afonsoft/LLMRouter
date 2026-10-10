@@ -29,10 +29,19 @@ public static class AutoRouter
     public sealed record Candidate(
         string Provider, string Model,
         string CircuitBreakerState,          // "CLOSED" | "HALF_OPEN" | "OPEN" | "DEGRADED"
-        double QuotaFraction,                // 0..1 (1 = unconstrained)
+        double QuotaFraction,                // SPEC-084: 0..100 percent (upstream quotaRemaining)
         double CostPer1MTokens,
         double P95LatencyMs, double AvgE2ELatencyMs, double LatencyStdDev,
-        double ErrorRate);
+        double ErrorRate,
+        // SPEC-084: extra factor inputs (upstream ProviderCandidate extras)
+        string? AccountTier = null,
+        double? QuotaResetIntervalSecs = null,
+        double? ContextAffinity = null,
+        double? CacheAffinity = null,
+        double? SessionAvailability = null,
+        double? ResetWindowAffinity = null,
+        double? Quality = null,
+        int? ConnectionPoolSize = null);
 
     public sealed record Decision(
         string Provider, string Model, string Strategy,
@@ -44,7 +53,12 @@ public static class AutoRouter
         double SlaTargetP95Ms, double SlaMaxErrorRate, double SlaMaxCostPer1MTokens,
         bool SlaHardConstraints,
         bool LkgpEnabled,
-        string? NadirApiKey, string? NadirBaseUrl, int NadirTimeoutMs);
+        string? NadirApiKey, string? NadirBaseUrl, int NadirTimeoutMs,
+        // SPEC-084: full intelligentRouting config — modePack preset + custom
+        // weight overrides + budgetCap (dollars/1M tokens ceiling per candidate)
+        string? ModePack = null,
+        Dictionary<string, double>? WeightOverrides = null,
+        double? BudgetCap = null);
 
     private const double DefaultSlaP95Ms = 2000, DefaultSlaErr = 0.05;
     public const int NadirDefaultTimeoutMs = 2000, NadirMaxTimeoutMs = 30_000,
@@ -73,6 +87,20 @@ public static class AutoRouter
             .ToListAsync(ct);
         var byKey = stats.ToDictionary(s => $"{s.Provider}/{s.Model}", StringComparer.OrdinalIgnoreCase);
 
+        // SPEC-084: account tier (providerSpecificData.accountTier), pool size
+        // per provider, and observed quality from arena_elo sync.
+        var conns = await db.ProviderConnections.AsNoTracking()
+            .Where(c => c.IsActive)
+            .Select(c => new { c.Provider, Data = c.Data })
+            .ToListAsync(ct);
+        var poolSize = conns.GroupBy(c => c.Provider, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        var accountTier = conns.GroupBy(c => c.Provider, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key,
+                g => g.Select(c => ProjectAccountTier(c.Data))
+                      .FirstOrDefault(t => t is not null),
+                StringComparer.OrdinalIgnoreCase);
+
         var result = new List<Candidate>(models.Count);
         foreach (var m in models)
         {
@@ -88,14 +116,34 @@ public static class AutoRouter
             };
             byKey.TryGetValue(m, out var s);
             var (p95, stddev) = s is null ? (0.0, 0.0) : P95AndStdDev(s.Latencies);
+            var quality = await ModelIntelligence.QualityAsync(db, m);
             result.Add(new Candidate(
                 providerId, m,
-                breaker, quota,
+                breaker, quota * 100, // upstream quotaRemaining is 0..100
                 s is { AvgTokens: > 0 } ? s.AvgCost / s.AvgTokens * 1e6 : s?.AvgCost ?? 0,
                 p95, s?.AvgLatency ?? 0, stddev,
-                s is { Requests: > 0 } ? (double)s.Errors / s.Requests : 0));
+                s is { Requests: > 0 } ? (double)s.Errors / s.Requests : 0,
+                AccountTier: accountTier.GetValueOrDefault(providerId),
+                ConnectionPoolSize: poolSize.GetValueOrDefault(providerId, 1),
+                Quality: quality));
         }
         return result;
+    }
+
+    /// <summary>Upstream projectAccountTier — whitelist ultra|pro|standard|free
+    /// from providerSpecificData.accountTier.</summary>
+    private static string? ProjectAccountTier(string? providerSpecificData)
+    {
+        if (string.IsNullOrWhiteSpace(providerSpecificData)) return null;
+        try
+        {
+            using var d = JsonDocument.Parse(providerSpecificData);
+            var v = d.RootElement.ValueKind == JsonValueKind.Object
+                && d.RootElement.TryGetProperty("accountTier", out var t)
+                ? t.GetString()?.ToLowerInvariant() : null;
+            return v is "ultra" or "pro" or "standard" or "free" ? v : null;
+        }
+        catch { return null; }
     }
 
     private static (double p95, double stddev) P95AndStdDev(List<double> latencies)
@@ -133,6 +181,19 @@ public static class AutoRouter
         var lkgp = ar.ValueKind == JsonValueKind.Object && ar.TryGetProperty("lkgp", out var l) ? l : default;
 
         var timeout = (int)Num(nadir, "timeoutMs", NadirDefaultTimeoutMs);
+
+        // SPEC-084: weights object → override dict (upstream weights patch)
+        Dictionary<string, double>? weightOverrides = null;
+        if (ar.ValueKind == JsonValueKind.Object && ar.TryGetProperty("weights", out var wEl)
+            && wEl.ValueKind == JsonValueKind.Object)
+        {
+            weightOverrides = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (var prop in wEl.EnumerateObject())
+                if (prop.Value.ValueKind == JsonValueKind.Number)
+                    weightOverrides[prop.Name] = prop.Value.GetDouble();
+        }
+        var budgetCap = Num(ar, "budgetCap", -1);
+
         return new Config(
             Math.Clamp(Num(ar, "explorationRate", 0), 0, 1),
             Num(sla, "targetP95Ms", DefaultSlaP95Ms),
@@ -146,7 +207,10 @@ public static class AutoRouter
             Str(nadir, "baseUrl")
                 ?? Environment.GetEnvironmentVariable("LLMR_NADIR_BASE_URL")
                 ?? Environment.GetEnvironmentVariable("OMNIROUTE_NADIR_BASE_URL"),
-            Math.Clamp(timeout > 0 ? timeout : NadirDefaultTimeoutMs, 1, NadirMaxTimeoutMs));
+            Math.Clamp(timeout > 0 ? timeout : NadirDefaultTimeoutMs, 1, NadirMaxTimeoutMs),
+            Str(ar, "modePack"),
+            weightOverrides,
+            budgetCap > 0 ? budgetCap : null);
     }
 
     // ── strategies ─────────────────────────────────────────────────────────
@@ -154,11 +218,12 @@ public static class AutoRouter
     /// <summary>Order the pool by <paramref name="strategy"/>; head of the list is the decision.</summary>
     public static async Task<List<string>> OrderAsync(
         string strategy, List<Candidate> pool, Config cfg,
-        JsonElement? messages, LlmRouterDbContext db, CancellationToken ct)
+        JsonElement? messages, LlmRouterDbContext db, CancellationToken ct,
+        string taskType = "default")
     {
         var ranked = strategy switch
         {
-            "score" => RankScore(pool, cfg),
+            "score" => await RankScoreAsync(pool, cfg, taskType, db),
             "cost" or "eco" => pool
                 .Where(c => c.CircuitBreakerState != "OPEN").DefaultIfEmpty()
                 .OrderBy(c => c.CostPer1MTokens).ToList(),
@@ -166,34 +231,73 @@ public static class AutoRouter
             "sla-aware" or "sla" => RankSla(pool, cfg),
             "lkgp" => await RankLkgpAsync(pool, cfg, db, ct),
             "nadir" => await RankNadirAsync(pool, cfg, messages, db, ct),
-            _ => RankRules(pool), // "rules" + unknown
+            _ => await RankRulesAsync(pool, cfg, taskType, db), // "rules" + unknown
         };
         return ranked.Select(c => c.Model).ToList();
     }
 
-    /// <summary>rules: weighted composite — quota .25, health .2, cost .2, latency .15, reliability .1, stability .1.</summary>
-    private static List<Candidate> RankRules(List<Candidate> pool)
+    /// <summary>Resolve effective weights: modePack preset merged with custom
+    /// overrides, then normalized (upstream normalizeIntelligentRoutingConfig).</summary>
+    internal static IntelligentScoring.Weights ResolveWeights(Config cfg)
+    {
+        var pack = IntelligentScoring.ResolveModePack(cfg.ModePack);
+        if (cfg.WeightOverrides is not { Count: > 0 }) return pack;
+        var merged = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["quota"] = pack.Quota, ["health"] = pack.Health, ["costInv"] = pack.CostInv,
+            ["latencyInv"] = pack.LatencyInv, ["taskFit"] = pack.TaskFit,
+            ["stability"] = pack.Stability, ["tierPriority"] = pack.TierPriority,
+            ["tierAffinity"] = pack.TierAffinity, ["specificityMatch"] = pack.SpecificityMatch,
+            ["contextAffinity"] = pack.ContextAffinity, ["cacheAffinity"] = pack.CacheAffinity,
+            ["sessionAvailability"] = pack.SessionAvailability,
+            ["resetWindowAffinity"] = pack.ResetWindowAffinity,
+            ["connectionDensity"] = pack.ConnectionDensity,
+            ["quality"] = pack.Quality, ["reliability"] = pack.Reliability,
+        };
+        foreach (var (k, v) in cfg.WeightOverrides) merged[k] = v;
+        return IntelligentScoring.NormalizeWeights(merged);
+    }
+
+    static IntelligentScoring.Candidate ToScoring(Candidate c) => new(
+        c.Provider, c.Model, c.QuotaFraction, // already 0..100 after SPEC-084
+        c.CircuitBreakerState, c.CostPer1MTokens, c.P95LatencyMs, c.LatencyStdDev,
+        c.ErrorRate, FailureRate: c.ErrorRate, AccountTier: c.AccountTier,
+        QuotaResetIntervalSecs: c.QuotaResetIntervalSecs,
+        ContextAffinity: c.ContextAffinity, CacheAffinity: c.CacheAffinity,
+        SessionAvailability: c.SessionAvailability,
+        ResetWindowAffinity: c.ResetWindowAffinity, Quality: c.Quality,
+        ConnectionPoolSize: c.ConnectionPoolSize);
+
+    /// <summary>rules: full 16-weight scorer (upstream scorePool + budgetCap
+    /// drop + OPEN-breaker exclusion).</summary>
+    private static async Task<List<Candidate>> RankRulesAsync(
+        List<Candidate> pool, Config cfg, string taskType, LlmRouterDbContext db)
     {
         var eligible = pool.Where(c => c.CircuitBreakerState != "OPEN").ToList();
         var set = eligible.Count > 0 ? eligible : pool;
-        var maxCost = Math.Max(set.Max(c => c.CostPer1MTokens), 0.001);
-        var maxLat = Math.Max(set.Max(c => c.AvgE2ELatencyMs), 1);
-        var maxStd = Math.Max(set.Max(c => c.LatencyStdDev), 1);
-        double Health(Candidate c) => c.CircuitBreakerState switch
-        { "CLOSED" => 1, "DEGRADED" => 0.75, "HALF_OPEN" => 0.5, _ => 0 };
-        return set.OrderByDescending(c =>
-                c.QuotaFraction * 0.25 + Health(c) * 0.2
-                + (1 - Math.Min(1, c.CostPer1MTokens / maxCost)) * 0.2
-                + (1 - Math.Min(1, c.AvgE2ELatencyMs / maxLat)) * 0.15
-                + (1 - c.ErrorRate) * 0.1
-                + (1 - Math.Min(1, c.LatencyStdDev / maxStd)) * 0.1)
+        // upstream budgetCap: candidates over the $/1M-token cap are dropped
+        if (cfg.BudgetCap is > 0)
+        {
+            var within = set.Where(c => c.CostPer1MTokens <= cfg.BudgetCap.Value).ToList();
+            if (within.Count > 0) set = within;
+        }
+        var weights = ResolveWeights(cfg);
+        var scoring = set.Select(ToScoring).ToList();
+        var fits = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var order = IntelligentScoring.ScorePool(scoring, weights,
+            c => fits.GetValueOrDefault(c.Model,
+                fits[c.Model] = ModelIntelligence.GetTaskFitnessAsync(db, c.Model, taskType)
+                    .GetAwaiter().GetResult()))
+            .Select(s => s.Model)
             .ToList();
+        return set.OrderBy(c => order.IndexOf(c.Model)).ToList();
     }
 
-    /// <summary>score: same composite; explorationRate re-rolls inside the top group.</summary>
-    private static List<Candidate> RankScore(List<Candidate> pool, Config cfg)
+    /// <summary>score: same scorer; explorationRate re-rolls inside the top group.</summary>
+    private static async Task<List<Candidate>> RankScoreAsync(
+        List<Candidate> pool, Config cfg, string taskType, LlmRouterDbContext db)
     {
-        var ranked = RankRules(pool);
+        var ranked = await RankRulesAsync(pool, cfg, taskType, db);
         if (ranked.Count > 1 && cfg.ExplorationRate > 0 && Random.Shared.NextDouble() < cfg.ExplorationRate)
         {
             var pick = Random.Shared.Next(ranked.Count);
@@ -281,9 +385,9 @@ public static class AutoRouter
             var lkg = pool.Where(c =>
                 c.Provider == lastGood && c.CircuitBreakerState != "OPEN").ToList();
             if (lkg.Count > 0)
-                return lkg.Concat(RankRules(pool.Where(c => c.Provider != lastGood).ToList())).ToList();
+                return lkg.Concat((await RankRulesAsync(pool.Where(c => c.Provider != lastGood).ToList(), cfg, "default", db))).ToList();
         }
-        return RankRules(pool);
+        return await RankRulesAsync(pool, cfg, "default", db);
     }
 
     // ── nadir: decision API picks the model, rules picks within it ──────────
@@ -338,9 +442,9 @@ public static class AutoRouter
         var prompt = ExtractLastUserText(messages);
         var baseUrl = cfg.NadirBaseUrl is { } b ? NormalizeNadirBaseUrl(b) : NadirDefaultBaseUrl;
         if (prompt is null || baseUrl is null || candidates.Count == 0)
-            return RankRules(candidates);
+            return await RankRulesAsync(candidates, cfg, "default", db);
         if (NadirCooldown.TryGetValue(baseUrl, out var until) && until > DateTimeOffset.UtcNow)
-            return RankRules(candidates);
+            return await RankRulesAsync(candidates, cfg, "default", db);
 
         try
         {
@@ -363,14 +467,14 @@ public static class AutoRouter
             var selected = doc.RootElement.TryGetProperty("selected_model", out var sm)
                 && sm.ValueKind == JsonValueKind.String ? sm.GetString() : null;
             var matching = selected is null ? [] : candidates.Where(c => c.Model == selected).ToList();
-            if (matching.Count == 0) return RankRules(candidates);
+            if (matching.Count == 0) return await RankRulesAsync(candidates, cfg, "default", db);
             // Nadir picked the model; rules picks the remaining order for fallbacks.
-            return matching.Concat(RankRules(candidates.Where(c => c.Model != selected).ToList())).ToList();
+            return matching.Concat(await RankRulesAsync(candidates.Where(c => c.Model != selected).ToList(), cfg, "default", db)).ToList();
         }
         catch
         {
             NadirCooldown[baseUrl] = DateTimeOffset.UtcNow.AddMilliseconds(NadirFailureCooldownMs);
-            return RankRules(candidates);
+            return await RankRulesAsync(candidates, cfg, "default", db);
         }
     }
 }

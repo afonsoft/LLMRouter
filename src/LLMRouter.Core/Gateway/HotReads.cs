@@ -62,9 +62,12 @@ public static class HotReads
 
     public static Task<string?> ComboMappingAsync(LlmRouterDbContext db, string model) =>
         Cache.GetOrAddAsync($"mcm:{model}", TimeSpan.FromSeconds(30), () =>
-            db.Kv.AsNoTracking()
-                .Where(k => k.Scope == "modelComboMappings" && k.Key == model)
-                .Select(k => k.Value).FirstOrDefaultAsync());
+            Routing.ComboMappings.MatchAsync(db, model));
+
+    /// <summary>SPEC-081: disabled models per provider (kv scope disabledModels).</summary>
+    public static Task<Dictionary<string, string[]>> DisabledModelsAsync(LlmRouterDbContext db) =>
+        Cache.GetOrAddAsync("disabledModels", TimeSpan.FromSeconds(30),
+            () => Routing.DisabledModels.AllAsync(db));
 
     public static Task<List<ModelCooldown>> LiveModelCooldownsAsync(LlmRouterDbContext db) =>
         Cache.GetOrAddAsync("mc:live", TimeSpan.FromSeconds(5), () =>
@@ -95,9 +98,9 @@ public static class HotReads
             db.CompressionCombos.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id));
 
     /// <summary>Daily-token-cap verdict per key; 5s staleness on a soft cap.</summary>
-    public static Task<bool> DailyCapExceededAsync(LlmRouterDbContext db, string apiKey) =>
-        Cache.GetOrAddAsync($"dcap:{apiKey}", TimeSpan.FromSeconds(5),
-            () => Routing.KeyQuota.DailyCapExceededAsync(db, apiKey));
+    public static Task<bool> DailyCapExceededAsync(LlmRouterDbContext db, string apiKey, string? model = null) =>
+        Cache.GetOrAddAsync($"dcap:{apiKey}:{model}", TimeSpan.FromSeconds(5),
+            () => Routing.KeyQuota.DailyCapExceededAsync(db, apiKey, model));
 
     /// <summary>Tier rules (models allow-list + daily tokens) per key.</summary>
     public static Task<(List<string>? models, int dailyTokens)> TierRulesAsync(

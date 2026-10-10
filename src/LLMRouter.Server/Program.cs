@@ -178,6 +178,8 @@ LogExportEndpoints.Map(app);
 PlaygroundEndpoints.Map(app);
 OpenApiExplorerEndpoints.Map(app);
 CacheEndpoints.Map(app);
+DiscoveryEndpoints.Map(app);
+IntelligenceEndpoints.Map(app);
 SettingsOpsEndpoints.Map(app);
 SettingsRoutingEndpoints.Map(app);
 RelayEndpoints.Map(app);

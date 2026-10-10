@@ -169,7 +169,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-041: per-key daily token cap
-        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey))
+        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey, model))
         {
             ctx.Response.StatusCode = 429;
             await WriteError(ctx, "openai", "rate_limit", "Daily token quota exhausted for this API key.");
@@ -304,11 +304,14 @@ public static class GatewayEndpoints
     {
         if (!await Authorized(ctx, db)) { ctx.Response.StatusCode = 401; return; }
         var models = new List<object>();
+        var disabled = await Core.Gateway.HotReads.DisabledModelsAsync(db);
         foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync(ctx.RequestAborted))
         {
             var p = registry.GetProvider(c.Provider);
             if (p?.Models is null) continue;
             foreach (var m in p.Models)
+            {
+                if (Core.Routing.DisabledModels.IsDisabled(disabled, p.Id, m.Id)) continue;
                 models.Add(new
                 {
                     id = $"{p.Id}/{m.Id}",
@@ -316,6 +319,7 @@ public static class GatewayEndpoints
                     created = 0,
                     owned_by = p.Alias ?? p.Id,
                 });
+            }
         }
         foreach (var combo in await db.Combos.ToListAsync(ctx.RequestAborted))
             models.Add(new { id = combo.Name, @object = "model", created = 0, owned_by = "combo" });
@@ -484,9 +488,19 @@ public static class GatewayEndpoints
             {
                 var allow = (keyRow.AccessAllow ?? "")
                     .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                var ok = allow.Any(a => a.EndsWith('*')
-                    ? model.StartsWith(a[..^1], StringComparison.OrdinalIgnoreCase)
-                    : string.Equals(a, model, StringComparison.OrdinalIgnoreCase));
+                // SPEC-083: allow-list accepts model ids, globs, AND combo names
+                // (bare or "combo:"-prefixed) — a mapped combo grants access.
+                var mappedCombo = await Core.Gateway.HotReads.ComboMappingAsync(db, model);
+                var ok = allow.Any(a =>
+                {
+                    var name = a.StartsWith("combo:", StringComparison.OrdinalIgnoreCase) ? a[6..] : a;
+                    if (mappedCombo is not null && !name.Contains('/') && !name.Contains('*')
+                        && string.Equals(name, mappedCombo, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    return a.EndsWith('*')
+                        ? model.StartsWith(a[..^1], StringComparison.OrdinalIgnoreCase)
+                        : string.Equals(a, model, StringComparison.OrdinalIgnoreCase);
+                });
                 if (!ok)
                 {
                     ctx.Response.StatusCode = 403;
@@ -515,7 +529,7 @@ public static class GatewayEndpoints
         }
 
         // SPEC-041: per-key daily token cap
-        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey))
+        if (await Core.Gateway.HotReads.DailyCapExceededAsync(db, apiKey, model))
         {
             ctx.Response.StatusCode = 429;
             await WriteError(ctx, inbound, "rate_limit", "Daily token quota exhausted for this API key.");
@@ -758,6 +772,8 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
+                    await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
+                        target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -784,6 +800,8 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
+                    await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
+                        target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts), ctx.RequestAborted);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,

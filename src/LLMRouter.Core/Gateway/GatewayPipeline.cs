@@ -73,9 +73,14 @@ public sealed class GatewayEngine(
         }
         else if (combo is not null)
         {
-            var list = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+            // SPEC-082: expand step kinds (combo-ref, provider-wildcard, objects)
+            var expanded = await Routing.ComboSteps.ExpandAsync(db, registry, combo.Models,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase) { combo.Name });
+            var list = expanded.Models;
             models = await ComboStrategies.OrderAsync(combo.Kind, combo.Name, list,
                 db, registry, requestBody, combo.StickyLimit, ct);
+            // quota-only steps serve only after the ordered candidates
+            models.AddRange(expanded.QuotaOnly.Except(models));
         }
         else
         {
@@ -93,6 +98,15 @@ public sealed class GatewayEngine(
                 models = planner.ReorderByCapabilities(models, required, overrides);
             }
         }
+
+        // SPEC-081: disabled models are skipped in every resolution path
+        var disabled = await HotReads.DisabledModelsAsync(db);
+        if (disabled.Count > 0)
+            models = models.Where(m =>
+            {
+                var (p, mid) = resolver.Resolve(m, aliases);
+                return !Routing.DisabledModels.IsDisabled(disabled, p, mid);
+            }).ToList();
 
         var targets = new List<ResolvedTarget>();
         foreach (var m in models)
@@ -315,7 +329,7 @@ public sealed class GatewayEngine(
                 });
                 await w.SaveChangesAsync();
                 await RollupDailyOnAsync(w, provider, model, promptTokens, completionTokens);
-                await Routing.KeyQuota.CreditDailyAsync(w, apiKey, promptTokens + completionTokens);
+                await Routing.KeyQuota.CreditDailyAsync(w, apiKey, promptTokens + completionTokens, model);
 
                 var sess = await w.ChatSessions
                     .FirstOrDefaultAsync(s => s.KeyId == apiKey && s.Model == model);
@@ -384,7 +398,7 @@ public sealed class GatewayEngine(
         }
 
         // SPEC-041: credit tokens toward the key's daily quota counter
-        await Routing.KeyQuota.CreditDailyAsync(db, apiKey, promptTokens + completionTokens);
+        await Routing.KeyQuota.CreditDailyAsync(db, apiKey, promptTokens + completionTokens, model);
 
         // SPEC-073: chat session tracking — upsert per (apiKey, model)
         var sess = await db.ChatSessions

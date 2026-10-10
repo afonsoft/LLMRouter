@@ -90,7 +90,12 @@ public class ComboPlanner
             string.Equals(m.Id, modelId, StringComparison.OrdinalIgnoreCase));
         if (model is not null)
         {
-            if (model.Vision == true || model.ImageToText == true) caps.Add("vision");
+            if (model.Vision == true || model.ImageToText == true || model.SupportsVision == true) caps.Add("vision");
+            if (model.ToolCalling == true) caps.Add("tools");
+            if (model.SupportsReasoning == true) caps.Add("reasoning");
+            if (model.SupportsAudio == true) caps.Add("audio");
+            if (model.SupportsVideo == true) caps.Add("video");
+            if (model.ContextLength is not null) caps.Add($"context:{model.ContextLength}");
             foreach (var c in model.Capabilities ?? [])
             {
                 caps.Add(c);

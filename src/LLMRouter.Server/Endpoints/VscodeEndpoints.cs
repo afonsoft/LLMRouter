@@ -120,14 +120,21 @@ public static class VscodeEndpoints
             t.AllowedCombos = ac.GetRawText();
     }
 
-    /// <summary>Rewrites the request body model against the token's combo scope, then Chat.</summary>
-    private static async Task ScopedChat(HttpContext ctx, string token, string inbound)
+    /// <summary>Rewrites the request body model against the token's combo scope, then Chat.
+    /// rawModel=true (vscode/raw/*) skips all combo rewriting — model goes verbatim.</summary>
+    internal static async Task ScopedChat(HttpContext ctx, string token, string inbound, bool rawModel = false)
     {
         var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
         var t = await Auth(ctx, db, token);
         if (t is null) return;
 
         var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync(ctx.RequestAborted);
+        if (rawModel)
+        {
+            ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(raw));
+            await GatewayEndpoints.Chat(ctx, inbound, $"vscode-raw:{t.Id}");
+            return;
+        }
         var allowed = Allowed(t);
         if (allowed.Length > 0 || !string.IsNullOrEmpty(t.DefaultCombo))
         {

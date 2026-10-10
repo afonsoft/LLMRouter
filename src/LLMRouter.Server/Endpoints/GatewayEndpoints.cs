@@ -32,7 +32,6 @@ public static class GatewayEndpoints
             g.MapMethods("/responses/compact", ["POST"], (HttpContext c) => Chat(c, "responsesApi"));
             g.MapGet("/models", Models);
             g.MapGet("/models/info", ModelInfo);
-            g.MapGet("/models/{*path}", Models);
             // non-chat passthrough: same resolution + cascade, no translation
             foreach (var p in new[] { "/embeddings", "/images/generations", "/audio/speech",
                 "/audio/transcriptions", "/audio/voices", "/search", "/web/fetch",
@@ -83,7 +82,7 @@ public static class GatewayEndpoints
     /// when no provider tokenizer is configured). Returns claude-shaped
     /// {input_tokens} for /messages/count_tokens, gemini-shaped for :countTokens.
     /// </summary>
-    private static async Task CountTokens(HttpContext ctx, LlmRouterDbContext db)
+    internal static async Task CountTokens(HttpContext ctx, LlmRouterDbContext db)
     {
         if (!await Authorized(ctx, db)) { ctx.Response.StatusCode = 401; return; }
         JsonElement body;
@@ -99,10 +98,10 @@ public static class GatewayEndpoints
         catch { chars = raw.Length; }
         var tokens = Math.Max(1, (int)Math.Ceiling(chars / 4.0));
         var isGemini = ctx.Request.Path.Value?.Contains(":countTokens") == true;
+        ctx.Response.ContentType = "application/json";
         await ctx.Response.WriteAsync(isGemini
             ? JsonSerializer.Serialize(new { totalTokens = tokens })
-            : JsonSerializer.Serialize(new { input_tokens = tokens }));
-        ctx.Response.ContentType = "application/json";
+            : JsonSerializer.Serialize(new { input_tokens = tokens }), ctx.RequestAborted);
     }
 
     private static IEnumerable<string> EnumerateStrings(JsonElement el)

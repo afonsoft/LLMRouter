@@ -43,10 +43,13 @@ public class UsageAnalyticsEndpointsTests : IDisposable
             new DbContextOptionsBuilder<LlmRouterDbContext>().UseSqlite($"Data Source={_dbPath}").Options);
         db.Database.EnsureCreated();
         var now = DateTime.UtcNow;
-        UsageRecord Row(int minsAgo, string provider, string model, string status, long pt, long ct, double cost, long lat, string? conn = null, string? key = null) =>
+        // anchor to a fixed hour today so small offsets can never cross a
+        // date boundary — a "N minutes ago" seed splits the group near midnight
+        var anchor = now.Date.AddHours(Math.Clamp(now.Hour, 1, 23));
+        UsageRecord Row(int secsAgo, string provider, string model, string status, long pt, long ct, double cost, long lat, string? conn = null, string? key = null) =>
             new()
             {
-                Timestamp = now.AddMinutes(-minsAgo).ToString("yyyy-MM-dd HH:mm:ss"),
+                Timestamp = anchor.AddSeconds(-secsAgo).ToString("yyyy-MM-dd HH:mm:ss"),
                 Provider = provider, Model = model, Status = status,
                 PromptTokens = pt, CompletionTokens = ct, Cost = cost, LatencyMs = lat,
                 ConnectionId = conn, ApiKey = key, Endpoint = "chat", Tokens = (pt + ct).ToString(),

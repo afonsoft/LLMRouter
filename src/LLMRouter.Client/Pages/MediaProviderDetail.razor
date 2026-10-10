@@ -1,0 +1,43 @@
+@page "/dashboard/media-providers/{Kind}/{Id}"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Kind — @Id</h1>
+<p class="page-desc">Media provider detail: config, capabilities, health</p>
+
+@if (_conn.ValueKind == JsonValueKind.Undefined) { <div class="card card-p mt-4">Loading…</div> }
+else
+{
+    <div class="card card-p mt-4">
+        <h3>Config</h3>
+        <pre style="max-height:300px;overflow:auto">@JsonSerializer.Serialize(_conn, new JsonSerializerOptions { WriteIndented = true })</pre>
+        <div class="flex gap-2 mt-4">
+            <button class="btn btn-primary" @onclick="Test" disabled="@_busy">Test</button>
+            <a class="btn btn-sm" href="/dashboard/media-providers">← Media providers</a>
+        </div>
+        @if (_test is not null) { <p class="mt-2">@_test</p> }
+    </div>
+}
+
+@code {
+    [Parameter] public string? Kind { get; set; }
+    [Parameter] public string? Id { get; set; }
+    private JsonElement _conn; private string? _test; private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _conn = await Api.GetAsync($"api/provider-connections/{Id}"); }
+        catch { _conn = await Api.GetAsync("api/provider-connections"); }
+    }
+    private async Task Test()
+    {
+        _busy = true;
+        try
+        {
+            var r = await Api.PostAsync($"api/provider-connections/{Id}/assess", new { });
+            _test = r.GetRawText()[..Math.Min(300, r.GetRawText().Length)];
+        }
+        catch (Exception ex) { _test = ex.Message; }
+        _busy = false;
+    }
+}

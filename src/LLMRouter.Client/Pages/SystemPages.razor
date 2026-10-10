@@ -1,0 +1,74 @@
+@page "/dashboard/system/1proxy"
+@page "/dashboard/system/mitm-proxy"
+@page "/dashboard/miniapp"
+@page "/dashboard/maintenance"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+@{
+    var u = Nav.Uri;
+    if (u.EndsWith("/1proxy"))
+    {
+        <h1 class="page-title">1Proxy</h1>
+        <p class="page-desc">One-proxy aggregation surface</p>
+        <div class="card card-p mt-4">
+            @if (_status.ValueKind == JsonValueKind.Undefined) { <p>Loading…</p> }
+            else { <pre style="max-height:320px;overflow:auto">@JsonSerializer.Serialize(_status, new JsonSerializerOptions { WriteIndented = true })</pre> }
+        </div>
+    }
+    else if (u.EndsWith("/mitm-proxy"))
+    {
+        <h1 class="page-title">MITM Proxy</h1>
+        <p class="page-desc">Interceptação MITM — status e certificado</p>
+        <div class="card card-p mt-4">
+            <div class="flex gap-2">
+                <a class="btn btn-sm" href="/api/mitm/ca" download>Download CA cert</a>
+                <a class="btn btn-sm" href="/dashboard/mitm">Live inspector →</a>
+            </div>
+            @if (_status.ValueKind != JsonValueKind.Undefined)
+            { <pre class="mt-4" style="max-height:260px;overflow:auto">@JsonSerializer.Serialize(_status, new JsonSerializerOptions { WriteIndented = true })</pre> }
+        </div>
+    }
+    else if (u.EndsWith("/miniapp"))
+    {
+        <h1 class="page-title">Miniapp</h1>
+        <div class="card card-p mt-4"><p>Embedded miniapp shell (compatibility route).</p></div>
+    }
+    else
+    {
+        <h1 class="page-title">Maintenance</h1>
+        <p class="page-desc">Modo manutenção — bloqueia requests não-admin</p>
+        <div class="card card-p mt-4">
+            <label class="flex gap-2" style="align-items:center">
+                <input type="checkbox" @bind="_maint" /> Maintenance mode
+            </label>
+            <button class="btn btn-primary mt-4" @onclick="Save">Save</button>
+            @if (_saved) { <span class="ml-2">saved ✓</span> }
+        </div>
+    }
+}
+
+@code {
+    private JsonElement _status; private bool _maint, _saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var u = Nav.Uri;
+        try
+        {
+            _status = await Api.GetAsync(u.EndsWith("/mitm-proxy") ? "api/mitm/status" : "api/oneproxy/status");
+        }
+        catch { }
+        if (u.EndsWith("/maintenance"))
+        {
+            try { var s = await Api.GetAsync("api/settings"); _maint = s.TryGetProperty("maintenanceMode", out var m) && m.GetBoolean(); } catch { }
+        }
+    }
+
+    private async Task Save()
+    {
+        try { await Api.PostAsync("api/settings", new { maintenanceMode = _maint }); } catch { }
+        _saved = true;
+    }
+}

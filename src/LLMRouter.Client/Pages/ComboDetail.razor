@@ -1,0 +1,82 @@
+@page "/dashboard/combos/{Id}"
+@page "/dashboard/combos/playground"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">@(_playground ? "Combo Playground" : $"Combo — {Id}")</h1>
+<p class="page-desc">@(_playground ? "Try any combo with a prompt" : "Members, weights, strategy and health")</p>
+
+@if (_playground)
+{
+    <div class="card card-p mt-4">
+        <div class="flex gap-2">
+            <select class="input" @bind="_combo" style="max-width:280px">
+                @foreach (var c in _combos) { <option value="@c">@c</option> }
+            </select>
+            <input class="input" style="flex:1" placeholder="Prompt…" @bind="_prompt" />
+            <button class="btn btn-primary" @onclick="Run" disabled="@_busy">Run</button>
+        </div>
+        @if (_result is not null) { <pre class="mt-4" style="white-space:pre-wrap">@_result</pre> }
+    </div>
+}
+else if (_detail.ValueKind == JsonValueKind.Undefined)
+{
+    <div class="card card-p mt-4">Loading…</div>
+}
+else
+{
+    <div class="card card-p mt-4">
+        <h3>Members</h3>
+        <table class="table"><thead><tr><th>#</th><th>Model</th><th>Provider</th><th>Weight</th></tr></thead>
+        <tbody>
+        @if (_detail.TryGetProperty("members", out var ms))
+        {
+            var i = 0;
+            foreach (var m in ms.EnumerateArray())
+            {
+                <tr><td>@(++i)</td><td>@P(m, "model")</td><td>@P(m, "provider")</td><td>@P(m, "weight")</td></tr>
+            }
+        }
+        </tbody></table>
+        <div class="flex gap-2 mt-4">
+            <a class="btn btn-sm" href="/dashboard/combos">← Combos</a>
+            <a class="btn btn-sm" href="/dashboard/combos/playground">Playground</a>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    private bool _playground => Id is null || Nav.Uri.EndsWith("/playground");
+    private JsonElement _detail;
+    private List<string> _combos = []; private string _combo = "", _prompt = ""; private string? _result; private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var c = await Api.GetAsync("api/combos");
+        _combos = c.ValueKind == JsonValueKind.Array
+            ? c.EnumerateArray().Select(x => P(x, "name") ?? P(x, "id") ?? "?").ToList()
+            : c.TryGetProperty("combos", out var arr) ? arr.EnumerateArray().Select(x => P(x, "name") ?? "?").ToList() : [];
+        _combo = _combos.FirstOrDefault() ?? "";
+        if (!_playground && Id is not null)
+            _detail = await Api.GetAsync($"api/combos/{Id}");
+    }
+
+    private static string? P(JsonElement e, string k) =>
+        e.TryGetProperty(k, out var v) ? (v.ValueKind == JsonValueKind.String ? v.GetString() : v.GetRawText()) : null;
+
+    private async Task Run()
+    {
+        _busy = true;
+        try
+        {
+            var r = await Api.PostAsync("v1/chat/completions",
+                new { model = _combo, messages = new[] { new { role = "user", content = _prompt } } });
+            _result = r.TryGetProperty("choices", out var ch) && ch.GetArrayLength() > 0
+                ? P(ch[0].GetProperty("message"), "content") : r.GetRawText()[..Math.Min(2000, r.GetRawText().Length)];
+        }
+        catch (Exception ex) { _result = ex.Message; }
+        _busy = false;
+    }
+}

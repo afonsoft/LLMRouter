@@ -81,6 +81,16 @@ public static class ComboStrategies
         if (models.Count <= 1) return models.ToList();
         var k = (kind ?? "fallback").ToLowerInvariant();
 
+        // SPEC-078: auto-router strategies (upstream autoCombo/routerStrategy.ts)
+        // — telemetry-scored candidate routing. "lkgp" stays on the combo-level
+        // last-good implementation below.
+        if (AutoRouter.IsAutoStrategy(k) && k != "lkgp")
+        {
+            var candidates = await AutoRouter.CandidatesAsync(db, models, ct);
+            var cfg = await AutoRouter.LoadConfigAsync(db, ct);
+            return await AutoRouter.OrderAsync(k, candidates, cfg, requestBody, db, ct);
+        }
+
         switch (k)
         {
             case "round-robin":

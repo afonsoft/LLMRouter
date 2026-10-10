@@ -732,3 +732,23 @@ public class GamiItem
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";
 }
+
+/// <summary>SPEC-065: execuções do issue-agent (github|slack → fix flow).</summary>
+[Table("issueAgentRuns")]
+public class IssueAgentRun
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Origem: github, slack, manual.</summary>
+    public string Source { get; set; } = "";
+    /// <summary>Issue/URL alvo.</summary>
+    public string Issue { get; set; } = "";
+    /// <summary>Estado: queued, running, done, failed.</summary>
+    public string State { get; set; } = "queued";
+    /// <summary>PR gerado (se houver).</summary>
+    public string? PrUrl { get; set; }
+    /// <summary>Detalhe/último log.</summary>
+    public string? Detail { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}

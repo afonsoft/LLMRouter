@@ -333,7 +333,19 @@ public static class ManagementEndpoints
             models = JsonDocument.Parse(c.Models).RootElement.Clone(),
         };
         g.MapGet("/combos", async (LlmRouterDbContext db) =>
-            Results.Json(new { combos = (await db.Combos.ToListAsync()).Select(ComboDto) }, JsonOpts));
+        {
+            var all = await db.Combos.ToListAsync();
+            // SPEC-069: honor persisted comboOrder (settings.data.comboOrder)
+            var sd = JsonNode.Parse((await db.Settings.FirstOrDefaultAsync())?.Data ?? "{}")?.AsObject();
+            var ord = sd?["comboOrder"] as JsonArray;
+            if (ord is not null)
+            {
+                var rank = ord.Select((x, i) => (x?.GetValue<string>(), i))
+                    .Where(t => t.Item1 is not null).ToDictionary(t => t.Item1!, t => t.i);
+                all = all.OrderBy(c => rank.TryGetValue(c.Id, out var r) ? r : int.MaxValue).ToList();
+            }
+            return Results.Json(new { combos = all.Select(ComboDto) }, JsonOpts);
+        });
 
         g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db) =>
         {

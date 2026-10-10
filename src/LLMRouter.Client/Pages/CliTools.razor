@@ -30,6 +30,43 @@ else
         }
     </div>
     <div class="mt-4"><CliImportCard /></div>
+
+    <h2 class="bold" style="margin-top:32px">@Loc.T("vscodeTokens.title", "VSCode tokens")</h2>
+    <p class="page-desc">@Loc.T("vscodeTokens.subtitle", "Tokens for VSCode extensions (Continue, Cline) — point the extension's Ollama/OpenAI provider at the URLs below")</p>
+    <div class="card card-p" style="margin-bottom:12px">
+        <div class="flex" style="gap:8px;flex-wrap:wrap">
+            <input class="input" placeholder="name" @bind="_vscName" style="max-width:220px" />
+            <input class="input" placeholder="default combo (optional)" @bind="_vscCombo" style="max-width:220px" />
+            <input class="input" placeholder="allowed combos, csv (optional)" @bind="_vscAllowed" style="max-width:260px" />
+            <button class="btn" @onclick="CreateVsc">@Loc.T("common.create", "Create")</button>
+        </div>
+        @if (_vscNewToken is not null)
+        {
+            <div style="margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:8px">
+                <div class="flex between"><b>base URL (Ollama)</b><button class="btn btn-sm" @onclick='() => Copy(_vscNewToken!)'>@Loc.T("common.copy", "Copy")</button></div>
+                <code style="font-size:12px">/v1/vscode/@_vscNewToken</code>
+                <p class="muted" style="font-size:12px;margin:6px 0 0">@Loc.T("vscodeTokens.revealOnce", "Shown once — save it now.")</p>
+            </div>
+        }
+    </div>
+    @if (_vscTokens is { Length: > 0 })
+    {
+        <table class="table" style="font-size:13px">
+            <thead><tr><th>name</th><th>token</th><th>default combo</th><th>allowed</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var v in _vscTokens)
+                {
+                    <tr>
+                        <td>@(v.TryGetProperty("name", out var vn) && vn.ValueKind == JsonValueKind.String ? vn.GetString() : "—")</td>
+                        <td><code>@v.GetProperty("token").GetString()</code></td>
+                        <td>@(v.TryGetProperty("defaultCombo", out var dc) && dc.ValueKind == JsonValueKind.String ? dc.GetString() : "—")</td>
+                        <td>@(v.GetProperty("allowedCombos").GetArrayLength() == 0 ? Loc.T("common.all", "all") : string.Join(", ", v.GetProperty("allowedCombos").EnumerateArray().Select(e => e.GetString())))</td>
+                        <td><button class="btn btn-sm btn-danger" @onclick='() => DelVsc(v.GetProperty("id").GetString()!)'>@Loc.T("common.delete", "Delete")</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
 }
 
 @code {
@@ -41,7 +78,34 @@ else
         var r = await Api.GetAsync("api/cli-tools");
         if (r.TryGetProperty("tools", out var arr)) _tools = arr.EnumerateArray().ToArray();
         else _tools = [];
+        await LoadVsc();
     }
+
+    private JsonElement[]? _vscTokens;
+    private string _vscName = "", _vscCombo = "", _vscAllowed = "";
+    private string? _vscNewToken;
+
+    private async Task LoadVsc()
+    {
+        var r = await Api.GetAsync("api/vscode-tokens");
+        if (r.TryGetProperty("tokens", out var arr)) _vscTokens = arr.EnumerateArray().ToArray();
+        else _vscTokens = [];
+    }
+
+    private async Task CreateVsc()
+    {
+        var body = new Dictionary<string, object?>();
+        if (!string.IsNullOrWhiteSpace(_vscName)) body["name"] = _vscName;
+        if (!string.IsNullOrWhiteSpace(_vscCombo)) body["defaultCombo"] = _vscCombo;
+        if (!string.IsNullOrWhiteSpace(_vscAllowed))
+            body["allowedCombos"] = _vscAllowed.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+        var r = await Api.PostAsync("api/vscode-tokens", body);
+        if (r.TryGetProperty("token", out var tk)) _vscNewToken = tk.GetString();
+        _vscName = _vscCombo = _vscAllowed = "";
+        await LoadVsc();
+    }
+
+    private async Task DelVsc(string id) { await Api.DeleteAsync($"api/vscode-tokens/{id}"); await LoadVsc(); }
 
     private static string EnvBlock(JsonElement t) =>
         string.Join('\n', t.GetProperty("env").EnumerateObject().Select(kv => $"export {kv.Name}=\"{kv.Value.GetString()}\""));

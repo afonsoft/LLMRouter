@@ -58,6 +58,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<SkillExecution> SkillExecutions => Set<SkillExecution>();
     /// <summary>SPEC-055: itens do radar (catalog/offers/intel/referrals).</summary>
     public DbSet<RadarItem> RadarItems => Set<RadarItem>();
+    /// <summary>SPEC-056: itens de gamification.</summary>
+    public DbSet<GamiItem> GamiItems => Set<GamiItem>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

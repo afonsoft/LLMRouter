@@ -1,0 +1,76 @@
+@page "/dashboard/gamification"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("gamification", "Gamification")</h1>
+<p class="page-desc">@Loc.T("gamificationSubtitle", "Pontos, badges, convites e federação")</p>
+
+<div class="grid grid-4 mt-4">
+    <div class="card card-p"><div class="dim xs">Score</div><div class="bold" style="font-size:22px">@_score</div></div>
+    <div class="card card-p"><div class="dim xs">Level</div><div class="bold" style="font-size:22px">@(_score / 1000)</div></div>
+    <div class="card card-p"><div class="dim xs">Badges</div><div class="bold" style="font-size:22px">@_badges.Count(b => b.Earned)/@_badges.Count</div></div>
+    <div class="card card-p"><div class="dim xs">Invite</div><button class="btn sm" @onclick="NewInvite">gerar</button><div class="xs mt-1">@_invite</div></div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <h3>Badges</h3>
+        @foreach (var b in _badges)
+        {
+            <div class="row" style="justify-content:space-between"><span>@b.Title</span><span class="xs @(b.Earned ? "ok" : "dim")">@(b.Earned ? "✓" : $"{b.Threshold}")</span></div>
+        }
+    </div>
+    <div class="card card-p">
+        <h3>@Loc.T("notifications", "Notificações")</h3>
+        @foreach (var n in _notes.Take(10))
+        {
+            <div class="row xs"><span>@n.Data</span><span class="dim">@n.At</span></div>
+        }
+        <h3 class="mt-4">Leaderboard</h3>
+        @foreach (var (a, s) in _lb.Take(10))
+        {
+            <div class="row" style="justify-content:space-between"><span>@a</span><span class="bold">@s</span></div>
+        }
+    </div>
+</div>
+
+@code {
+    private long _score;
+    private string _invite = "";
+    private List<Badge> _badges = new();
+    private List<Note> _notes = new();
+    private List<(string Actor, long Score)> _lb = new();
+    const string Actor = "dashboard";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var s = await Api.GetAsync($"api/gamification/score/{Actor}");
+        if (s.TryGetProperty("score", out var sc)) _score = sc.GetInt64();
+        var b = await Api.GetAsync($"api/gamification/badges/{Actor}");
+        if (b.TryGetProperty("all", out var all))
+            _badges = all.EnumerateArray().Select(x => new Badge(
+                x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "",
+                x.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "",
+                x.TryGetProperty("earned", out var e) && e.GetBoolean(),
+                0)).ToList();
+        var n = await Api.GetAsync($"api/gamification/notifications/{Actor}");
+        if (n.TryGetProperty("notifications", out var na))
+            _notes = na.EnumerateArray().Select(x => new Note(
+                x.TryGetProperty("data", out var d) ? d.GetString() ?? "" : "",
+                x.TryGetProperty("at", out var at) ? at.GetString() ?? "" : "")).ToList();
+        var lb = await Api.GetAsync("api/gamification/leaderboard");
+        if (lb.TryGetProperty("leaderboard", out var arr))
+            _lb = arr.EnumerateArray().Select(x => (
+                x.TryGetProperty("actor", out var a) ? a.GetString() ?? "?" : "?",
+                x.TryGetProperty("score", out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0L)).ToList();
+    }
+
+    private async Task NewInvite()
+    {
+        var r = await Api.PostAsync("api/gamification/invites", new { actor = Actor });
+        if (r.TryGetProperty("code", out var c)) _invite = c.GetString() ?? "";
+    }
+
+    private record Badge(string Id, string Title, bool Earned, long Threshold);
+    private record Note(string Data, string At);
+}

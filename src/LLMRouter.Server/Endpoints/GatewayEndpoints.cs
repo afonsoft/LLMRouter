@@ -1255,7 +1255,7 @@ public static class GatewayEndpoints
     private static async Task<bool> Authorized(HttpContext ctx, LlmRouterDbContext db) =>
         (await AuthenticatedKey(ctx, db)).Authed;
 
-    private static async Task<(string Key, bool Authed)> AuthenticatedKey(HttpContext ctx, LlmRouterDbContext db)
+    internal static async Task<(string Key, bool Authed)> AuthenticatedKey(HttpContext ctx, LlmRouterDbContext db)
     {
         // dashboard session → allow
         if (ctx.User.Identity?.IsAuthenticated == true) return ("dashboard", true);

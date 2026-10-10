@@ -14,6 +14,14 @@ public static class GamiEndpoints
     {
         var g = app.MapGroup("/api/gamification");
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        MapScores(g, json);
+        MapInvites(g, json);
+        MapFederation(g, json);
+        MapStream(g);
+    }
+
+    static void MapScores(RouteGroupBuilder g, JsonSerializerOptions json)
+    {
 
         g.MapGet("/score/{actor}", async (LlmRouterDbContext db, string actor) =>
             Results.Json(new { actor, score = await GamiCore.ScoreAsync(db, actor) }, json));
@@ -30,11 +38,14 @@ public static class GamiEndpoints
 
         g.MapGet("/badges/{actor}", async (LlmRouterDbContext db, string actor) => Results.Json(await GamiCore.EarnedAsync(db, actor), json));
         g.MapGet("/notifications/{actor}", async (LlmRouterDbContext db, string actor, int limit = 50) => Results.Json(await GamiCore.NotificationsAsync(db, actor, limit), json));
+    }
 
+    static void MapInvites(RouteGroupBuilder g, JsonSerializerOptions json)
+    {
         g.MapPost("/invites", async (LlmRouterDbContext db, HttpRequest req) =>
         {
             var actor = "dashboard";
-            try { var b = await JsonSerializer.DeserializeAsync<JsonElement>(req.Body); if (b.TryGetProperty("actor", out var a)) actor = a.GetString() ?? actor; } catch { }
+            try { var b = await JsonSerializer.DeserializeAsync<JsonElement>(req.Body); if (b.TryGetProperty("actor", out var a)) actor = a.GetString() ?? actor; } catch { /* corpo opcional */ }
             return Results.Json(new { code = await GamiCore.InviteCreateAsync(db, actor) }, json);
         });
         g.MapPost("/invites/redeem", async (LlmRouterDbContext db, HttpRequest req) =>
@@ -45,6 +56,10 @@ public static class GamiEndpoints
             return await GamiCore.InviteRedeemAsync(db, code, actor) ? Results.Json(new { ok = true }, json) : Results.BadRequest(new { error = "invite inválido" });
         });
 
+    }
+
+    static void MapFederation(RouteGroupBuilder g, JsonSerializerOptions json)
+    {
         g.MapGet("/leaderboard", async (LlmRouterDbContext db, IHttpClientFactory hf, CancellationToken ct) => Results.Json(await GamiCore.LeaderboardAsync(db, hf.CreateClient("gami"), ct), json));
         g.MapPost("/servers", async (LlmRouterDbContext db, HttpRequest req) =>
         {
@@ -72,8 +87,11 @@ public static class GamiEndpoints
                 ? Results.Json(new { ok = true }, json) : Results.BadRequest(new { error = "transfer falhou" });
         });
         g.MapGet("/anomalies", async (LlmRouterDbContext db) => Results.Json(await GamiCore.AnomaliesAsync(db), json));
+    }
 
-        // SSE stream de eventos recentes (poll 2s, 30 frames)
+    // SSE stream de eventos recentes (poll 2s, 30 frames)
+    static void MapStream(RouteGroupBuilder g)
+    {
         g.MapGet("/stream", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
             ctx.Response.ContentType = "text/event-stream";

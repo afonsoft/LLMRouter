@@ -44,20 +44,42 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadScore();
+        await LoadBadges();
+        await LoadNotes();
+        await LoadLeaderboard();
+    }
+
+    private async Task LoadScore()
+    {
         var s = await Api.GetAsync($"api/gamification/score/{Actor}");
         if (s.TryGetProperty("score", out var sc)) _score = sc.GetInt64();
+    }
+
+    private async Task LoadBadges()
+    {
         var b = await Api.GetAsync($"api/gamification/badges/{Actor}");
         if (b.TryGetProperty("all", out var all))
-            _badges = all.EnumerateArray().Select(x => new Badge(
-                x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "",
-                x.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "",
-                x.TryGetProperty("earned", out var e) && e.GetBoolean(),
-                0)).ToList();
+            _badges = all.EnumerateArray().Select(ToBadge).ToList();
+    }
+
+    private static Badge ToBadge(JsonElement x) => new(
+        x.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "",
+        x.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "",
+        x.TryGetProperty("earned", out var e) && e.GetBoolean(),
+        0);
+
+    private async Task LoadNotes()
+    {
         var n = await Api.GetAsync($"api/gamification/notifications/{Actor}");
         if (n.TryGetProperty("notifications", out var na))
             _notes = na.EnumerateArray().Select(x => new Note(
                 x.TryGetProperty("data", out var d) ? d.GetString() ?? "" : "",
                 x.TryGetProperty("at", out var at) ? at.GetString() ?? "" : "")).ToList();
+    }
+
+    private async Task LoadLeaderboard()
+    {
         var lb = await Api.GetAsync("api/gamification/leaderboard");
         if (lb.TryGetProperty("leaderboard", out var arr))
             _lb = arr.EnumerateArray().Select(x => (

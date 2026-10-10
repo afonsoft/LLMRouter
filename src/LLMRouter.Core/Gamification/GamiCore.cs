@@ -128,7 +128,7 @@ public static class GamiCore
         catch { return false; }
         db.GamiItems.Add(new GamiItem { Kind = "scoreEvent", ItemKey = "transfer-out", Actor = actor, Points = -points, Data = $"para {toActor}@{toServer}", At = Now() });
         db.GamiItems.Add(new GamiItem { Kind = "transfer", ItemKey = toServer, Actor = actor, Points = points, Data = toActor, At = Now() });
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
         return true;
     }
 

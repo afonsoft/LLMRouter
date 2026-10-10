@@ -30,6 +30,56 @@
         </table>
         @if (_cooldowns.Count == 0) { <div class="empty"><span class="material-symbols-outlined">timer_off</span>No cooldowns</div> }
     </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.modelCooldowns", "Model cooldowns")</div></div>
+        <div class="flex gap-2 mt-2 items-end">
+            <input @bind="_mcProvider" placeholder="provider" />
+            <input @bind="_mcModel" placeholder="model (or *)" />
+            <input @bind="_mcMinutes" placeholder="minutes" style="width:90px" />
+            <button class="btn btn-sm" @onclick="AddModelCooldown">@Loc.T("common.add", "Add")</button>
+        </div>
+        <table class="tbl mt-2">
+            <thead><tr><th>Provider</th><th>Model</th><th>Until</th><th>Reason</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var m in _modelCooldowns)
+                {
+                    <tr>
+                        <td class="mono sm">@m.GetProperty("provider").GetString()</td>
+                        <td class="mono sm">@m.GetProperty("model").GetString()</td>
+                        <td class="mono sm">@m.GetProperty("until").GetString()</td>
+                        <td class="dim sm">@(m.TryGetProperty("reason", out var rr) && rr.ValueKind == JsonValueKind.String ? rr.GetString() : "")</td>
+                        <td><button class="btn btn-sm" @onclick='() => DelModelCooldown(m.GetProperty("id").GetString()!)'>Clear</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_modelCooldowns.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">timer_off</span>No model cooldowns</div> }
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.fallbackChains", "Fallback chains")</div></div>
+        <div class="flex gap-2 mt-2 items-end">
+            <input @bind="_chainName" placeholder="chain name" />
+            <input @bind="_chainSteps" placeholder="models, comma separated" style="min-width:260px" />
+            <button class="btn btn-sm" @onclick="AddChain">@Loc.T("common.add", "Add")</button>
+        </div>
+        <table class="tbl mt-2">
+            <thead><tr><th>Name</th><th>Steps</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var ch in _chains)
+                {
+                    <tr>
+                        <td class="mono sm">@ch.GetProperty("name").GetString()</td>
+                        <td class="mono sm">@string.Join(" → ", ch.GetProperty("steps").EnumerateArray().Select(x => x.ValueKind == JsonValueKind.Object && x.TryGetProperty("model", out var mm) ? mm.GetString() : x.GetString()))</td>
+                        <td><span class="badge @(ch.GetProperty("active").GetBoolean() ? "ok" : "")">@(ch.GetProperty("active").GetBoolean() ? "on" : "off")</span></td>
+                        <td><button class="btn btn-sm btn-danger" @onclick='() => DelChain(ch.GetProperty("id").GetString()!)'>Delete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_chains.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">link</span>No fallback chains</div> }
+    </div>
 }
 else
 {
@@ -60,6 +110,9 @@ else
     private bool IsCooldowns => Nav.Uri.Contains("/cooldowns");
     private List<JsonElement> _conns = [];
     private List<JsonElement> _cooldowns = [];
+    private List<JsonElement> _modelCooldowns = [];
+    private List<JsonElement> _chains = [];
+    private string _mcProvider = "", _mcModel = "", _mcMinutes = "30", _chainName = "", _chainSteps = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -67,6 +120,47 @@ else
         _conns = r.GetProperty("connections").EnumerateArray().ToList();
         var cd = await Api.GetAsync("api/resilience/cooldowns");
         _cooldowns = cd.GetProperty("cooldowns").EnumerateArray().ToList();
+        await LoadExtras();
+    }
+
+    private async Task LoadExtras()
+    {
+        var mc = await Api.GetAsync("api/resilience/model-cooldowns");
+        _modelCooldowns = mc.GetProperty("cooldowns").EnumerateArray().ToList();
+        var ch = await Api.GetAsync("api/fallback/chains");
+        _chains = ch.GetProperty("chains").EnumerateArray().ToList();
+    }
+
+    private async Task AddModelCooldown()
+    {
+        if (string.IsNullOrWhiteSpace(_mcModel)) return;
+        var minutes = double.TryParse(_mcMinutes, out var mm) ? mm : 30;
+        await Api.PostAsync("api/resilience/model-cooldowns",
+            new { provider = _mcProvider, model = _mcModel, minutes });
+        _mcModel = "";
+        await LoadExtras();
+    }
+
+    private async Task DelModelCooldown(string id)
+    {
+        await Api.DeleteAsync($"api/resilience/model-cooldowns/{id}");
+        await LoadExtras();
+    }
+
+    private async Task AddChain()
+    {
+        if (string.IsNullOrWhiteSpace(_chainName)) return;
+        var steps = _chainSteps.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(m => new { model = m }).ToList();
+        await Api.PostAsync("api/fallback/chains", new { name = _chainName, steps, active = true });
+        _chainName = ""; _chainSteps = "";
+        await LoadExtras();
+    }
+
+    private async Task DelChain(string id)
+    {
+        await Api.DeleteAsync($"api/fallback/chains/{id}");
+        await LoadExtras();
     }
 
     private async Task Clear(string id)

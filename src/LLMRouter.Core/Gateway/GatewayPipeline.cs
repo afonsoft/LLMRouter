@@ -42,10 +42,17 @@ public sealed class GatewayEngine(
     /// Resolve a model name into the ordered list of targets to try
     /// (single target for provider/model, cascade for combos).
     /// </summary>
-    public async Task<List<ResolvedTarget>> ResolveAsync(
+    public Task<List<ResolvedTarget>> ResolveAsync(
         string model,
         JsonElement? requestBody = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        ResolveAsync(model, requestBody, allowChains: true, ct);
+
+    private async Task<List<ResolvedTarget>> ResolveAsync(
+        string model,
+        JsonElement? requestBody,
+        bool allowChains,
+        CancellationToken ct)
     {
         var settings = await db.Settings.FirstOrDefaultAsync(ct);
         var aliases = LoadAliases(settings?.Data ?? "{}");
@@ -96,6 +103,38 @@ public sealed class GatewayEngine(
                 // SPEC-021: model lockout — per-model quarantine keeps conn alive
                 if (Resilience.ModelLockout.IsLocked(provider.Id, c.Id, upstreamModel)) continue;
                 targets.Add(new ResolvedTarget(provider, c, upstreamModel, combo?.Name));
+            }
+        }
+
+        // SPEC-070: per-model cooldowns — provider/model pairs cooling are skipped
+        var nowIso = DateTime.UtcNow.ToString("o");
+        var cooling = await db.ModelCooldowns
+            .Where(mc => string.Compare(mc.Until, nowIso) > 0).ToListAsync(ct);
+        if (cooling.Count > 0)
+            targets = targets.Where(t => !cooling.Any(mc =>
+                (string.Equals(mc.Provider, t.Provider.Id, StringComparison.OrdinalIgnoreCase)
+                )
+                && (mc.Model == "*" || string.Equals(mc.Model, t.UpstreamModel, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals($"{t.Provider.Id}/{t.UpstreamModel}", mc.Model, StringComparison.OrdinalIgnoreCase))))
+                .ToList();
+
+        // SPEC-070: named fallback chains — when the whole candidate list is
+        // exhausted, try each active chain's steps (model or combo names)
+        if (allowChains && targets.Count == 0)
+        {
+            var chains = await db.FallbackChains.Where(fc => fc.Active).ToListAsync(ct);
+            foreach (var chain in chains)
+            {
+                var steps = JsonSerializer.Deserialize<List<JsonElement>>(chain.Steps) ?? [];
+                foreach (var step in steps)
+                {
+                    var sm = step.ValueKind == JsonValueKind.String ? step.GetString()
+                        : step.TryGetProperty("model", out var smv) ? smv.GetString() : null;
+                    if (string.IsNullOrEmpty(sm)) continue;
+                    targets = await ResolveAsync(sm, requestBody, allowChains: false, ct);
+                    if (targets.Count > 0) break;
+                }
+                if (targets.Count > 0) break;
             }
         }
         return targets;

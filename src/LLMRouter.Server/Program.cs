@@ -232,6 +232,7 @@ ServiceEndpoints.Map(app);
 SkillsExtrasEndpoints.Map(app);
 RadarEndpoints.Map(app);
 GamiEndpoints.Map(app);
+BotsEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

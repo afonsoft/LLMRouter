@@ -45,6 +45,7 @@ public static class ServiceManager
         new("openwa", "OpenWA", null, 3737, "/health", "", []),
         new("llmlingua", "LLMLingua", null, 8899, "/health", "", []),
         new("redis", "Redis (bundled)", "https://download.redis.io/releases", 6379, "/", "--port 6379", []),
+        new("novnc", "noVNC desktop", null, 6080, "/", "--listen 6080", []),
     ];
 
     /// <summary>Lookup por id (null se desconhecido).</summary>

@@ -60,6 +60,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<RadarItem> RadarItems => Set<RadarItem>();
     /// <summary>SPEC-056: itens de gamification.</summary>
     public DbSet<GamiItem> GamiItems => Set<GamiItem>();
+    /// <summary>SPEC-065: execuções do issue-agent.</summary>
+    public DbSet<IssueAgentRun> IssueAgentRuns => Set<IssueAgentRun>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

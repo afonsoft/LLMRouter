@@ -12,10 +12,10 @@ namespace LLMRouter.Tests;
 public class Spec061ServicesTests : WebAppTestBase
 {
     [Fact]
-    public void Catalogo_tem_os_8_servicos_upstream()
+    public void Catalogo_tem_os_9_servicos_upstream()
     {
         ServiceManager.Catalog.Select(d => d.Id).ShouldBe(
-            ["9router", "bifrost", "cliproxy", "dario", "mux", "openwa", "llmlingua", "redis"], ignoreOrder: true);
+            ["9router", "bifrost", "cliproxy", "dario", "mux", "openwa", "llmlingua", "redis", "novnc"], ignoreOrder: true);
         ServiceManager.Catalog.ShouldAllBe(d => d.Port > 0 && d.HealthPath.StartsWith('/'));
     }
 

@@ -170,6 +170,7 @@ CacheEndpoints.Map(app);
 SettingsOpsEndpoints.Map(app);
 SettingsRoutingEndpoints.Map(app);
 RelayEndpoints.Map(app);
+SessionPoolEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

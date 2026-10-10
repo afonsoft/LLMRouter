@@ -1,0 +1,67 @@
+@page "/dashboard/audit/a2a"
+@page "/dashboard/audit/mcp"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">@Loc.T(_key, _fallback)</h1>
+<p class="page-desc">@Loc.T(_key + "Subtitle", _subFallback)</p>
+
+<div class="card mt-4 scroll-x">
+    <table class="table">
+        <thead><tr><th>@Loc.T("audit.time", "Time")</th><th>@Loc.T("audit.action", "Action")</th><th>@Loc.T("audit.detail", "Detail")</th></tr></thead>
+        <tbody>
+        @foreach (var e in _events)
+        {
+            <tr>
+                <td class="muted sm" style="white-space:nowrap">@e.At</td>
+                <td><span class="badge info">@e.Action</span></td>
+                <td class="dim sm" style="max-width:480px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@e.Detail</td>
+            </tr>
+        }
+        @if (_events.Count == 0 && _loaded)
+        {
+            <tr><td colspan="3"><div class="empty"><span class="material-symbols-outlined">history</span>@Loc.T("audit.empty", "No audit events for this category yet")</div></td></tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private sealed record Row(string At, string Action, string Detail);
+    private List<Row> _events = new();
+    private bool _loaded;
+    private string _key = "auditA2a", _fallback = "A2A audit", _subFallback = "Task lifecycle and conductor events";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var isMcp = Nav.Uri.Contains("/audit/mcp", StringComparison.OrdinalIgnoreCase);
+        _key = isMcp ? "auditMcp" : "auditA2a";
+        _fallback = isMcp ? "MCP audit" : "A2A audit";
+        _subFallback = isMcp ? "Tool calls and server events" : "Task lifecycle and conductor events";
+        await Load(isMcp ? "mcp" : "a2a");
+        _loaded = true;
+    }
+
+    private async Task Load(string prefix)
+    {
+        var r = await Api.GetAsync("api/audit");
+        if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("events", out var ev)) return;
+        foreach (var e in ev.EnumerateArray())
+        {
+            var action = Str(e, "action");
+            if (action.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                _events.Add(new(Str(e, "at"), action, DetailOf(e)));
+        }
+        _events = _events.OrderByDescending(x => x.At).Take(200).ToList();
+    }
+
+    private static string Str(JsonElement e, string key)
+        => e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    private static string DetailOf(JsonElement e)
+    {
+        if (!e.TryGetProperty("detail", out var d)) return "";
+        return d.ValueKind == JsonValueKind.String ? d.GetString() ?? "" : d.GetRawText();
+    }
+}

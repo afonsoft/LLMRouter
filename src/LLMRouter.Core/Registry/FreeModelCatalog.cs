@@ -1,3 +1,4 @@
+#pragma warning disable S1192 // String literals should not be duplicated — verbatim port of upstream data table; consts would break diff parity
 namespace LLMRouter.Core.Registry;
 
 /// <summary>Port of upstream open-sse/config/freeModelCatalog.data.ts (hand-curated). Re-sync on upstream changes.</summary>

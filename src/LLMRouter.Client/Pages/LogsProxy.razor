@@ -1,0 +1,64 @@
+@page "/dashboard/logs/proxy"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("logsProxy", "Proxy log")</h1>
+<p class="page-desc">@Loc.T("logsProxySubtitle", "Upstream proxy pools and rotation state")</p>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <div class="flex between mb-4">
+            <h3 class="bold" style="margin:0">@Loc.T("lp.pools", "Proxy pools")</h3>
+            <button class="btn btn-sm" @onclick="Load">@Loc.T("common.refresh", "Refresh")</button>
+        </div>
+        @foreach (var p in _pools)
+        {
+            <div class="mt-2 xs" style="border-bottom:1px solid var(--border);padding-bottom:6px">
+                <span class="bold">@(p.TryGetProperty("name", out var n) ? n.GetString() : "pool")</span>
+                <span class="muted">· @(p.TryGetProperty("id", out var i) ? i.GetString() : "")</span>
+                <div class="muted mono sm">@(p.TryGetProperty("data", out var d) ? Shorten(d.GetRawText()) : "")</div>
+            </div>
+        }
+        @if (_pools.Count == 0 && _loaded)
+        {
+            <div class="empty"><span class="material-symbols-outlined">lan</span>@Loc.T("lp.noPools", "No proxy pools configured")</div>
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("lp.oneproxy", "OneProxy (current)")</h3>
+        @if (_oneproxy.ValueKind == JsonValueKind.Object && _oneproxy.TryGetProperty("current", out var cur) && cur.ValueKind != JsonValueKind.Null)
+        {
+            <pre class="mono xs" style="white-space:pre-wrap">@cur.GetRawText()</pre>
+        }
+        else
+        {
+            <div class="empty"><span class="material-symbols-outlined">swap_horiz</span>@Loc.T("lp.noProxy", "No active upstream proxy — requests go direct")</div>
+        }
+        <button class="btn btn-sm mt-4" @onclick="Rotate" disabled="@(_pools.Count == 0)">@Loc.T("lp.rotate", "Rotate now")</button>
+    </div>
+</div>
+
+@code {
+    private List<JsonElement> _pools = new();
+    private JsonElement _oneproxy;
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/proxy-pools");
+        _pools = r.ValueKind == JsonValueKind.Object && r.TryGetProperty("pools", out var pp)
+            ? pp.EnumerateArray().Select(x => x.Clone()).ToList() : [];
+        _oneproxy = await Api.GetAsync("api/proxy/oneproxy");
+        _loaded = true;
+    }
+
+    private async Task Rotate()
+    {
+        await Api.PostAsync("api/proxy/oneproxy/rotate", new { });
+        await Load();
+    }
+
+    private static string Shorten(string s) => s.Length <= 140 ? s : s[..140] + "…";
+}

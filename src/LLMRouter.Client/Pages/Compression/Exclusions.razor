@@ -1,0 +1,65 @@
+@page "/dashboard/compression/exclusions"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("compressionExclusions", "Compression exclusions")</h1>
+<p class="page-desc">@Loc.T("compressionExclusionsSubtitle", "Per-model/endpoint regexes that bypass the compression pipeline")</p>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("ctxExcl.patterns", "Exclusion patterns")</h3>
+        <p class="dim xs mb-2">@Loc.T("ctxExcl.help", "One regex per line — matched against the combo/model name of each request.")</p>
+        <textarea class="inp xs mono" style="width:100%" rows="8" @bind="_patterns"></textarea>
+        <div class="flex mt-4" style="gap:8px">
+            <button class="btn btn-primary btn-sm" @onclick="Save">@Loc.T("common.save", "Save")</button>
+            @if (_msg is not null) { <span class="xs muted">@_msg</span> }
+        </div>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("ctxExcl.test", "Test a name")</h3>
+        <input class="input" placeholder="combo or model name" @bind="_test" @bind:event="oninput" />
+        @if (_test.Length > 0)
+        {
+            <div class="mt-3">
+                @if (Matching().ToList() is { Count: > 0 } hits)
+                {
+                    <span class="chip chip-amber">@Loc.T("ctxExcl.bypassed", "compression bypassed")</span>
+                    <div class="xs muted mt-2">@Loc.T("ctxExcl.matchedBy", "matched by"): @string.Join(", ", hits)</div>
+                }
+                else
+                {
+                    <span class="chip chip-green">@Loc.T("ctxExcl.passes", "compression applies")</span>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _patterns = "", _test = "", _msg = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/settings/compression");
+        var cc = r.ValueKind == JsonValueKind.Object && r.TryGetProperty("compression", out var c) ? c : r;
+        if (cc.ValueKind == JsonValueKind.Object && cc.TryGetProperty("exclusions", out var ex) && ex.ValueKind == JsonValueKind.Array)
+            _patterns = string.Join("\n", ex.EnumerateArray().Select(e => e.GetString() ?? "").Where(x => x.Length > 0));
+    }
+
+    private IEnumerable<string> Matching()
+    {
+        foreach (var p in _patterns.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            bool hit;
+            try { hit = System.Text.RegularExpressions.Regex.IsMatch(_test, p, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200)); } catch { hit = false; }
+            if (hit) yield return p;
+        }
+    }
+
+    private async Task Save()
+    {
+        var list = _patterns.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        await Api.PutAsync("api/settings/compression", new { compression = new { exclusions = list } });
+        _msg = Loc.T("common.saved", "Saved");
+    }
+}

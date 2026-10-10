@@ -1,0 +1,100 @@
+@page "/dashboard/compression/studio"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("compressionStudio", "Compression studio")</h1>
+<p class="page-desc">@Loc.T("compressionStudioSubtitle", "Preview what an engine does to a request body")</p>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <div class="flex mb-3" style="gap:8px;align-items:end">
+            <div style="flex:1">
+                <label class="dim" style="font-size:12px">@Loc.T("ctxStudio.engine", "Engine")</label>
+                <select class="input" @bind="_engine">
+                    @foreach (var e in _engines) { <option value="@e">@e</option> }
+                </select>
+            </div>
+            <div>
+                <label class="dim" style="font-size:12px">@Loc.T("ctxStudio.intensity", "Intensity")</label>
+                <select class="input" @bind="_intensity">
+                    <option value="">—</option><option value="lite">lite</option><option value="standard">standard</option><option value="ultra">ultra</option>
+                </select>
+            </div>
+        </div>
+        <label class="dim" style="font-size:12px">@Loc.T("ctxStudio.input", "Input text (wrapped as a user message)")</label>
+        <textarea class="inp xs mono" style="width:100%" rows="10" @bind="_text"></textarea>
+        <button class="btn btn-primary btn-sm mt-3" @onclick="Run" disabled="@_busy">@Loc.T("ctxStudio.run", "Run preview")</button>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("ctxStudio.result", "Result")</h3>
+        @if (_stats is not null)
+        {
+            <div class="flex" style="gap:8px;flex-wrap:wrap">
+                <span class="chip @(_stats.SavedChars > 0 ? "chip-green" : "chip-amber")">@(_stats.SavedChars > 0 ? $"-{_stats.SavedChars} chars ({_stats.SavedPct:F0}%)" : "no change")</span>
+                <span class="chip">@_stats.Before → @_stats.After</span>
+            </div>
+            @foreach (var r in _runs)
+            {
+                <div class="xs muted mt-2">@r.Engine — @r.BeforeChars → @r.AfterChars (@(r.Reason ?? "ok"))</div>
+            }
+            <pre class="mono xs mt-3" style="white-space:pre-wrap;max-height:360px;overflow:auto;border:1px solid var(--border);padding:8px;border-radius:6px">@_output</pre>
+        }
+        else
+        {
+            <div class="empty"><span class="material-symbols-outlined">science</span>@Loc.T("ctxStudio.empty", "Run a preview to see the compressed body")</div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<string> _engines = [];
+    private string _engine = "lite", _intensity = "", _text = "", _output = "";
+    private bool _busy;
+    private Stats? _stats;
+    private List<RunRow> _runs = new();
+    private sealed record Stats(int Before, int After, int SavedChars, double SavedPct);
+    private sealed record RunRow(string Engine, int BeforeChars, int AfterChars, string? Reason);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/compression/engines");
+        if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("engines", out var arr))
+            _engines = arr.EnumerateArray().Select(e => e.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "").Where(x => x.Length > 0).ToList();
+        if (_engines.Count > 0) _engine = _engines[0];
+    }
+
+    private async Task Run()
+    {
+        _busy = true;
+        try
+        {
+            var r = await Api.PostAsync("api/compression/preview",
+                new { text = _text, engineId = _engine, intensity = _intensity.Length > 0 ? _intensity : (string?)null });
+            ReadResult(r);
+        }
+        finally { _busy = false; }
+    }
+
+    private void ReadResult(JsonElement r)
+    {
+        if (r.ValueKind != JsonValueKind.Object) { _output = r.GetRawText(); return; }
+        if (r.TryGetProperty("stats", out var st))
+        {
+            var b = I(st, "beforeChars");
+            var a = I(st, "afterChars");
+            _stats = new(b, a, b - a, b > 0 ? (b - a) * 100.0 / b : 0);
+        }
+        if (r.TryGetProperty("runs", out var rr))
+            _runs = rr.EnumerateArray().Select(ToRunRow).ToList();
+        _output = r.TryGetProperty("body", out var bb) ? bb.GetRawText() : r.GetRawText();
+    }
+
+    private static RunRow ToRunRow(JsonElement x)
+        => new(
+            x.TryGetProperty("engine", out var e) ? e.GetString() ?? "" : "",
+            I(x, "beforeChars"), I(x, "afterChars"),
+            x.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String ? rs.GetString() : null);
+
+    private static int I(JsonElement e, string k)
+        => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
+}

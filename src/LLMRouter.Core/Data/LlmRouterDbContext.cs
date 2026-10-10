@@ -50,6 +50,10 @@ public class LlmRouterDbContext : DbContext
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<Policy> Policies => Set<Policy>();
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+    /// <summary>SPEC-057: eventos de auditoria estruturados.</summary>
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    /// <summary>SPEC-057: trilha de chamadas MCP.</summary>
+    public DbSet<McpToolCall> McpToolCalls => Set<McpToolCall>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

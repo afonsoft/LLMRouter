@@ -47,8 +47,12 @@ public static class AuthEndpoints
                     s.Data = JsonSerializer.Serialize(d);
                     await db.SaveChangesAsync();
                 }
+                await Core.Extras.AuditLog.RecordAsync(db, "dashboard", "auth.login",
+                    ip: ctx.Connection.RemoteIpAddress?.ToString());
                 return Results.Json(new { success = true });
             }
+            await Core.Extras.AuditLog.RecordAsync(db, "anonymous", "auth.login.fail",
+                ip: ctx.Connection.RemoteIpAddress?.ToString());
             return Results.Json(new { success = false, error = "Invalid password" }, statusCode: 401);
         });
 

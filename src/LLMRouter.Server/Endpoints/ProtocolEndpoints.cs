@@ -147,20 +147,48 @@ public static class ProtocolEndpoints
                         return Results.Json(RpcError(id, -32602, $"tool not permitted by key scopes: {toolName}"));
                     var callArgs = prms.TryGetProperty("arguments", out var ca) ? ca.Clone() : default;
                     string text;
-                    if (toolName.StartsWith("chat__"))
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var ok = true;
+                    try
                     {
-                        var model = toolName["chat__".Length..].Replace('_', '-');
-                        var prompt = callArgs.ValueKind == JsonValueKind.Object
-                            && callArgs.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "";
-                        text = await ChatAsync(ctx, hf, model, prompt);
+                        if (toolName.StartsWith("chat__"))
+                        {
+                            var model = toolName["chat__".Length..].Replace('_', '-');
+                            var prompt = callArgs.ValueKind == JsonValueKind.Object
+                                && callArgs.TryGetProperty("prompt", out var pr) ? pr.GetString() ?? "" : "";
+                            text = await ChatAsync(ctx, hf, model, prompt);
+                        }
+                        else
+                        {
+                            var result = await Mcp.McpTools.DispatchAsync(toolName, callArgs, ctx, db, registry, hf,
+                                (m, p) => ChatAsync(ctx, hf, m, p));
+                            if (result is null)
+                            {
+                                ok = false;
+                                return Results.Json(RpcError(id, -32602, $"unknown tool or missing args: {toolName}"));
+                            }
+                            text = JsonSerializer.Serialize(result, JsonOpts);
+                        }
                     }
-                    else
+                    catch { ok = false; throw; }
+                    finally
                     {
-                        var result = await Mcp.McpTools.DispatchAsync(toolName, callArgs, ctx, db, registry, hf,
-                            (m, p) => ChatAsync(ctx, hf, m, p));
-                        if (result is null)
-                            return Results.Json(RpcError(id, -32602, $"unknown tool or missing args: {toolName}"));
-                        text = JsonSerializer.Serialize(result, JsonOpts);
+                        // SPEC-057: trilha de auditoria de cada tool call MCP
+                        try
+                        {
+                            db.McpToolCalls.Add(new McpToolCall
+                            {
+                                Server = "builtin", Tool = toolName,
+                                ArgsHash = callArgs.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+                                    ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                                        System.Text.Encoding.UTF8.GetBytes(callArgs.GetRawText())))[..16]
+                                    : null,
+                                DurationMs = sw.ElapsedMilliseconds, Ok = ok,
+                                At = DateTime.UtcNow.ToString("O"),
+                            });
+                            await db.SaveChangesAsync();
+                        }
+                        catch { /* auditoria nunca quebra a tool call */ }
                     }
                     return Results.Json(RpcResult(id!, new
                     {

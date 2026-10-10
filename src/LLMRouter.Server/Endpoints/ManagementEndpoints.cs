@@ -308,6 +308,7 @@ public static class ManagementEndpoints
             if (k is null) return Results.NotFound();
             db.ApiKeys.Remove(k);
             await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "apikey.delete", k.Name ?? k.Id);
             return Results.Json(new { success = true });
         });
 

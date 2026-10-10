@@ -91,8 +91,20 @@ public static class Extras
         catch { /* best-effort: failure is non-fatal */ }
     }
 
-    /// <summary>Audit log entry appended to kv 'audit' (JSON array, capped at 1000).</summary>
+    /// <summary>Audit log entry appended to kv 'audit' (JSON array, capped at 1000).
+    /// SPEC-057: also persists a row in the auditEvents table (actor "system").</summary>
     public static async Task AuditAsync(LlmRouterDbContext db, string action, string detail)
+    {
+        db.AuditEvents.Add(new AuditEvent
+        {
+            Actor = "system", Action = action, Target = detail,
+            At = DateTime.UtcNow.ToString("O"),
+        });
+        await MirrorKvAsync(db, action, detail);
+    }
+
+    /// <summary>Espelha a entrada no kv "audit"/"log" legado (cap 1000) — sem gravar auditEvents.</summary>
+    public static async Task MirrorKvAsync(LlmRouterDbContext db, string action, string detail)
     {
         var raw = await KvGet(db, "audit", "log");
         var list = raw is null ? [] : JsonSerializer.Deserialize<List<Dictionary<string, string>>>(raw) ?? [];

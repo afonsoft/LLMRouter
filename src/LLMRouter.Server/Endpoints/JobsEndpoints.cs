@@ -63,11 +63,12 @@ public static class JobsEndpoints
             return Results.Json(new { enabled = false }, JsonOpts);
         });
 
-        g.MapPost("/jobs/{id}/run-now", async (string id, JobScheduler scheduler) =>
+        g.MapPost("/jobs/{id}/run-now", async (string id, JobScheduler scheduler, LlmRouterDbContext db) =>
         {
             var job = scheduler.Find(id);
             if (job is null) return Results.Json(new { error = "unknown job" }, JsonOpts, statusCode: 404);
             var run = await scheduler.RunNowAsync(job);
+            await Core.Extras.Extras.AuditAsync(db, "job.run", id);
             return Results.Json(new { run }, JsonOpts);
         });
     }

@@ -326,6 +326,48 @@ public class VscodeToken
     public string CreatedAt { get; set; } = "";
 }
 
+// ---- SPEC-052: evals ----
+
+[Table("evalSuites")]
+public class EvalSuite
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}
+
+[Table("evalCases")]
+public class EvalCase
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string SuiteId { get; set; } = "";
+    public string Input { get; set; } = "";
+    // contains | regex | json | judge
+    public string ExpectType { get; set; } = "contains";
+    public string ExpectValue { get; set; } = "";
+    public double Weight { get; set; } = 1;
+    public int Ord { get; set; }
+}
+
+[Table("evalRuns")]
+public class EvalRun
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string SuiteId { get; set; } = "";
+    public string Target { get; set; } = "";
+    // running | done | failed
+    public string Status { get; set; } = "running";
+    public double Score { get; set; }
+    // JSON array of per-case verdicts
+    public string Results { get; set; } = "[]";
+    public string StartedAt { get; set; } = "";
+    public long DurationMs { get; set; }
+}
+
 // ---- SPEC-050: CLI device login ----
 
 [Table("cliTokens")]

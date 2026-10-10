@@ -50,12 +50,136 @@
     }
 </div>
 
+<h2 class="bold" style="margin-top:32px">@Loc.T("evals.suites", "Eval suites")</h2>
+<div class="card card-p" style="margin-bottom:12px">
+    <div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <input class="input" placeholder="suite name" @bind="_suiteName" style="max-width:240px" />
+        <button class="btn" @onclick="CreateSuite">@Loc.T("common.create", "Create")</button>
+    </div>
+    <textarea class="input" rows="4" style="width:100%;font-family:monospace;font-size:12px" @bind="_casesJson"
+        placeholder='[{"input":"say hi","expectType":"contains","expectValue":"hi","weight":1}]'></textarea>
+    <p class="dim" style="font-size:11px;margin:4px 0 0">expectType: contains | regex | json | judge</p>
+</div>
+
+@if (_suites is { Length: > 0 })
+{
+    <table class="table" style="font-size:13px;margin-bottom:24px">
+        <thead><tr><th>suite</th><th>cases</th><th>target</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var s in _suites)
+        {
+            var sid = s.GetProperty("id").GetString()!;
+            <tr>
+                <td class="bold">@s.GetProperty("name").GetString()</td>
+                <td>@s.GetProperty("cases").GetArrayLength()</td>
+                <td><input class="input" style="max-width:200px;padding:4px 8px" placeholder="combo or model" @bind="_targets[sid]" /></td>
+                <td class="flex" style="gap:6px">
+                    <button class="btn btn-sm" @onclick="() => RunSuite(sid)" disabled="@_running">@(_running ? "…" : Loc.T("evals.run", "Run"))</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => DelSuite(sid)">@Loc.T("common.delete", "Delete")</button>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@if (_runs is { Length: > 0 })
+{
+    <h3 class="bold">@Loc.T("evals.runs", "Runs")</h3>
+    <table class="table" style="font-size:13px">
+        <thead><tr><th>suite</th><th>target</th><th>score</th><th>status</th><th>started</th><th>ms</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var r in _runs)
+        {
+            var rid = r.GetProperty("id").GetString()!;
+            <tr>
+                <td>@(r.TryGetProperty("suiteName", out var sn) && sn.ValueKind == JsonValueKind.String ? sn.GetString() : "—")</td>
+                <td><code>@r.GetProperty("target").GetString()</code></td>
+                <td><span class="chip @(r.GetProperty("score").GetDouble() >= 80 ? "chip-green" : r.GetProperty("score").GetDouble() >= 50 ? "chip-yellow" : "chip-red")">@r.GetProperty("score").GetDouble()</span></td>
+                <td>@r.GetProperty("status").GetString()</td>
+                <td class="dim">@r.GetProperty("startedAt").GetString()</td>
+                <td>@r.GetProperty("durationMs").GetInt64()</td>
+                <td><button class="btn btn-sm" @onclick='() => Toggle(rid)'>@( _open == rid ? "−" : "+")</button></td>
+            </tr>
+            @if (_open == rid)
+            {
+                <tr><td colspan="7">
+                    <table class="table" style="font-size:12px">
+                        @foreach (var c in r.GetProperty("results").EnumerateArray())
+                        {
+                            <tr>
+                                <td style="width:60px"><span class="chip @(c.GetProperty("pass").GetBoolean() ? "chip-green" : "chip-red")">@(c.GetProperty("pass").GetBoolean() ? "PASS" : "FAIL")</span></td>
+                                <td>@c.GetProperty("input").GetString()</td>
+                                <td class="dim">@c.GetProperty("verdict").GetString()</td>
+                            </tr>
+                        }
+                    </table>
+                </td></tr>
+            }
+        }
+        </tbody>
+    </table>
+}
+
 @code {
     private int _days = 30;
     private List<R> _rows = new();
     private sealed record R(string Combo, long Requests, double SuccessRate, long AvgLatencyMs, double Score);
 
-    protected override async Task OnInitializedAsync() => await Load();
+    private JsonElement[]? _suites;
+    private JsonElement[]? _runs;
+    private readonly Dictionary<string, string> _targets = new();
+    private string _suiteName = "", _casesJson = "";
+    private bool _running;
+    private string? _open;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        await Task.WhenAll(LoadSuites(), LoadRuns());
+    }
+
+    private async Task LoadSuites()
+    {
+        var r = await Api.GetAsync("api/evals/suites");
+        _suites = r.TryGetProperty("suites", out var arr) ? arr.EnumerateArray().ToArray() : [];
+    }
+
+    private async Task LoadRuns()
+    {
+        var r = await Api.GetAsync("api/evals/runs");
+        _runs = r.TryGetProperty("runs", out var arr) ? arr.EnumerateArray().ToArray() : [];
+    }
+
+    private async Task CreateSuite()
+    {
+        if (string.IsNullOrWhiteSpace(_suiteName)) return;
+        JsonElement cases;
+        try { cases = string.IsNullOrWhiteSpace(_casesJson) ? default : JsonDocument.Parse(_casesJson).RootElement; }
+        catch { return; }
+        var body = cases.ValueKind == JsonValueKind.Array
+            ? (object)new { name = _suiteName, cases }
+            : new { name = _suiteName };
+        await Api.PostAsync("api/evals/suites", body);
+        _suiteName = _casesJson = "";
+        await LoadSuites();
+    }
+
+    private async Task RunSuite(string id)
+    {
+        _running = true;
+        try
+        {
+            var target = _targets.TryGetValue(id, out var t) ? t : "";
+            await Api.PostAsync($"api/evals/suites/{id}/run", new { target });
+            await LoadRuns();
+        }
+        finally { _running = false; }
+    }
+
+    private async Task DelSuite(string id) { await Api.DeleteAsync($"api/evals/suites/{id}"); await Task.WhenAll(LoadSuites(), LoadRuns()); }
+
+    private void Toggle(string id) => _open = _open == id ? null : id;
 
     private async Task Load()
     {

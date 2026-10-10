@@ -173,6 +173,7 @@ RelayEndpoints.Map(app);
 SessionPoolEndpoints.Map(app);
 CliDeviceEndpoints.Map(app);
 VscodeEndpoints.Map(app);
+EvalsEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

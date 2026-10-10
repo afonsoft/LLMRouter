@@ -80,6 +80,71 @@
         </table>
         @if (_chains.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">link</span>No fallback chains</div> }
     </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.policies", "Routing policies")</div></div>
+        <div class="flex gap-2 mt-2 items-end" style="flex-wrap:wrap">
+            <input @bind="_polName" placeholder="name" style="width:140px" />
+            <input @bind="_polRule" placeholder='{"match":{"provider":"openai"},"action":"deny"}' style="min-width:320px" class="mono" />
+            <input @bind="_polPriority" type="number" placeholder="priority" style="width:80px" />
+            <button class="btn btn-sm" @onclick="AddPolicy">@Loc.T("common.add", "Add")</button>
+        </div>
+        <table class="tbl mt-2">
+            <thead><tr><th>Name</th><th>Rule</th><th>Priority</th><th>Enabled</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var p in _policies)
+                {
+                    <tr>
+                        <td class="mono sm">@p.GetProperty("name").GetString()</td>
+                        <td class="mono sm" style="max-width:340px;overflow:hidden;text-overflow:ellipsis">@p.GetProperty("rule").GetString()</td>
+                        <td>@p.GetProperty("priority").GetInt32()</td>
+                        <td><span class="badge @(p.GetProperty("enabled").GetBoolean() ? "ok" : "")">@(p.GetProperty("enabled").GetBoolean() ? "on" : "off")</span></td>
+                        <td><button class="btn btn-sm btn-danger" @onclick='() => DelPolicy(p.GetProperty("id").GetString()!)'>Delete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_policies.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">policy</span>No policies</div> }
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.sessions", "Chat sessions")</div></div>
+        <table class="tbl mt-2">
+            <thead><tr><th>Key</th><th>Model</th><th>Messages</th><th>Last seen</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var ss in _sessions)
+                {
+                    <tr>
+                        <td class="mono sm">@ss.GetProperty("keyId").GetString()</td>
+                        <td class="mono sm">@ss.GetProperty("model").GetString()</td>
+                        <td>@ss.GetProperty("messageCount").GetInt32()</td>
+                        <td class="dim sm">@ss.GetProperty("lastSeenAt").GetString()</td>
+                        <td><button class="btn btn-sm btn-danger" @onclick='() => DelSession(ss.GetProperty("id").GetString()!)'>Delete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_sessions.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">forum</span>No sessions</div> }
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.tags", "Tags")</div></div>
+        <div class="flex gap-2 mt-2 items-end" style="flex-wrap:wrap">
+            <input @bind="_tagType" placeholder="targetType (provider/combo/…)" style="width:170px" />
+            <input @bind="_tagId" placeholder="targetId" style="width:150px" />
+            <input @bind="_tagValue" placeholder="value" style="width:130px" />
+            <button class="btn btn-sm" @onclick="AddTag">@Loc.T("common.add", "Add")</button>
+        </div>
+        <div class="mt-2">
+            @foreach (var t in _tags)
+            {
+                <span class="badge info mr-1">@t.GetProperty("targetType").GetString():@t.GetProperty("targetId").GetString() = @t.GetProperty("value").GetString()
+                    <button class="btn btn-sm" style="padding:0 4px" @onclick='() => DelTag(t.GetProperty("id").GetString()!)'>✕</button>
+                </span>
+            }
+            @if (_tags.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">label</span>No tags</div> }
+        </div>
+    </div>
 }
 else
 {
@@ -112,7 +177,11 @@ else
     private List<JsonElement> _cooldowns = [];
     private List<JsonElement> _modelCooldowns = [];
     private List<JsonElement> _chains = [];
+    private List<JsonElement> _policies = [];
+    private List<JsonElement> _sessions = [];
+    private List<JsonElement> _tags = [];
     private string _mcProvider = "", _mcModel = "", _mcMinutes = "30", _chainName = "", _chainSteps = "";
+    private string _polName = "", _polRule = "{}", _polPriority = "0", _tagType = "", _tagId = "", _tagValue = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,7 +198,38 @@ else
         _modelCooldowns = mc.GetProperty("cooldowns").EnumerateArray().ToList();
         var ch = await Api.GetAsync("api/fallback/chains");
         _chains = ch.GetProperty("chains").EnumerateArray().ToList();
+        var po = await Api.GetAsync("api/policies");
+        _policies = po.EnumerateArray().ToList();
+        var se = await Api.GetAsync("api/sessions");
+        _sessions = se.EnumerateArray().ToList();
+        var tg = await Api.GetAsync("api/tags");
+        _tags = tg.EnumerateArray().ToList();
     }
+
+    private async Task AddPolicy()
+    {
+        if (string.IsNullOrWhiteSpace(_polName)) return;
+        JsonElement rule;
+        try { rule = JsonDocument.Parse(_polRule).RootElement.Clone(); }
+        catch { return; }
+        var pr = int.TryParse(_polPriority, out var pv) ? pv : 0;
+        await Api.PostAsync("api/policies", new { name = _polName, rule, priority = pr });
+        _polName = ""; _polRule = "{}";
+        await LoadExtras();
+    }
+
+    private async Task DelPolicy(string id) { await Api.DeleteAsync($"api/policies/{id}"); await LoadExtras(); }
+    private async Task DelSession(string id) { await Api.DeleteAsync($"api/sessions/{id}"); await LoadExtras(); }
+
+    private async Task AddTag()
+    {
+        if (string.IsNullOrWhiteSpace(_tagType) || string.IsNullOrWhiteSpace(_tagId) || string.IsNullOrWhiteSpace(_tagValue)) return;
+        await Api.PostAsync("api/tags", new { targetType = _tagType, targetId = _tagId, value = _tagValue });
+        _tagId = ""; _tagValue = "";
+        await LoadExtras();
+    }
+
+    private async Task DelTag(string id) { await Api.DeleteAsync($"api/tags/{id}"); await LoadExtras(); }
 
     private async Task AddModelCooldown()
     {

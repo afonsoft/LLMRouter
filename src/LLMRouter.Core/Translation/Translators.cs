@@ -16,6 +16,23 @@ public static class Translators
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>SPEC-073: recent request/response conversions (bounded, in-memory).</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<JsonObject> _recent = new();
+    public static IReadOnlyCollection<JsonObject> Recent => _recent.ToList();
+
+    private static void Record(string direction, string inbound, string outbound, string model)
+    {
+        _recent.Enqueue(new JsonObject
+        {
+            ["ts"] = DateTime.UtcNow.ToString("o"),
+            ["direction"] = direction,
+            ["inbound"] = inbound,
+            ["outbound"] = outbound,
+            ["model"] = model,
+        });
+        while (_recent.Count > 200 && _recent.TryDequeue(out _)) { }
+    }
+
     /// <summary>Mutable state carried across SSE events of one response.</summary>
     public sealed class SseState
     {
@@ -69,6 +86,7 @@ public static class Translators
             }
             if (stream) ApplyStreamFlag(o, outbound);
         }
+        Record("request", inbound, outbound, model);
         return result;
     }
 
@@ -88,6 +106,7 @@ public static class Translators
             ("openai", "responsesApi") => ExtendedTranslators.ChatToResponsesResponse(node, model),
             _ => node!,
         };
+        Record("response", inbound, outbound, model);
         return result;
     }
 

@@ -109,6 +109,31 @@ else
     }
 </div>
 
+<div class="card card-p mt-4">
+    <h3 style="margin:0">@Loc.T("quota.windows", "Quota windows")</h3>
+    <p class="muted sm">@Loc.T("quota.windowsDesc", "Sliding windows per provider — provider is skipped while a window is saturated")</p>
+    <div class="flex gap-2 mt-2" style="flex-wrap:wrap;align-items:end">
+        <div><label class="muted sm">provider</label><input class="input" style="width:130px" @bind="_qwProvider" /></div>
+        <div><label class="muted sm">@Loc.T("quota.windowMinutes", "Window (min)")</label><input class="input" style="width:90px" type="number" @bind="_qwMinutes" /></div>
+        <div><label class="muted sm">maxRequests</label><input class="input" style="width:90px" type="number" @bind="_qwMaxReq" /></div>
+        <div><label class="muted sm">maxTokens</label><input class="input" style="width:110px" type="number" @bind="_qwMaxTok" /></div>
+        <button class="btn btn-sm btn-primary" @onclick="AddWindow">@Loc.T("common.add", "Add")</button>
+    </div>
+    @foreach (var w in _windows)
+    {
+        <div class="flex between mt-2 items-center">
+            <div>
+                <span class="mono sm bold">@w.Provider</span>
+                <span class="badge info ml-2">@w.WindowMinutes m</span>
+                @if (w.MaxRequests > 0) { <span class="badge warn ml-1">≤@w.MaxRequests req</span> }
+                @if (w.MaxTokens > 0) { <span class="badge warn ml-1">≤@w.MaxTokens tok</span> }
+                <span class="muted sm ml-2">@w.Name</span>
+            </div>
+            <button class="btn btn-sm" @onclick="() => DelWindow(w.Id)">✕</button>
+        </div>
+    }
+</div>
+
 @code {
     private List<JsonElement>? _quota;
     private string? _msg;
@@ -128,6 +153,7 @@ else
         foreach (var c in conns.GetProperty("connections").EnumerateArray())
             _connData[c.GetProperty("id").GetString()!] = JsonDocument.Parse(c.GetProperty("data").GetString()!).RootElement.Clone();
         await LoadPlans();
+        await LoadWindows();
     }
 
     // ---- SPEC-041 state ----
@@ -187,6 +213,35 @@ else
         var cap = r.TryGetProperty("dailyCap", out var dc) && dc.ValueKind == JsonValueKind.Number ? dc.GetInt32().ToString() : "∞";
         _pv = $"daily {used}/{cap}" + (reasons.Length > 0 ? $" — {reasons}" : "");
     }
+
+    private sealed class W { public string Id = ""; public string Provider = ""; public string Name = ""; public int WindowMinutes; public long MaxRequests; public long MaxTokens; }
+    private List<W> _windows = [];
+    private string _qwProvider = "";
+    private int _qwMinutes = 60, _qwMaxReq, _qwMaxTok;
+
+    private async Task LoadWindows()
+    {
+        var r = await Api.GetAsync("api/quota-windows");
+        _windows = r.EnumerateArray().Select(x => new W
+        {
+            Id = x.GetProperty("id").GetString() ?? "",
+            Provider = x.GetProperty("provider").GetString() ?? "",
+            Name = x.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+            WindowMinutes = x.TryGetProperty("windowMinutes", out var m) ? m.GetInt32() : 0,
+            MaxRequests = x.TryGetProperty("maxRequests", out var mr) ? mr.GetInt64() : 0,
+            MaxTokens = x.TryGetProperty("maxTokens", out var mt) ? mt.GetInt64() : 0,
+        }).ToList();
+    }
+
+    private async Task AddWindow()
+    {
+        if (string.IsNullOrWhiteSpace(_qwProvider) || _qwMinutes <= 0) return;
+        await Api.PostAsync("api/quota-windows", new { provider = _qwProvider, windowMinutes = _qwMinutes, maxRequests = _qwMaxReq, maxTokens = _qwMaxTok });
+        _qwProvider = "";
+        await LoadWindows();
+    }
+
+    private async Task DelWindow(string id) { await Api.DeleteAsync($"api/quota-windows/{id}"); await LoadWindows(); }
 
     private async Task SaveCaps(string cid)
     {

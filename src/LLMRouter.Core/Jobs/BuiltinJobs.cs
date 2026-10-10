@@ -236,4 +236,22 @@ public static class BuiltinJobs
             return $"wrote {file} ({tables.Count} tables)";
         }
     }
+
+
+    /// <summary>SPEC-046: re-enables auto-disabled connections after
+    /// settings.autoDisableAccounts.reenableMinutes.</summary>
+    public sealed class AutoReenableJob : IJob
+    {
+        public string Id => "conn-auto-reenable";
+        public string Name => "Connection auto-re-enable";
+        public TimeSpan Interval => TimeSpan.FromMinutes(5);
+        public bool EnabledByDefault => true;
+        public async Task<string> RunAsync(IServiceProvider services, CancellationToken ct)
+        {
+            var db = services.GetRequiredService<Data.LlmRouterDbContext>();
+            var sdata = await Usage.PricingService.SettingsDataAsync(db);
+            var n = await Routing.SettingsOps.ReenableDisabledAsync(db, sdata);
+            return n > 0 ? $"re-enabled {n}" : "none due";
+        }
+    }
 }

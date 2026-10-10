@@ -430,6 +430,13 @@ public static class GatewayEndpoints
             }
         }
 
+        // SPEC-046: system prompt injected when the request has none — runs
+        // before skills injection so the request's own system slot is judged
+        // on what the caller sent (per-provider allow-list on the model prefix)
+        var earlyModel = body.TryGetProperty("model", out var em) ? em.GetString() ?? "" : "";
+        var sysProvider = earlyModel.Contains('/') ? earlyModel[..earlyModel.IndexOf('/')] : earlyModel;
+        body = Core.Routing.SettingsOps.InjectSystemPrompt(sdata, body, sysProvider);
+
         // SPEC-026: enabled skills injected as system-prompt context
         // (settings.skillsInjection.enabled — default on when skills exist)
         var injectSkills = !(sdata.ValueKind == JsonValueKind.Object
@@ -590,6 +597,28 @@ public static class GatewayEndpoints
             if (body.TryGetProperty("model", out var pm)) model = pm.GetString() ?? model;
         }
 
+        // SPEC-046: tier rules — model allow-list + daily cap for the api key's tier
+        if (apiKey != "dashboard")
+        {
+            var (tierModels, tierDaily) = await Core.Routing.SettingsOps.TierRulesAsync(db, sdata, apiKey);
+            if (tierModels is not null && !tierModels.Any(m =>
+                    m == model || model.StartsWith(m + "/", StringComparison.Ordinal)))
+            {
+                ctx.Response.StatusCode = 403;
+                await WriteError(ctx, inbound, "tier_restricted", $"Model '{model}' is not in this key's tier.");
+                return;
+            }
+            if (tierDaily > 0 && await Core.Routing.KeyQuota.DailyUsedAsync(db, apiKey) >= tierDaily)
+            {
+                ctx.Response.StatusCode = 429;
+                await WriteError(ctx, inbound, "rate_limit", "Tier daily token quota exhausted for this API key.");
+                return;
+            }
+        }
+
+        // SPEC-046: thinking budget clamp/inject from settings.thinkingBudget
+        body = Core.Routing.SettingsOps.ClampThinkingBudget(sdata, body, model);
+
         // SPEC-045: prompt cache — replay stored responses for identical
         // non-stream requests (identity = canonical body minus volatile keys)
         string? cacheHash = null;
@@ -664,6 +693,7 @@ public static class GatewayEndpoints
                         lastError = new HttpRequestException($"upstream {(int)resp.StatusCode}: {errBody[..Math.Min(200, errBody.Length)]}");
                         continue; // cascade to next target
                     }
+                    try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
                     ctx.Response.StatusCode = (int)resp.StatusCode;
                     await WriteError(ctx, inbound, "upstream_error", errBody);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
@@ -684,6 +714,7 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
+                    await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: true);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail);
@@ -706,6 +737,7 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
+                    await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: true);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -716,6 +748,7 @@ public static class GatewayEndpoints
             catch (Exception ex) when (ex is not OperationCanceledException || !ctx.RequestAborted.IsCancellationRequested)
             {
                 lastError = ex;
+                try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
                 if (target == targets[^1]) break;
             }
         }

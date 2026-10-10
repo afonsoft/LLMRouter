@@ -66,6 +66,11 @@ public static class HotReads
                 .Where(k => k.Scope == "modelComboMappings" && k.Key == model)
                 .Select(k => k.Value).FirstOrDefaultAsync());
 
+    /// <summary>SPEC-081: disabled models per provider (kv scope disabledModels).</summary>
+    public static Task<Dictionary<string, string[]>> DisabledModelsAsync(LlmRouterDbContext db) =>
+        Cache.GetOrAddAsync("disabledModels", TimeSpan.FromSeconds(30),
+            () => Routing.DisabledModels.AllAsync(db));
+
     public static Task<List<ModelCooldown>> LiveModelCooldownsAsync(LlmRouterDbContext db) =>
         Cache.GetOrAddAsync("mc:live", TimeSpan.FromSeconds(5), () =>
         {

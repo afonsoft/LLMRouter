@@ -304,11 +304,14 @@ public static class GatewayEndpoints
     {
         if (!await Authorized(ctx, db)) { ctx.Response.StatusCode = 401; return; }
         var models = new List<object>();
+        var disabled = await Core.Gateway.HotReads.DisabledModelsAsync(db);
         foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync(ctx.RequestAborted))
         {
             var p = registry.GetProvider(c.Provider);
             if (p?.Models is null) continue;
             foreach (var m in p.Models)
+            {
+                if (Core.Routing.DisabledModels.IsDisabled(disabled, p.Id, m.Id)) continue;
                 models.Add(new
                 {
                     id = $"{p.Id}/{m.Id}",
@@ -316,6 +319,7 @@ public static class GatewayEndpoints
                     created = 0,
                     owned_by = p.Alias ?? p.Id,
                 });
+            }
         }
         foreach (var combo in await db.Combos.ToListAsync(ctx.RequestAborted))
             models.Add(new { id = combo.Name, @object = "model", created = 0, owned_by = "combo" });

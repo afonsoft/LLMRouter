@@ -128,6 +128,8 @@ public static class ModelLockout
     public static void Unlock(string provider, string connId, string model) =>
         Locked.TryRemove(Key(provider, connId, model), out _);
 
+    public static void ClearAll() => Locked.Clear();
+
     public static IReadOnlyList<string> Snapshot() =>
         Locked.Where(kv => kv.Value > DateTimeOffset.UtcNow)
             .Select(kv => $"{kv.Key} until {kv.Value:o}").ToList();

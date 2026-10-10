@@ -55,6 +55,8 @@ public static class CooldownTracker
 
     public static void Clear(string connectionId) => States.TryRemove(connectionId, out _);
 
+    public static void ClearAll() => States.Clear();
+
     public sealed record CooldownInfo(string ConnectionId, int Failures, bool Cooling, string? CooldownUntil);
 
     public static IReadOnlyList<CooldownInfo> Snapshot() =>

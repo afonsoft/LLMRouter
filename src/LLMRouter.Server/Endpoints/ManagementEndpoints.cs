@@ -773,6 +773,109 @@ public static class ManagementEndpoints
             return Results.Json(new { ok = true });
         });
 
+        // SPEC-081: reset all breakers + model lockouts + cooldowns (upstream /api/resilience/reset)
+        g.MapPost("/resilience/reset", () =>
+        {
+            Core.Resilience.ProviderBreaker.ClearAll();
+            Core.Resilience.ModelLockout.ClearAll();
+            Core.Resilience.CooldownTracker.ClearAll();
+            return Results.Json(new { ok = true });
+        });
+
+        // SPEC-081: free model budgets (upstream /api/free-models — FREE_MODEL_BUDGETS)
+        g.MapGet("/free-models", () => Results.Json(new
+        {
+            curatedAt = Core.Registry.FreeModelCatalog.CuratedAt,
+            models = Core.Registry.FreeModelCatalog.Budgets.Select(b => new
+            {
+                provider = b.Provider,
+                modelId = b.ModelId,
+                displayName = b.DisplayName,
+                monthlyTokens = b.MonthlyTokens,
+                creditTokens = b.CreditTokens,
+                freeType = b.FreeType,
+                poolKey = b.PoolKey,
+                tos = b.Tos,
+            }),
+        }, JsonOpts));
+
+        // SPEC-081: disabled models (9router disabledModelsDb)
+        g.MapGet("/models/disabled", async (LlmRouterDbContext db) =>
+            Results.Json(new { disabled = await Core.Routing.DisabledModels.AllAsync(db) }, JsonOpts));
+        g.MapPut("/models/disabled/{provider}", async (string provider, HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var models = body.ValueKind == JsonValueKind.Array
+                ? body.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+                : (body.TryGetProperty("models", out var m) && m.ValueKind == JsonValueKind.Array
+                    ? m.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+                    : []);
+            await Core.Routing.DisabledModels.SetForProviderAsync(db, provider, models);
+            return Results.Json(new { ok = true, provider, disabled = models });
+        });
+        g.MapDelete("/models/disabled/{provider}", async (string provider, LlmRouterDbContext db) =>
+        {
+            await Core.Routing.DisabledModels.SetForProviderAsync(db, provider, []);
+            return Results.Json(new { ok = true });
+        });
+
+        // SPEC-081: effective context window of a combo (upstream comboContext.ts)
+        g.MapGet("/combos/{id}/context-window", async (string id, LlmRouterDbContext db, ProviderRegistry r) =>
+        {
+            var combo = await db.Combos.AsNoTracking().FirstOrDefaultAsync(c => c.Name == id || c.Id == id);
+            if (combo is null) return Results.Json(new { error = "combo not found" }, JsonOpts, statusCode: 404);
+            var steps = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+            var windows = new List<int>();
+            foreach (var s in steps)
+            {
+                var modelId = s.Split('~')[0];
+                var slash = modelId.IndexOf('/');
+                if (slash <= 0) continue;
+                var p = r.GetProvider(modelId[..slash]);
+                var m = p?.Models?.FirstOrDefault(x =>
+                    string.Equals(x.Id, modelId[(slash + 1)..], StringComparison.OrdinalIgnoreCase));
+                if (m?.ContextLength is > 0) windows.Add(m.ContextLength.Value);
+            }
+            return Results.Json(new
+            {
+                combo = combo.Name,
+                models = windows.Count,
+                min = windows.Count > 0 ? windows.Min() : (int?)null,
+                max = windows.Count > 0 ? windows.Max() : (int?)null,
+                effective = windows.Count > 0 ? windows.Min() : (int?)null,
+            }, JsonOpts);
+        });
+
+        // SPEC-081: dead config keys (upstream deadConfigKeys.ts) — settings.data
+        // keys not in the known schema; DELETE prunes them.
+        g.MapGet("/settings/dead-config-keys", async (LlmRouterDbContext db) =>
+        {
+            var row = await db.Settings.FirstOrDefaultAsync();
+            if (row is null) return Results.Json(new { dead = Array.Empty<string>() });
+            using var doc = JsonDocument.Parse(row.Data);
+            var dead = doc.RootElement.EnumerateObject()
+                .Select(p => p.Name)
+                .Where(n => !Core.Routing.KnownConfigKeys.Set.Contains(n))
+                .ToArray();
+            return Results.Json(new { dead }, JsonOpts);
+        });
+        g.MapDelete("/settings/dead-config-keys", async (LlmRouterDbContext db) =>
+        {
+            var row = await db.Settings.FirstOrDefaultAsync();
+            if (row is null) return Results.Json(new { removed = 0 });
+            using var doc = JsonDocument.Parse(row.Data);
+            var kept = new Dictionary<string, JsonElement>();
+            var removed = 0;
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                if (Core.Routing.KnownConfigKeys.Set.Contains(p.Name)) kept[p.Name] = p.Value.Clone();
+                else removed++;
+            }
+            row.Data = JsonSerializer.Serialize(kept);
+            await db.SaveChangesAsync();
+            return Results.Json(new { removed }, JsonOpts);
+        });
+
         // SPEC-006: retention — prune requestDetails beyond cap
         g.MapPost("/logs/prune", async (LlmRouterDbContext db, int? keep) =>
         {
@@ -828,13 +931,17 @@ public static class ManagementEndpoints
                     }
                     catch { /* best-effort: failure is non-fatal */ }
                 }
+                var disabledMap = await Core.Gateway.HotReads.DisabledModelsAsync(db);
                 foreach (var m in list)
+                {
+                    if (Core.Routing.DisabledModels.IsDisabled(disabledMap, p.Id, m.id)) continue;
                     models.Add(new
                     {
                         id = $"{p.Id}/{m.id}", provider = p.Id, model = m.id,
                         name = m.name, contextLength = m.ctx, capabilities = m.caps,
                         connection = conn.Name,
                     });
+                }
             }
             return Results.Json(new { models }, JsonOpts);
         });

@@ -94,6 +94,15 @@ public sealed class GatewayEngine(
             }
         }
 
+        // SPEC-081: disabled models are skipped in every resolution path
+        var disabled = await HotReads.DisabledModelsAsync(db);
+        if (disabled.Count > 0)
+            models = models.Where(m =>
+            {
+                var (p, mid) = resolver.Resolve(m, aliases);
+                return !Routing.DisabledModels.IsDisabled(disabled, p, mid);
+            }).ToList();
+
         var targets = new List<ResolvedTarget>();
         foreach (var m in models)
         {

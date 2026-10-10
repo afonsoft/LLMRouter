@@ -347,23 +347,57 @@ public static class ManagementEndpoints
             return Results.Json(new { combos = all.Select(ComboDto) }, JsonOpts);
         });
 
-        g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db) =>
+        g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db, ProviderRegistry r) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var name = b.GetProperty("name").GetString()!;
+            var modelsJson = b.TryGetProperty("models", out var m) ? m.GetRawText() : "[]";
+
+            // SPEC-082: invariants + composite tiers validation
+            try
+            {
+                JsonElement[] steps;
+                using (var md = JsonDocument.Parse(modelsJson))
+                    steps = md.RootElement.ValueKind == JsonValueKind.Array
+                        ? md.RootElement.EnumerateArray().Select(e => e.Clone()).ToArray() : [];
+                var inv = b.TryGetProperty("invariant", out var iv) && iv.ValueKind == JsonValueKind.Object
+                    ? iv : b;
+                var providers = StrList(inv, "allowedProviders");
+                var families = StrList(inv, "allowedModelFamilies");
+                Core.Routing.ComboSteps.ValidateInvariant(name, steps, providers, families);
+                if (b.TryGetProperty("tiers", out var tiers))
+                {
+                    var errs = Core.Routing.ComboSteps.ValidateCompositeTiers(tiers);
+                    if (errs.Count > 0)
+                        return Results.Json(new { error = "Invalid composite tiers", details = errs }, JsonOpts, statusCode: 400);
+                }
+            }
+            catch (Core.Routing.ComboSteps.ComboInvariantError ex)
+            {
+                return Results.Json(new { error = ex.Message }, JsonOpts, statusCode: 400);
+            }
+
             var c = new Combo
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
-                Name = b.GetProperty("name").GetString()!,
+                Name = name,
                 Kind = Get(b, "kind") ?? "fallback",
                 StickyLimit = b.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number
                     ? Math.Max(1, sl.GetInt32()) : 1,
-                Models = b.TryGetProperty("models", out var m) ? m.GetRawText() : "[]",
+                Models = modelsJson,
+                AllowedProviders = b.TryGetProperty("allowedProviders", out var ap) ? ap.GetRawText() : null,
+                AllowedFamilies = b.TryGetProperty("allowedModelFamilies", out var af) ? af.GetRawText() : null,
+                Tiers = b.TryGetProperty("tiers", out var t) ? t.GetRawText() : null,
                 CreatedAt = Now(), UpdatedAt = Now(),
             };
             db.Combos.Add(c);
             await db.SaveChangesAsync();
             await Core.Extras.Extras.AuditAsync(db, "combo.create", c.Name);
-            return Results.Json(new { combo = c }, JsonOpts);
+            // SPEC-082 modelNameCollision: combo name identical to a bare
+            // registry model id is the supported per-model fallback mechanism
+            var nameCollision = !name.Contains('/') && r.Providers.Values.Any(p =>
+                p.Models?.Any(m => string.Equals(m.Id, name, StringComparison.OrdinalIgnoreCase)) == true);
+            return Results.Json(new { combo = c, nameCollision }, JsonOpts);
         });
 
         g.MapPut("/combos/{id}", async (string id, HttpContext ctx, LlmRouterDbContext db) =>
@@ -1231,6 +1265,11 @@ public static class ManagementEndpoints
             return Results.Json(new { ok = true }, JsonOpts);
         });
     }
+
+    private static string[] StrList(JsonElement el, string prop) =>
+        el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
+            : [];
 
     private static string? Get(JsonElement el, string name) =>
         el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

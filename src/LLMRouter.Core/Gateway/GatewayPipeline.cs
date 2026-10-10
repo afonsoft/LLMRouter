@@ -73,9 +73,14 @@ public sealed class GatewayEngine(
         }
         else if (combo is not null)
         {
-            var list = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
+            // SPEC-082: expand step kinds (combo-ref, provider-wildcard, objects)
+            var expanded = await Routing.ComboSteps.ExpandAsync(db, registry, combo.Models,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase) { combo.Name });
+            var list = expanded.Models;
             models = await ComboStrategies.OrderAsync(combo.Kind, combo.Name, list,
                 db, registry, requestBody, combo.StickyLimit, ct);
+            // quota-only steps serve only after the ordered candidates
+            models.AddRange(expanded.QuotaOnly.Except(models));
         }
         else
         {

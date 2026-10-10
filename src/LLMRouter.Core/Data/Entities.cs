@@ -90,6 +90,12 @@ public class Combo
     public int StickyLimit { get; set; } = 1;
     /// <summary>JSON array of "provider/model" strings.</summary>
     public string Models { get; set; } = "[]";
+    /// <summary>SPEC-082: JSON array restricting step providers (invariants).</summary>
+    public string? AllowedProviders { get; set; }
+    /// <summary>SPEC-082: JSON array restricting step model families (invariants).</summary>
+    public string? AllowedFamilies { get; set; }
+    /// <summary>SPEC-082: JSON array of composite tier definitions.</summary>
+    public string? Tiers { get; set; }
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
 }

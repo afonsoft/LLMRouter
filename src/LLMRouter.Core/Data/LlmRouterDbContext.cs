@@ -135,6 +135,17 @@ public class LlmRouterDbContext : DbContext
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "ALTER TABLE usageHistory ADD COLUMN LatencyMs INTEGER NOT NULL DEFAULT 0";
             try { cmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+            // SPEC-082: combo invariants + composite tiers columns
+            foreach (var col in new[]
+            {
+                "ALTER TABLE combos ADD COLUMN AllowedProviders TEXT NULL",
+                "ALTER TABLE combos ADD COLUMN AllowedFamilies TEXT NULL",
+                "ALTER TABLE combos ADD COLUMN Tiers TEXT NULL",
+            })
+            {
+                cmd.CommandText = col;
+                try { cmd.ExecuteNonQuery(); } catch { /* column already exists */ }
+            }
             // SPEC-034: context-compression tables (no-op when EnsureCreated already made them)
             foreach (var ddl in new[]
             {

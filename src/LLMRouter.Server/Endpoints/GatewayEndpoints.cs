@@ -762,6 +762,8 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
+                    await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
+                        target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -788,6 +790,8 @@ public static class GatewayEndpoints
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
+                    await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
+                        target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts), ctx.RequestAborted);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,

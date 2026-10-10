@@ -310,6 +310,22 @@ public class PlaygroundPreset
     public string CreatedAt { get; set; } = "";
 }
 
+// ---- SPEC-051: VSCode tokens ----
+
+[Table("vscodeTokens")]
+public class VscodeToken
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Token { get; set; } = "";
+    public string? Name { get; set; }
+    public string? DefaultCombo { get; set; }
+    // JSON array of combo names the token may use (empty = all)
+    public string AllowedCombos { get; set; } = "[]";
+    public bool IsActive { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+}
+
 // ---- SPEC-050: CLI device login ----
 
 [Table("cliTokens")]

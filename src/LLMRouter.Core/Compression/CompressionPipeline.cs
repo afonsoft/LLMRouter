@@ -18,7 +18,7 @@ public static class CompressionRegistry
     public static ICompressionEngine? Get(string id) => ById.GetValueOrDefault(id);
 
     /// <summary>Upstream CompressionMode → engine id(s). "stacked" means "use the configured pipeline".</summary>
-    public static readonly Dictionary<string, string[]> ModeToEngines = new()
+    public static IReadOnlyDictionary<string, string[]> ModeToEngines { get; } = new Dictionary<string, string[]>()
     {
         ["off"] = [],
         ["lite"] = ["lite"],

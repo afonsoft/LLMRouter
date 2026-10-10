@@ -826,7 +826,7 @@ public static class ManagementEndpoints
                             }
                         }
                     }
-                    catch { }
+                    catch { /* best-effort: failure is non-fatal */ }
                 }
                 foreach (var m in list)
                     models.Add(new
@@ -1092,7 +1092,7 @@ public static class ManagementEndpoints
                     if (m.TryGetProperty("tokensSaved", out var t) && t.TryGetInt32(out var n))
                     { saved += n; requests++; }
                 }
-                catch { }
+                catch { /* best-effort: failure is non-fatal */ }
             }
             return Results.Json(new { tokensSaved = saved, requestsCompressed = requests }, JsonOpts);
         });

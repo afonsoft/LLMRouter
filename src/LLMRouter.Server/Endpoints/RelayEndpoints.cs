@@ -130,21 +130,21 @@ public static class RelayEndpoints
             await Reject(401, "invalid_api_key", "Missing relay token.");
             return;
         }
-        var tok = await db.RelayTokens.FirstOrDefaultAsync(t => t.Token == key);
+        var tok = await db.RelayTokens.FirstOrDefaultAsync(t => t.Token == key, ctx.RequestAborted);
         if (tok is null || !tok.IsActive)
         {
             await Reject(401, "invalid_api_key", "Invalid or revoked relay token.");
             return;
         }
         if (tok.ExpiresAt is { } exp
-            && DateTime.TryParse(exp, out var expAt) && expAt < DateTime.UtcNow)
+            && DateTime.TryParse(exp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var expAt) && expAt < DateTime.UtcNow)
         {
             await Reject(401, "invalid_api_key", "Relay token expired.");
             return;
         }
 
         // buffer the body: Chat re-reads it after our model check
-        var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
+        var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync(ctx.RequestAborted);
         ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(raw));
         var model = "";
         try

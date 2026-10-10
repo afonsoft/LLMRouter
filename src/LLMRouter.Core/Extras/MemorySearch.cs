@@ -12,7 +12,7 @@ namespace LLMRouter.Core.Extras;
 /// </summary>
 public static class MemorySearch
 {
-    private static readonly Regex Terms = new(@"\w+", RegexOptions.Compiled);
+    private static readonly Regex Terms = new(@"\w+", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     /// <summary>Score one item: sum(term frequencies) × recency boost
     /// (items decay with a 30-day half-life). 0 = no match.</summary>
@@ -35,7 +35,7 @@ public static class MemorySearch
         if (matched == 0) return 0;
         var coverage = (double)matched / qterms.Length;
         var recency = 1.0;
-        if (item.TryGetProperty("at", out var at) && DateTime.TryParse(at.GetString(), out var when))
+        if (item.TryGetProperty("at", out var at) && DateTime.TryParse(at.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var when))
         {
             var days = ((now ?? DateTime.UtcNow) - when).TotalDays;
             recency = Math.Pow(0.5, Math.Max(0, days) / 30.0);

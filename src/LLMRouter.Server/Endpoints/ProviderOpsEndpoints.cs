@@ -191,7 +191,7 @@ public static class ProviderOpsEndpoints
                     if (JsonDocument.Parse(c.Data).RootElement.TryGetProperty("baseUrl", out var bu))
                         connBase = bu.GetString();
                 }
-                catch { }
+                catch { /* best-effort: failure is non-fatal */ }
                 var secret = GatewayEngine.ConnectionSecret(c);
                 probes[c.Id] = Task.Run(async () =>
                 {

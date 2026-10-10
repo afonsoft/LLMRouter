@@ -59,10 +59,10 @@ public static partial class RtkFilters
     public static string Apply(string text, Config cfg)
     {
         var preserve = cfg.PreservePatterns
-            .Select(p => { try { return new Regex(p); } catch { return null; } })
+            .Select(p => { try { return new Regex(p, RegexOptions.None, TimeSpan.FromMilliseconds(500)); } catch { return null; } })
             .Where(r => r is not null).Cast<Regex>().ToArray();
         var skip = cfg.SkipRules
-            .Select(p => { try { return new Regex(p); } catch { return null; } })
+            .Select(p => { try { return new Regex(p, RegexOptions.None, TimeSpan.FromMilliseconds(500)); } catch { return null; } })
             .Where(r => r is not null).Cast<Regex>().ToArray();
         var f = new HashSet<string>(cfg.Filters);
         var inBlock = false;

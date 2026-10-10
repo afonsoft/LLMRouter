@@ -45,7 +45,7 @@ public static class MediaKinds
             if (d.TryGetProperty("mediaKind", out var one) && one.ValueKind == JsonValueKind.String)
                 set.Add(one.GetString()!);
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return set;
     }
 

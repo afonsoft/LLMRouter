@@ -38,7 +38,7 @@ public static class ToolsEndpoints
                     else if (l.StartsWith("description:")) desc = l[12..].Trim().Trim('"', '\'');
                 }
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return (name, desc);
     }
 

@@ -209,7 +209,7 @@ public static class ModelRegistryEndpoints
                         await Core.Extras.Extras.AuditAsync(db, "combo.stale_model_ref.pruned", rf.ComboName);
                 }
             }
-            catch { }
+            catch { /* best-effort: failure is non-fatal */ }
 
             return Results.Json(new { synced, total = providerIds.Count, results, staleModelRefs, prunedModelRefs }, JsonOpts);
         });

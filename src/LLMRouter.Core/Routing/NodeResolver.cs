@@ -63,7 +63,7 @@ public static class NodeResolver
                             : new RegistryModel { Id = Str(x, "id") ?? "", Name = Str(x, "name") })
                         .Where(x => x.Id.Length > 0).ToList();
             }
-            catch { }
+            catch { /* best-effort: failure is non-fatal */ }
         }
 
         return new ProviderEntry

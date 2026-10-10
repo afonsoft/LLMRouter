@@ -20,7 +20,7 @@ public sealed class AuthState(HttpClient http)
             var sess = await http.GetFromJsonAsync<JsonElement>("api/auth/session");
             Authenticated = sess.TryGetProperty("authenticated", out var a) && a.GetBoolean();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     public async Task<bool> LoginAsync(string password)

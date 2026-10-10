@@ -246,7 +246,7 @@ public sealed class GatewayEngine(
                 if (el.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String)
                     return v.GetString();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return null;
     }
 
@@ -260,7 +260,7 @@ public sealed class GatewayEngine(
                 foreach (var kv in a.EnumerateObject())
                     map[kv.Name] = kv.Value.GetString() ?? "";
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return map;
     }
 

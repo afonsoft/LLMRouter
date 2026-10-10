@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using LLMRouter.Server;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Shouldly;

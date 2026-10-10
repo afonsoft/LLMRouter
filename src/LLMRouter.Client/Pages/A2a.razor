@@ -84,7 +84,7 @@
             var r = await Api.Raw.GetAsync(".well-known/agent.json");
             _card = JsonNode.Parse(await r.Content.ReadAsStringAsync())?.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         await LoadTasks();
     }
 

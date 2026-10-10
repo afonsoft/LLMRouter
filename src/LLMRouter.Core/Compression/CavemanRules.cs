@@ -28,7 +28,7 @@ public static partial class CavemanRules
     private const RegexOptions I = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
     private const RegexOptions IM = I | RegexOptions.Multiline;
 
-    private static Regex Re(string p, RegexOptions o = I) => new(p, o | RegexOptions.Compiled);
+    private static Regex Re(string p, RegexOptions o = I) => new(p, o | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     public static readonly Rule[] Rules =
     [

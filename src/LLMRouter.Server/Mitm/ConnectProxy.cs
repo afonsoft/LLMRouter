@@ -89,7 +89,7 @@ public sealed class ConnectProxy : BackgroundService
             var r2c = PumpAsync(rs, client, ct);
             await Task.WhenAny(c2r, r2c);
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private static async Task PumpAsync(Stream from, Stream to, CancellationToken ct)
@@ -101,7 +101,7 @@ public sealed class ConnectProxy : BackgroundService
             while ((n = await from.ReadAsync(buf, ct)) > 0)
                 await to.WriteAsync(buf.AsMemory(0, n), ct);
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         finally { ArrayPool<byte>.Shared.Return(buf); }
     }
 
@@ -183,7 +183,7 @@ public sealed class ConnectProxy : BackgroundService
                 }
             }
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private static async Task<(string method, string path, string headers, byte[] body, bool keepAlive)?>

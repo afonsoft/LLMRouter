@@ -69,7 +69,7 @@
         {
             await Api.PutAsync("api/settings", new { setupComplete = true });
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         Nav.NavigateTo("/");
     }
 }

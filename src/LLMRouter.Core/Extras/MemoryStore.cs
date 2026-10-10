@@ -212,7 +212,8 @@ public static class MemoryStore
                 new { paragraph = new { rich_text = new[] { new { text = new { content = $"tags: {item.Tags} | id: {item.Id}" } } } } },
             },
         });
-        return resp.IsSuccessStatusCode ? item : item;
+        resp.EnsureSuccessStatusCode();
+        return item;
     }
 
     /// <summary>
@@ -223,9 +224,9 @@ public static class MemoryStore
     {
         if (string.IsNullOrEmpty(text)) return "";
         var clean = text.TrimStart('\uFEFF').Trim();
-        clean = Regex.Replace(clean, @"</?lang\b[^>]*?/?>", "", RegexOptions.IgnoreCase);
-        clean = Regex.Replace(clean, @"</lang>", "", RegexOptions.IgnoreCase);
-        if (Regex.IsMatch(clean, @"^<lang\b", RegexOptions.IgnoreCase) && !clean.Contains('>'))
+        clean = Regex.Replace(clean, @"</?lang\b[^>]*?/?>", "", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+        clean = Regex.Replace(clean, @"</lang>", "", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+        if (Regex.IsMatch(clean, @"^<lang\b", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500)) && !clean.Contains('>'))
             return "";
         return clean.Trim();
     }

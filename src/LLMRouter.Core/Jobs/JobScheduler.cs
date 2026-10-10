@@ -73,7 +73,7 @@ public sealed class JobScheduler(IServiceProvider services, ILogger<JobScheduler
     {
         var job = Find(s.Id);
         if (job is null) return false;
-        if (s.LastRun is null || !DateTime.TryParse(s.LastRun, out var last)) return true;
+        if (s.LastRun is null || !DateTime.TryParse(s.LastRun, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var last)) return true;
         return now - last >= job.Interval;
     }
 

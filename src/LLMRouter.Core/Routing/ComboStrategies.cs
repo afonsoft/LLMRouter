@@ -218,7 +218,7 @@ public static class ComboStrategies
                 {
                     var slash = m.IndexOf('/');
                     var p = slash > 0 ? registry.GetProvider(m[..slash]) : null;
-                    if (p is null) return p?.DefaultContextLength ?? 0;
+                    if (p is null) return 0;
                     var mid = slash > 0 ? m[(slash + 1)..] : m;
                     var rm = p.Models?.FirstOrDefault(x =>
                         string.Equals(x.Id, mid, StringComparison.OrdinalIgnoreCase));

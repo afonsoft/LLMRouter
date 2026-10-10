@@ -84,7 +84,7 @@ else
             }
             foreach (var (k, v) in byTag) _groups.Add(new Grp { Name = k, Endpoints = v });
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private void Toggle(Ep e) => e.Open = !e.Open;

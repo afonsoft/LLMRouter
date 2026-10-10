@@ -59,7 +59,7 @@ public static class OAuthEndpoints
         g.MapGet("/oauth/poll/{state}", async (string state, LlmRouterDbContext db,
             ProviderRegistry registry, IHttpClientFactory hf) =>
         {
-            if (!OAuthService.Sessions.TryGetValue(state, out var s))
+            if (!OAuthService.TryGetSession(state, out var s))
                 return Results.NotFound(new { error = "session expired" });
             var p = registry.GetProvider(s.Provider)!;
             var tokens = await OAuthService.CompleteAsync(s, p, null, hf.CreateClient("upstream"));
@@ -67,7 +67,7 @@ public static class OAuthEndpoints
             if (tokens.Value.TryGetProperty("error", out var err))
                 return Results.Json(new { status = "error", error = err.GetString() }, JsonOpts);
             await StoreTokens(db, null, s.Provider, tokens.Value);
-            OAuthService.Sessions.TryRemove(state, out _);
+            OAuthService.RemoveSession(state);
             return Results.Json(new { status = "done" }, JsonOpts);
         });
 
@@ -77,7 +77,7 @@ public static class OAuthEndpoints
         {
             var state = ctx.Request.Query["state"].FirstOrDefault();
             var code = ctx.Request.Query["code"].FirstOrDefault();
-            if (state is null || !OAuthService.Sessions.TryGetValue(state, out var s))
+            if (state is null || !OAuthService.TryGetSession(state, out var s))
                 return Results.BadRequest("session expired");
             var p = registry.GetProvider(s.Provider)!;
             var tokens = await OAuthService.CompleteAsync(s, p, code, hf.CreateClient("upstream"));
@@ -86,7 +86,7 @@ public static class OAuthEndpoints
             if (tokens.Value.TryGetProperty("error", out var err))
                 return Results.BadRequest($"oauth failed: {err.GetString()}");
             await StoreTokens(db, null, s.Provider, tokens.Value);
-            OAuthService.Sessions.TryRemove(state, out _);
+            OAuthService.RemoveSession(state);
             return Results.Content("<html><body><h3>Connected — close this tab.</h3></body></html>", "text/html");
         });
 

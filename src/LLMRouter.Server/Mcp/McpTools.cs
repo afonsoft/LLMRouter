@@ -100,22 +100,22 @@ public static class McpTools
                 try
                 {
                     var url = registry.GetModelsUrl(p) ?? p.BaseUrl;
-                    using var resp = await c.SendAsync(new HttpRequestMessage(HttpMethod.Get, url));
+                    using var resp = await c.SendAsync(new HttpRequestMessage(HttpMethod.Get, url), ctx.RequestAborted);
                     return new { id = p.Id, reachable = true, status = (int)resp.StatusCode };
                 }
                 catch (Exception ex) { return new { id = p.Id, reachable = false, error = ex.Message }; }
             }
             case "models.list":
             {
-                var combos = await db.Combos.Select(c => c.Name).ToListAsync();
-                var aliases = await db.Kv.Where(k => k.Scope == "modelAliases").ToListAsync();
+                var combos = await db.Combos.Select(c => c.Name).ToListAsync(ctx.RequestAborted);
+                var aliases = await db.Kv.Where(k => k.Scope == "modelAliases").ToListAsync(ctx.RequestAborted);
                 return new { models = combos, aliases = aliases.Select(a => a.Key) };
             }
             case "connections.list":
             {
                 var q = db.ProviderConnections.AsQueryable();
                 if (Arg(args, "provider") is { } prov) q = q.Where(c => c.Provider == prov);
-                var rows = await q.ToListAsync();
+                var rows = await q.ToListAsync(ctx.RequestAborted);
                 return new
                 {
                     connections = rows.Select(c => new
@@ -138,12 +138,12 @@ public static class McpTools
                     CreatedAt = now,
                     UpdatedAt = now,
                 }).Entity;
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync(ctx.RequestAborted);
                 return new { e.Id, e.Provider };
             }
             case "apiKeys.list":
             {
-                var keys = await db.ApiKeys.ToListAsync();
+                var keys = await db.ApiKeys.ToListAsync(ctx.RequestAborted);
                 return new
                 {
                     keys = keys.Select(k => new
@@ -164,7 +164,7 @@ public static class McpTools
                     IsActive = true,
                     CreatedAt = DateTimeOffset.UtcNow.ToString("o"),
                 }).Entity;
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync(ctx.RequestAborted);
                 return new { e.Id, key };
             }
             case "apiKeys.revoke":
@@ -172,12 +172,12 @@ public static class McpTools
                 var k = await db.ApiKeys.FindAsync(Arg(args, "id"));
                 if (k is null) return null;
                 k.IsActive = false;
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync(ctx.RequestAborted);
                 return new { k.Id, revoked = true };
             }
             case "combos.list":
             {
-                var rows = await db.Combos.ToListAsync();
+                var rows = await db.Combos.ToListAsync(ctx.RequestAborted);
                 return new
                 {
                     combos = rows.Select(c => new
@@ -199,7 +199,7 @@ public static class McpTools
                     CreatedAt = now,
                     UpdatedAt = now,
                 }).Entity;
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync(ctx.RequestAborted);
                 return new { e.Id, e.Name };
             }
             case "combos.run":
@@ -212,44 +212,44 @@ public static class McpTools
             case "usage.stats":
             {
                 var q = db.UsageHistory.AsQueryable();
-                var total = await q.CountAsync();
-                var tokens = await q.SumAsync(r => r.PromptTokens + r.CompletionTokens);
-                var cost = await q.SumAsync(r => r.Cost);
+                var total = await q.CountAsync(ctx.RequestAborted);
+                var tokens = await q.SumAsync(r => r.PromptTokens + r.CompletionTokens, ctx.RequestAborted);
+                var cost = await q.SumAsync(r => r.Cost, ctx.RequestAborted);
                 var byProvider = await q.GroupBy(r => r.Provider)
                     .Select(x => new { provider = x.Key, requests = x.Count() }).ToListAsync();
                 return new { total, tokens, cost, byProvider };
             }
             case "usage.timeseries":
             {
-                var rows = await db.UsageDaily.ToListAsync();
+                var rows = await db.UsageDaily.ToListAsync(ctx.RequestAborted);
                 return new { days = rows.Select(r => new { date = r.DateKey, data = JsonNode.Parse(r.Data) }) };
             }
             case "logs.list":
             {
                 var limit = int.TryParse(Arg(args, "limit"), out var l) ? Math.Clamp(l, 1, 200) : 50;
-                var rows = await db.RequestDetails.OrderByDescending(r => r.Timestamp).Take(limit).ToListAsync();
+                var rows = await db.RequestDetails.OrderByDescending(r => r.Timestamp).Take(limit).ToListAsync(ctx.RequestAborted);
                 return new { logs = rows.Select(r => new { r.Id, r.Timestamp, r.Provider, r.Model }) };
             }
             case "settings.get":
             {
-                var row = await db.Settings.FirstOrDefaultAsync();
+                var row = await db.Settings.FirstOrDefaultAsync(ctx.RequestAborted);
                 return row is null ? new { } : (object)(JsonNode.Parse(row.Data) ?? new JsonObject());
             }
             case "settings.update":
             {
-                var row = await db.Settings.FirstOrDefaultAsync()
+                var row = await db.Settings.FirstOrDefaultAsync(ctx.RequestAborted)
                     ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
                 var cur = JsonNode.Parse(row.Data)!.AsObject();
                 if (args.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object)
                     foreach (var kv2 in JsonNode.Parse(d.GetRawText())!.AsObject())
                         cur[kv2.Key] = kv2.Value?.DeepClone();
                 row.Data = cur.ToJsonString();
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync(ctx.RequestAborted);
                 return new { ok = true };
             }
             case "skills.list":
             {
-                var rows = await db.Kv.Where(k => k.Scope == "skills" || k.Scope == "mcpServers").ToListAsync();
+                var rows = await db.Kv.Where(k => k.Scope == "skills" || k.Scope == "mcpServers").ToListAsync(ctx.RequestAborted);
                 return new
                 {
                     bundled = new[] { "token-saver", "combo-builder" },
@@ -273,7 +273,7 @@ public static class McpTools
                     });
                     row ??= db.Kv.Add(new KvEntry { Scope = "memory", Key = "items" }).Entity;
                     row.Value = items.ToJsonString();
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ctx.RequestAborted);
                     return new { ok = true, count = items.Count };
                 }
                 var q2 = Arg(args, "q");
@@ -283,12 +283,12 @@ public static class McpTools
             }
             case "pools.list":
             {
-                var rows = await db.ProxyPools.ToListAsync();
+                var rows = await db.ProxyPools.ToListAsync(ctx.RequestAborted);
                 return new { pools = rows.Select(r => new { r.Id, r.IsActive, r.TestStatus, data = JsonNode.Parse(r.Data) }) };
             }
             case "token-health.list":
             {
-                var rows = await db.ProviderConnections.ToListAsync();
+                var rows = await db.ProviderConnections.ToListAsync(ctx.RequestAborted);
                 return new
                 {
                     connections = rows.Select(c => new
@@ -317,18 +317,18 @@ public static class McpTools
                     counts = new
                     {
                         providers = registry.Providers.Count,
-                        connections = await db.ProviderConnections.CountAsync(),
-                        apiKeys = await db.ApiKeys.CountAsync(k => k.IsActive),
-                        combos = await db.Combos.CountAsync(),
-                        requests = await db.UsageHistory.CountAsync(),
+                        connections = await db.ProviderConnections.CountAsync(ctx.RequestAborted),
+                        apiKeys = await db.ApiKeys.CountAsync(k => k.IsActive, ctx.RequestAborted),
+                        combos = await db.Combos.CountAsync(ctx.RequestAborted),
+                        requests = await db.UsageHistory.CountAsync(ctx.RequestAborted),
                     },
                 };
             }
             case "gamification.get":
             {
-                var requests = await db.UsageHistory.LongCountAsync();
-                var tokens = await db.UsageHistory.SumAsync(r => r.PromptTokens + r.CompletionTokens);
-                var provs = await db.ProviderConnections.CountAsync(c => c.IsActive);
+                var requests = await db.UsageHistory.LongCountAsync(ctx.RequestAborted);
+                var tokens = await db.UsageHistory.SumAsync(r => r.PromptTokens + r.CompletionTokens, ctx.RequestAborted);
+                var provs = await db.ProviderConnections.CountAsync(c => c.IsActive, ctx.RequestAborted);
                 var (xp, level, badges) = LLMRouter.Core.Extras.Extras.Gamification(requests, tokens, provs);
                 return new { xp, level, badges, requests, tokens, providers = provs };
             }
@@ -352,12 +352,12 @@ public static class McpTools
                 if (!hit) arr.Add(new System.Text.Json.Nodes.JsonObject { ["id"] = pid, ["enabled"] = en });
                 if (row is null) db.Kv.Add(new LLMRouter.Core.Data.KvEntry { Scope = "plugins", Key = "registered", Value = arr.ToJsonString() });
                 else row.Value = arr.ToJsonString();
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync(ctx.RequestAborted);
                 return new { ok = true, id = pid, enabled = en };
             }
             case "searchTools.list":
             {
-                var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync();
+                var conns = await db.ProviderConnections.Where(c => c.IsActive).ToListAsync(ctx.RequestAborted);
                 var connTools = conns.Where(c =>
                         (c.Data ?? "").Contains("\"search\"", StringComparison.OrdinalIgnoreCase)
                         || (c.Data ?? "").Contains("\"fetch\"", StringComparison.OrdinalIgnoreCase))
@@ -421,7 +421,7 @@ public static class McpTools
                 if (Directory.Exists(skillsDir))
                     foreach (var f in Directory.EnumerateFiles(skillsDir, "SKILL.md", SearchOption.AllDirectories).Take(50))
                     {
-                        var txt = await File.ReadAllTextAsync(f);
+                        var txt = await File.ReadAllTextAsync(f, ctx.RequestAborted);
                         corpus.Add(JsonSerializer.SerializeToElement(new { source = "skill", id = Path.GetFileName(Path.GetDirectoryName(f)) ?? f, content = txt[..Math.Min(2000, txt.Length)], at = File.GetLastWriteTimeUtc(f) }));
                     }
                 var hits = LLMRouter.Core.Extras.MemorySearch.Search(

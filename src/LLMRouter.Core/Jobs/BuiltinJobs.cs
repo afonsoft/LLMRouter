@@ -120,7 +120,7 @@ public static class BuiltinJobs
             var ran = 0;
             foreach (var s in await db.QuotaSchedules.ToListAsync(ct))
             {
-                var last = DateTime.TryParse(s.LastRunAt, out var l)
+                var last = DateTime.TryParse(s.LastRunAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var l)
                     ? l : DateTime.MinValue;
                 var due = s.Window switch
                 {
@@ -169,7 +169,7 @@ public static class BuiltinJobs
                 var cfg = JsonDocument.Parse(d.Config).RootElement;
                 if (!cfg.TryGetProperty("scheduleMinutes", out var sm) || !sm.TryGetInt32(out var mins) || mins <= 0)
                     continue;
-                var last = DateTime.TryParse(d.LastRunAt, out var l) ? l : DateTime.MinValue;
+                var last = DateTime.TryParse(d.LastRunAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var l) ? l : DateTime.MinValue;
                 if (now - last < TimeSpan.FromMinutes(mins)) continue;
                 await Logging.LogExporter.RunAsync(db, d, hf, ct);
                 if (d.LastRunStatus == "ok") ran++; else failed++;
@@ -216,7 +216,7 @@ public static class BuiltinJobs
                 {
                     var rows = new List<Dictionary<string, object?>>();
                     await using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"SELECT * FROM \"{name.Replace("\"", "\"\"")}\"";
+                    cmd.CommandText = $"SELECT * FROM {SqliteIdent.Quote(name)}";
                     await using var rd = await cmd.ExecuteReaderAsync(ct);
                     while (await rd.ReadAsync(ct))
                     {

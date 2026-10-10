@@ -22,7 +22,7 @@ self.addEventListener('fetch', e => {
       fetch(e.request).then(resp => {
         if (resp.ok) {
           const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+          caches.open(CACHE).then(c => c.put(e.request, clone)).catch(() => {});
         }
         return resp;
       }).catch(() => caches.match(e.request).then(hit => hit || Response.error()))
@@ -34,7 +34,7 @@ self.addEventListener('fetch', e => {
     caches.match(e.request).then(hit => hit || fetch(e.request).then(resp => {
       if (resp.ok) {
         const clone = resp.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
+        caches.open(CACHE).then(c => c.put(e.request, clone)).catch(() => {});
       }
       return resp;
     }).catch(() => e.request.mode === 'navigate' ? caches.match('/offline.html') : Response.error()))

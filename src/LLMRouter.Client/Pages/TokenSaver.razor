@@ -98,14 +98,14 @@ else
             var cat = await Api.GetAsync("api/token-saver/filters");
             _filters = cat.GetProperty("filters").EnumerateArray().ToArray();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         try
         {
             var st = await Api.GetAsync("api/token-saver/stats");
             _tokensSaved = st.GetProperty("tokensSaved").GetInt64();
             _requestsCompressed = st.GetProperty("requestsCompressed").GetInt32();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task Save()

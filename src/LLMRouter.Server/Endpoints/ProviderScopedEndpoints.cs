@@ -14,16 +14,19 @@ namespace LLMRouter.Server.Endpoints;
 /// </summary>
 public static class ProviderScopedEndpoints
 {
+    private const string Json = "application/json";
+    private const string Model = "model";
+    private const string FishAudioDefaultBase = "https://api.fish.audio";
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
-    private static readonly Regex VoiceIdRe = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
+    private static readonly Regex VoiceIdRe = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     public static void Map(WebApplication app)
     {
         // Container probes — anonymous, work in headless mode (endpoints, not UI).
         app.MapGet("/healthz", () => Results.Json(new { ok = true }));
         app.MapGet("/livez", () => Results.Json(new { ok = true }));
-        app.MapGet("/readyz", async (LlmRouterDbContext db) =>
-            await db.Database.CanConnectAsync()
+        app.MapGet("/readyz", async (HttpContext ctx, LlmRouterDbContext db) =>
+            await db.Database.CanConnectAsync(ctx.RequestAborted)
                 ? Results.Json(new { ok = true })
                 : Results.Json(new { ok = false, error = "db_unreachable" }, statusCode: 503));
         app.MapGroup("/api").RequireAuthorization()
@@ -49,13 +52,13 @@ public static class ProviderScopedEndpoints
 
     /// <summary>Resolve {p} to a registry entry (alias-aware) or an active custom connection.</summary>
     private static async Task<(ProviderEntry? Entry, string Alias)> ResolveProvider(
-        LlmRouterDbContext db, ProviderRegistry registry, string p)
+        LlmRouterDbContext db, ProviderRegistry registry, string p, CancellationToken ct)
     {
         var e = registry.GetProvider(p);
         if (e is not null) return (e, e.Alias ?? e.Id);
         var node = await Core.Routing.NodeResolver.ResolveAsync(db, p);
         if (node is not null) return (node, node.Id);
-        if (await db.ProviderConnections.AnyAsync(c => c.Provider == p && c.IsActive))
+        if (await db.ProviderConnections.AnyAsync(c => c.Provider == p && c.IsActive, ct))
             return (new ProviderEntry { Id = p }, p);
         return (null, p);
     }
@@ -63,9 +66,9 @@ public static class ProviderScopedEndpoints
     private static async Task BadRequest(HttpContext ctx, string message)
     {
         ctx.Response.StatusCode = 400;
-        ctx.Response.ContentType = "application/json";
+        ctx.Response.ContentType = Json;
         await ctx.Response.WriteAsync(JsonSerializer.Serialize(
-            new { error = new { message } }, JsonOpts));
+            new { error = new { message } }, JsonOpts), ctx.RequestAborted);
     }
 
     /// <summary>
@@ -75,107 +78,110 @@ public static class ProviderScopedEndpoints
     /// </summary>
     private static async Task ScopedCall(HttpContext ctx, string p, bool chat, string? upstreamPath = null)
     {
+        var ct = ctx.RequestAborted;
         var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
         var registry = ctx.RequestServices.GetRequiredService<ProviderRegistry>();
-        var (entry, alias) = await ResolveProvider(db, registry, p);
+        var (entry, alias) = await ResolveProvider(db, registry, p, ct);
         if (entry is null)
         {
             await BadRequest(ctx, $"Unknown provider: {p}");
             return;
         }
-
-        if (ctx.Request.Method == "POST")
-        {
-            var raw = await new StreamReader(ctx.Request.Body, Encoding.UTF8).ReadToEndAsync();
-            JsonNode? node = null;
-            try { node = JsonNode.Parse(raw); } catch { /* let downstream report malformed */ }
-            if (node is JsonObject obj)
-            {
-                var model = obj["model"]?.GetValue<string>();
-                if (model is { Length: > 0 })
-                {
-                    var idx = model.IndexOf('/');
-                    if (idx >= 0)
-                    {
-                        var mp = model[..idx];
-                        if (mp != alias && mp != p && mp != entry.Id)
-                        {
-                            await BadRequest(ctx,
-                                $"Model \"{model}\" does not belong to provider \"{p}\". Expected prefix: {alias}/");
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        obj["model"] = $"{alias}/{model}";
-                    }
-                }
-                var bytes = JsonSerializer.SerializeToUtf8Bytes(obj);
-                ctx.Request.Body = new MemoryStream(bytes);
-                ctx.Request.ContentLength = bytes.Length;
-            }
-            else
-            {
-                var bytes = Encoding.UTF8.GetBytes(raw);
-                ctx.Request.Body = new MemoryStream(bytes);
-                ctx.Request.ContentLength = bytes.Length;
-            }
-        }
+        if (ctx.Request.Method == "POST" && !await RewriteBodyModel(ctx, entry, p, alias, ct))
+            return;
 
         if (chat) await GatewayEndpoints.Chat(ctx, "openai");
         else await GatewayEndpoints.Passthrough(ctx, upstreamPath: upstreamPath);
     }
 
+    /// <summary>Prefix-validate/rewrite body.model; false when a 400 was written.</summary>
+    private static async Task<bool> RewriteBodyModel(
+        HttpContext ctx, ProviderEntry entry, string p, string alias, CancellationToken ct)
+    {
+        var raw = await new StreamReader(ctx.Request.Body, Encoding.UTF8).ReadToEndAsync(ct);
+        JsonNode? node = null;
+        try { node = JsonNode.Parse(raw); } catch (JsonException) { /* let downstream report malformed */ }
+        var bytes = node is JsonObject obj ? RewriteModel(obj, entry, p) : Encoding.UTF8.GetBytes(raw);
+        if (bytes is null)
+        {
+            var model = (node as JsonObject)?[Model]?.GetValue<string>() ?? string.Empty;
+            await BadRequest(ctx,
+                $"Model \"{model}\" does not belong to provider \"{p}\". Expected prefix: {alias}/");
+            return false;
+        }
+        ctx.Request.Body = new MemoryStream(bytes);
+        ctx.Request.ContentLength = bytes.Length;
+        return true;
+    }
+
+    /// <summary>Returns rewritten bytes, or null on prefix mismatch.</summary>
+    private static byte[]? RewriteModel(JsonObject obj, ProviderEntry entry, string p)
+    {
+        var model = obj[Model]?.GetValue<string>();
+        if (model is { Length: > 0 })
+        {
+            var alias = entry.Alias ?? entry.Id;
+            var idx = model.IndexOf('/');
+            if (idx < 0) obj[Model] = $"{alias}/{model}";
+            else if (model[..idx] != alias && model[..idx] != p && model[..idx] != entry.Id) return null;
+        }
+        return JsonSerializer.SerializeToUtf8Bytes(obj);
+    }
+
     /// <summary>GET /v1/providers/{p}/models — registry + synced models, unprefixed ids.</summary>
     private static async Task ProviderModels(HttpContext ctx, LlmRouterDbContext db, ProviderRegistry registry, string p)
     {
-        var (key, authed) = await GatewayEndpoints.AuthenticatedKey(ctx, db);
+        var ct = ctx.RequestAborted;
+        var (_, authed) = await GatewayEndpoints.AuthenticatedKey(ctx, db);
         if (!authed) { ctx.Response.StatusCode = 401; return; }
-        var (entry, _) = await ResolveProvider(db, registry, p);
+        var (entry, _) = await ResolveProvider(db, registry, p, ct);
         if (entry is null) { await BadRequest(ctx, $"Unknown provider: {p}"); return; }
 
         var models = new List<JsonObject>();
         if (entry.Models is { } rm)
             models.AddRange(rm.Where(m => m.Id.Length > 0).Select(m => new JsonObject
             {
-                ["id"] = m.Id, ["object"] = "model", ["owned_by"] = entry.Id, ["parent"] = null,
+                ["id"] = m.Id, ["object"] = Model, ["owned_by"] = entry.Id, ["parent"] = null,
             }));
         var synced = await db.SyncedModels
             .Where(s => s.Provider == entry.Id && s.Available)
-            .Select(s => s.Model).ToListAsync();
+            .Select(s => s.Model).ToListAsync(ct);
         var seen = new HashSet<string>(models.Select(m => m["id"]!.GetValue<string>()));
         foreach (var s in synced.Where(s => seen.Add(s)))
-            models.Add(new JsonObject { ["id"] = s, ["object"] = "model", ["owned_by"] = entry.Id, ["parent"] = null });
-        ctx.Response.ContentType = "application/json";
+            models.Add(new JsonObject { ["id"] = s, ["object"] = Model, ["owned_by"] = entry.Id, ["parent"] = null });
+        ctx.Response.ContentType = Json;
         await ctx.Response.WriteAsync(JsonSerializer.Serialize(
-            new JsonObject { ["object"] = "list", ["data"] = new JsonArray(models.ToArray<JsonNode>()) }, JsonOpts));
+            new JsonObject { ["object"] = "list", ["data"] = new JsonArray(models.ToArray<JsonNode>()) }, JsonOpts), ct);
     }
 
     /// <summary>GET /v1/providers/{p}/limits — registered-key issuance limits.</summary>
     private static async Task GetLimits(HttpContext ctx, LlmRouterDbContext db, string p)
     {
+        var ct = ctx.RequestAborted;
         var (_, authed) = await GatewayEndpoints.AuthenticatedKey(ctx, db);
         if (!authed) { ctx.Response.StatusCode = 401; return; }
-        var row = await db.Kv.FindAsync("providerKeyLimits", p);
-        JsonElement? limits = null;
+        var row = await db.Kv.FindAsync(["providerKeyLimits", p], ct);
+        string? raw = null;
         if (row?.Value is { } v)
         {
-            try { limits = JsonDocument.Parse(v).RootElement; } catch { }
+            try { raw = JsonDocument.Parse(v).RootElement.GetRawText(); }
+            catch (JsonException) { /* malformed kv row — report limits:null */ }
         }
-        ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsync(limits is null
+        ctx.Response.ContentType = Json;
+        await ctx.Response.WriteAsync(raw is null
             ? JsonSerializer.Serialize(new { provider = p, limits = (object?)null }, JsonOpts)
-            : $"{{\"provider\":{JsonSerializer.Serialize(p, JsonOpts)},\"limits\":{limits.Value.GetRawText()}}}");
+            : $"{{\"provider\":{JsonSerializer.Serialize(p, JsonOpts)},\"limits\":{raw}}}", ct);
     }
 
     /// <summary>PUT /v1/providers/{p}/limits — set issuance limits {maxActiveKeys,dailyIssueLimit,hourlyIssueLimit}.</summary>
     private static async Task PutLimits(HttpContext ctx, LlmRouterDbContext db, string p)
     {
+        var ct = ctx.RequestAborted;
         var (_, authed) = await GatewayEndpoints.AuthenticatedKey(ctx, db);
         if (!authed) { ctx.Response.StatusCode = 401; return; }
         JsonElement body;
-        try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
-        catch { await BadRequest(ctx, "Invalid JSON body"); return; }
+        try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body, JsonOpts, ct); }
+        catch (JsonException) { await BadRequest(ctx, "Invalid JSON body"); return; }
         var limits = new JsonObject();
         foreach (var k in new[] { "maxActiveKeys", "dailyIssueLimit", "hourlyIssueLimit" })
         {
@@ -186,18 +192,18 @@ public static class ProviderScopedEndpoints
                 else { await BadRequest(ctx, $"{k} must be a positive integer or null"); return; }
             }
         }
-        var row = await db.Kv.FindAsync("providerKeyLimits", p);
+        var row = await db.Kv.FindAsync(["providerKeyLimits", p], ct);
         var val = limits.ToJsonString();
         if (row is null) db.Kv.Add(new KvEntry { Scope = "providerKeyLimits", Key = p, Value = val });
         else row.Value = val;
-        await db.SaveChangesAsync();
-        ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsync($"{{\"provider\":{JsonSerializer.Serialize(p, JsonOpts)},\"limits\":{val}}}");
+        await db.SaveChangesAsync(ct);
+        ctx.Response.ContentType = Json;
+        await ctx.Response.WriteAsync($"{{\"provider\":{JsonSerializer.Serialize(p, JsonOpts)},\"limits\":{val}}}", ct);
     }
 
     /// <summary>GET/POST /v1/providers/{p}/voices — Fish Audio voice models (upstream parity).</summary>
     private static async Task Voices(HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, string p)
-        => await FishAudioProxy(ctx, db, hf, p, "/model", null);
+        => await FishAudioProxy(ctx, db, hf, p, "/model");
 
     /// <summary>GET/PUT/DELETE /v1/providers/{p}/voices/{voiceId}.</summary>
     private static async Task VoiceItem(HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, string p, string voiceId)
@@ -207,13 +213,14 @@ public static class ProviderScopedEndpoints
             await BadRequest(ctx, "Invalid Fish Audio voice ID");
             return;
         }
-        await FishAudioProxy(ctx, db, hf, p, $"/model/{voiceId}", voiceId);
+        await FishAudioProxy(ctx, db, hf, p, $"/model/{voiceId}");
     }
 
     /// <summary>Proxy a request to the Fish Audio /model* API using the fishaudio connection.</summary>
     private static async Task FishAudioProxy(HttpContext ctx, LlmRouterDbContext db,
-        IHttpClientFactory hf, string p, string upstreamPath, string? _)
+        IHttpClientFactory hf, string p, string upstreamPath)
     {
+        var ct = ctx.RequestAborted;
         if (p != "fishaudio")
         {
             await BadRequest(ctx, $"Voice-model management is not supported for provider: {p}");
@@ -223,51 +230,52 @@ public static class ProviderScopedEndpoints
         if (!authed) { ctx.Response.StatusCode = 401; return; }
 
         var conn = await db.ProviderConnections
-            .FirstOrDefaultAsync(c => c.Provider == "fishaudio" && c.IsActive);
+            .FirstOrDefaultAsync(c => c.Provider == "fishaudio" && c.IsActive, ct);
         if (conn is null)
         {
             ctx.Response.StatusCode = 401;
-            ctx.Response.ContentType = "application/json";
-            await ctx.Response.WriteAsync("{\"error\":{\"message\":\"No credentials for provider: fishaudio\"}}");
+            ctx.Response.ContentType = Json;
+            await ctx.Response.WriteAsync("{\"error\":{\"message\":\"No credentials for provider: fishaudio\"}}", ct);
             return;
         }
         var secret = Core.Gateway.GatewayEngine.ConnectionSecret(conn);
-        var baseUrl = Core.Gateway.GatewayEngine.ConnectionBaseUrl(conn, new ProviderEntry { Id = "fishaudio", BaseUrl = "https://api.fish.audio" });
-        if (string.IsNullOrEmpty(baseUrl)) baseUrl = "https://api.fish.audio";
+        var baseUrl = Core.Gateway.GatewayEngine.ConnectionBaseUrl(
+            conn, new ProviderEntry { Id = "fishaudio", BaseUrl = FishAudioDefaultBase });
+        if (string.IsNullOrEmpty(baseUrl)) baseUrl = FishAudioDefaultBase;
 
         using var req = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), baseUrl.TrimEnd('/') + upstreamPath);
         if (secret is not null) req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {secret}");
         if (ctx.Request.Method is "POST" or "PUT")
         {
             using var ms = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(ms);
+            await ctx.Request.Body.CopyToAsync(ms, ct);
             req.Content = new ByteArrayContent(ms.ToArray());
-            if (ctx.Request.ContentType is { } ct)
-                req.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(ct);
+            if (ctx.Request.ContentType is { } contentType)
+                req.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType);
         }
         try
         {
             var client = hf.CreateClient("upstream");
-            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
+            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             ctx.Response.StatusCode = (int)resp.StatusCode;
-            ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
-            await resp.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+            ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? Json;
+            await resp.Content.CopyToAsync(ctx.Response.Body, ct);
         }
         catch (Exception)
         {
             ctx.Response.StatusCode = 502;
-            ctx.Response.ContentType = "application/json";
+            ctx.Response.ContentType = Json;
             await ctx.Response.WriteAsync(JsonSerializer.Serialize(
-                new { error = new { message = "Fish Audio upstream error" } }, JsonOpts));
+                new { error = new { message = "Fish Audio upstream error" } }, JsonOpts), ct);
         }
     }
 
     /// <summary>GET /v1/providers/suggested-models — server-side HuggingFace Hub proxy.</summary>
     private static async Task SuggestedModels(HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf)
     {
+        var ct = ctx.RequestAborted;
         var (_, authed) = await GatewayEndpoints.AuthenticatedKey(ctx, db);
         if (!authed) { ctx.Response.StatusCode = 401; return; }
-
         var q = ctx.Request.Query;
         var type = q["type"].FirstOrDefault() ?? "image";
         var sortBy = q["sortBy"].FirstOrDefault() ?? "downloads";
@@ -275,41 +283,47 @@ public static class ProviderScopedEndpoints
         if (limit > 50) limit = 50;
         if (type != "image") { await BadRequest(ctx, $"Unsupported suggested-models type: {type}"); return; }
         if (sortBy != "downloads" && sortBy != "likes") { await BadRequest(ctx, "sortBy must be downloads|likes"); return; }
-        const string pipelineTag = "text-to-image";
 
         try
         {
-            var url = $"https://huggingface.co/api/models?inference_provider=hf-inference&pipeline_tag={pipelineTag}&limit=100";
-            var client = hf.CreateClient("upstream");
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(8000);
-            var data = await client.GetFromJsonAsync<JsonElement>(url, cts.Token);
-            var items = data.ValueKind == JsonValueKind.Array
-                ? data.EnumerateArray()
-                    .Where(m => m.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
-                    .Select(m => new
-                    {
-                        id = m.GetProperty("id").GetString()!,
-                        likes = m.TryGetProperty("likes", out var l) && l.TryGetInt64(out var ln) ? ln : 0,
-                        downloads = m.TryGetProperty("downloads", out var d) && d.TryGetInt64(out var dn) ? dn : 0,
-                    })
-                    .OrderByDescending(m => sortBy == "likes" ? m.likes : m.downloads)
-                    .Take(limit).ToList()
-                : [];
-            ctx.Response.ContentType = "application/json";
+            var items = await FetchHubItems(hf, sortBy, limit, cts.Token);
+            ctx.Response.ContentType = Json;
             await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
             {
                 @object = "list",
                 type,
-                pipeline_tag = pipelineTag,
+                pipeline_tag = "text-to-image",
                 data = items,
-            }, JsonOpts));
+            }, JsonOpts), ct);
         }
         catch (Exception)
         {
             ctx.Response.StatusCode = 502;
-            ctx.Response.ContentType = "application/json";
-            await ctx.Response.WriteAsync("{\"error\":{\"message\":\"HuggingFace Hub API unavailable\"}}");
+            ctx.Response.ContentType = Json;
+            await ctx.Response.WriteAsync("{\"error\":{\"message\":\"HuggingFace Hub API unavailable\"}}", ct);
         }
+    }
+
+    private static async Task<List<object>> FetchHubItems(
+        IHttpClientFactory hf, string sortBy, int limit, CancellationToken ct)
+    {
+        const string url =
+            "https://huggingface.co/api/models?inference_provider=hf-inference&pipeline_tag=text-to-image&limit=100";
+        var data = await hf.CreateClient("upstream").GetFromJsonAsync<JsonElement>(url, ct);
+        if (data.ValueKind != JsonValueKind.Array) return [];
+        return data.EnumerateArray()
+            .Where(m => m.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            .Select(m => new
+            {
+                id = m.GetProperty("id").GetString()!,
+                likes = m.TryGetProperty("likes", out var l) && l.TryGetInt64(out var ln) ? ln : 0,
+                downloads = m.TryGetProperty("downloads", out var d) && d.TryGetInt64(out var dn) ? dn : 0,
+            })
+            .OrderByDescending(m => sortBy == "likes" ? m.likes : m.downloads)
+            .Take(limit)
+            .Select(m => (object)m)
+            .ToList();
     }
 }

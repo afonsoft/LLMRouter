@@ -47,19 +47,27 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadStats();
+        await LoadLeaderboard();
+    }
+
+    private async Task LoadStats()
+    {
         var g = await Api.GetAsync("api/gamification");
-        if (g.ValueKind == JsonValueKind.Object)
-        {
-            _xp = El(g, "xp"); _requests = El(g, "requests"); _tokens = El(g, "tokens");
-            _level = g.TryGetProperty("level", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt32() : 0;
-            if (g.TryGetProperty("badges", out var b) && b.ValueKind == JsonValueKind.Array)
-                _badges = b.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() ?? "" : x.GetRawText()).Where(x => x.Length > 0).ToList();
-        }
+        if (g.ValueKind != JsonValueKind.Object) return;
+        _xp = El(g, "xp"); _requests = El(g, "requests"); _tokens = El(g, "tokens");
+        _level = g.TryGetProperty("level", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt32() : 0;
+        if (g.TryGetProperty("badges", out var b) && b.ValueKind == JsonValueKind.Array)
+            _badges = b.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() ?? "" : x.GetRawText()).Where(x => x.Length > 0).ToList();
+    }
+
+    private async Task LoadLeaderboard()
+    {
         var lb = await Api.GetAsync("api/leaderboard");
-        if (lb.ValueKind == JsonValueKind.Object && lb.TryGetProperty("leaderboard", out var arr))
-            _top = arr.EnumerateArray().Take(10).Select(x => (
-                x.TryGetProperty("model", out var m) ? m.GetString() ?? "?" : "?",
-                x.TryGetProperty("requests", out var rq) && rq.ValueKind == JsonValueKind.Number ? rq.GetInt64() : 0L)).ToList();
+        if (lb.ValueKind != JsonValueKind.Object || !lb.TryGetProperty("leaderboard", out var arr)) return;
+        _top = arr.EnumerateArray().Take(10).Select(x => (
+            x.TryGetProperty("model", out var m) ? m.GetString() ?? "?" : "?",
+            x.TryGetProperty("requests", out var rq) && rq.ValueKind == JsonValueKind.Number ? rq.GetInt64() : 0L)).ToList();
     }
 
     private static long El(JsonElement e, string k)

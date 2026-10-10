@@ -574,7 +574,7 @@ public static class GatewayEndpoints
                 && exl.OfType<JsonValue>().Any(e =>
                 {
                     try { return routingComboId is not null
-                        && System.Text.RegularExpressions.Regex.IsMatch(routingComboId, e.GetValue<string>()); }
+                        && System.Text.RegularExpressions.Regex.IsMatch(routingComboId, e.GetValue<string>(), System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200)); }
                     catch { return false; }
                 });
             var steps = excluded ? []

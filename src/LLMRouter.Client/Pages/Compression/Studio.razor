@@ -70,21 +70,30 @@
         {
             var r = await Api.PostAsync("api/compression/preview",
                 new { text = _text, engineId = _engine, intensity = _intensity.Length > 0 ? _intensity : (string?)null });
-            if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stats", out var st))
-            {
-                var b = I(st, "beforeChars");
-                var a = I(st, "afterChars");
-                _stats = new(b, a, b - a, b > 0 ? (b - a) * 100.0 / b : 0);
-            }
-            if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("runs", out var rr))
-                _runs = rr.EnumerateArray().Select(x => new RunRow(
-                    x.TryGetProperty("engine", out var e) ? e.GetString() ?? "" : "",
-                    I(x, "beforeChars"), I(x, "afterChars"),
-                    x.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String ? rs.GetString() : null)).ToList();
-            _output = r.ValueKind == JsonValueKind.Object && r.TryGetProperty("body", out var bb) ? bb.GetRawText() : r.GetRawText();
+            ReadResult(r);
         }
         finally { _busy = false; }
     }
+
+    private void ReadResult(JsonElement r)
+    {
+        if (r.ValueKind != JsonValueKind.Object) { _output = r.GetRawText(); return; }
+        if (r.TryGetProperty("stats", out var st))
+        {
+            var b = I(st, "beforeChars");
+            var a = I(st, "afterChars");
+            _stats = new(b, a, b - a, b > 0 ? (b - a) * 100.0 / b : 0);
+        }
+        if (r.TryGetProperty("runs", out var rr))
+            _runs = rr.EnumerateArray().Select(ToRunRow).ToList();
+        _output = r.TryGetProperty("body", out var bb) ? bb.GetRawText() : r.GetRawText();
+    }
+
+    private static RunRow ToRunRow(JsonElement x)
+        => new(
+            x.TryGetProperty("engine", out var e) ? e.GetString() ?? "" : "",
+            I(x, "beforeChars"), I(x, "afterChars"),
+            x.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String ? rs.GetString() : null);
 
     private static int I(JsonElement e, string k)
         => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;

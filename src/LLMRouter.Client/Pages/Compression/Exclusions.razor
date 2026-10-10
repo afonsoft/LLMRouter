@@ -51,7 +51,7 @@
         foreach (var p in _patterns.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             bool hit;
-            try { hit = System.Text.RegularExpressions.Regex.IsMatch(_test, p); } catch { hit = false; }
+            try { hit = System.Text.RegularExpressions.Regex.IsMatch(_test, p, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200)); } catch { hit = false; }
             if (hit) yield return p;
         }
     }

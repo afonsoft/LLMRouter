@@ -47,7 +47,7 @@
 @code {
     private long _requests, _promptTokens, _completionTokens, _avgLatencyMs;
     private double _successRate;
-    private List<TopModel> _topModels = new();
+    private readonly List<TopModel> _topModels = new();
     private sealed record TopModel(string Model, long Requests, long Tokens, double Cost);
     private sealed record Section(string Key, string Fallback, string SubFallback, string Icon, string Url);
     private static readonly Section[] _sections =
@@ -62,15 +62,20 @@
     protected override async Task OnInitializedAsync()
     {
         var r = await Api.GetAsync("api/usage/analytics?days=7");
+        ReadSummary(r);
+        if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("topModels", out var tm))
+            foreach (var m in tm.EnumerateArray())
+                _topModels.Add(new(m.TryGetProperty("model", out var mm) ? mm.GetString() ?? "?" : "?",
+                    El(m, "requests"), El(m, "tokens"), Num(m, "cost")));
+    }
+
+    private void ReadSummary(JsonElement r)
+    {
         _requests = El(r, "requests");
         _successRate = Num(r, "successRate");
         _promptTokens = El(r, "promptTokens");
         _completionTokens = El(r, "completionTokens");
         _avgLatencyMs = El(r, "avgLatencyMs");
-        if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("topModels", out var tm))
-            foreach (var m in tm.EnumerateArray())
-                _topModels.Add(new(m.TryGetProperty("model", out var mm) ? mm.GetString() ?? "?" : "?",
-                    El(m, "requests"), El(m, "tokens"), Num(m, "cost")));
     }
 
     private static long El(JsonElement e, string k)

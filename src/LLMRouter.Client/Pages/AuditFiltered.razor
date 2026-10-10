@@ -39,20 +39,29 @@
         _key = isMcp ? "auditMcp" : "auditA2a";
         _fallback = isMcp ? "MCP audit" : "A2A audit";
         _subFallback = isMcp ? "Tool calls and server events" : "Task lifecycle and conductor events";
-        var prefix = isMcp ? "mcp" : "a2a";
-
-        var r = await Api.GetAsync("api/audit");
-        if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("events", out var ev))
-            foreach (var e in ev.EnumerateArray())
-            {
-                var action = e.TryGetProperty("action", out var a) ? a.GetString() ?? "" : "";
-                if (!action.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-                _events.Add(new(
-                    e.TryGetProperty("at", out var at) ? at.GetString() ?? "" : "",
-                    action,
-                    e.TryGetProperty("detail", out var d) ? (d.ValueKind == JsonValueKind.String ? d.GetString() ?? "" : d.GetRawText()) : ""));
-            }
-        _events = _events.OrderByDescending(e => e.At).Take(200).ToList();
+        await Load(isMcp ? "mcp" : "a2a");
         _loaded = true;
+    }
+
+    private async Task Load(string prefix)
+    {
+        var r = await Api.GetAsync("api/audit");
+        if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("events", out var ev)) return;
+        foreach (var e in ev.EnumerateArray())
+        {
+            var action = Str(e, "action");
+            if (action.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                _events.Add(new(Str(e, "at"), action, DetailOf(e)));
+        }
+        _events = _events.OrderByDescending(x => x.At).Take(200).ToList();
+    }
+
+    private static string Str(JsonElement e, string key)
+        => e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    private static string DetailOf(JsonElement e)
+    {
+        if (!e.TryGetProperty("detail", out var d)) return "";
+        return d.ValueKind == JsonValueKind.String ? d.GetString() ?? "" : d.GetRawText();
     }
 }

@@ -694,3 +694,20 @@ public class SkillExecution
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";
 }
+
+/// <summary>SPEC-055: itens do radar (kind: catalog|offer|intel|referral).</summary>
+[Table("radarItems")]
+public class RadarItem
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Tipo do item: catalog, offer, intel, referral.</summary>
+    public string Kind { get; set; } = "";
+    /// <summary>Chave única dentro do kind (slug/url).</summary>
+    public string ItemKey { get; set; } = "";
+    public string? Title { get; set; }
+    /// <summary>Payload JSON do item.</summary>
+    public string? Data { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}

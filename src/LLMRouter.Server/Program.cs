@@ -229,6 +229,7 @@ TunnelEndpoints.Map(app);
 VersionManagerEndpoints.Map(app);
 ServiceEndpoints.Map(app);
 SkillsExtrasEndpoints.Map(app);
+RadarEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

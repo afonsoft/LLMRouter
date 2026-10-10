@@ -1341,3 +1341,29 @@ public static class ManagementEndpoints
 
     private static string Now() => DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
 }
+
+// SPEC-hotfix: GET /api/combos/{id} + GET /api/keys/{id} (páginas detalhe SPEC-067)
+public static class DetailEndpoints
+{
+    /// <summary>Mapeia GETs de detalhe que as páginas SPEC-067 consomem.</summary>
+    public static void Map(WebApplication app)
+    {
+        var g = app.MapGroup("/api").RequireAuthorization();
+        var JsonOpts = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+        g.MapGet("/combos/{id}", async (string id, LlmRouterDbContext db) =>
+        {
+            var c = await db.Combos.FindAsync(id);
+            return c is null ? Results.Json(new { error = "not found" }, JsonOpts, statusCode: 404)
+                : Results.Json(new { combo = c }, JsonOpts);
+        });
+
+        g.MapGet("/keys/{id}", async (string id, LlmRouterDbContext db) =>
+        {
+            var k = await db.ApiKeys.FindAsync(id);
+            if (k is null) return Results.Json(new { error = "not found" }, JsonOpts, statusCode: 404);
+            var lim = await LLMRouter.Core.Routing.KeyQuota.LimitsAsync(db, k.Key);
+            return Results.Json(new { key = new { k.Id, k.Name, k.IsActive, k.CreatedAt, k.AccessRestricted, k.AccessAllow }, limits = lim }, JsonOpts);
+        });
+    }
+}

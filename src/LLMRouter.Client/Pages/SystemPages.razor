@@ -57,7 +57,7 @@
         var u = Nav.Uri;
         try
         {
-            _status = await Api.GetAsync(u.EndsWith("/mitm-proxy") ? "api/mitm/status" : "api/oneproxy/status");
+            _status = await Api.GetAsync(u.EndsWith("/mitm-proxy") ? "api/mitm/status" : "api/proxy/oneproxy");
         }
         catch { }
         if (u.EndsWith("/maintenance"))

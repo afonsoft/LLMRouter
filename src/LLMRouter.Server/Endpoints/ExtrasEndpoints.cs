@@ -28,7 +28,7 @@ public static class ExtrasEndpoints
             {
                 var ok = false;
                 try { ok = (await c.GetAsync($"http://127.0.0.1:{t.Port}{t.HealthPath}")).IsSuccessStatusCode; }
-                catch { }
+                catch { /* best-effort: failure is non-fatal */ }
                 lock (results)
                     results.Add(new { name = t.Name, port = t.Port, baseUrl = $"http://127.0.0.1:{t.Port}", detected = ok });
             }));
@@ -51,10 +51,10 @@ public static class ExtrasEndpoints
                 {
                     var d = JsonDocument.Parse(c.Data).RootElement;
                     if (d.TryGetProperty("rateLimitedUntil", out var r)
-                        && DateTime.TryParse(r.GetString(), out var dt))
+                        && DateTime.TryParse(r.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dt))
                         cooldownUntil = new DateTimeOffset(dt).ToUnixTimeMilliseconds();
                 }
-                catch { }
+                catch { /* best-effort: failure is non-fatal */ }
                 return new { c.Id, c.Provider, c.IsActive, isFree, cooldownUntil };
             }).Where(x => x.isFree).ToList();
             // SPEC-029: rank by real health — breaker state, cooldown, recent

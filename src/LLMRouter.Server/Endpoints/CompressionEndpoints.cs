@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using LLMRouter.Core.Compression;
 using LLMRouter.Core.Data;
@@ -332,7 +333,7 @@ public static class CompressionEndpoints
         g.MapGet("/context/analytics", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
             var since = ctx.Request.Query["since"].ToString();
-            var days = int.TryParse(System.Text.RegularExpressions.Regex.Match(since, @"^(\d+)d$").Groups[1].Value, out var d) ? d : 7;
+            var days = int.TryParse(System.Text.RegularExpressions.Regex.Match(since, @"^(\d+)d$", RegexOptions.None, TimeSpan.FromMilliseconds(500)).Groups[1].Value, out var d) ? d : 7;
             var cutoff = DateTime.UtcNow.AddDays(-days).ToString("o");
             var runs = await db.CompressionRuns.Where(r => string.Compare(r.Timestamp, cutoff) >= 0).ToListAsync();
             var before = runs.Sum(r => r.BeforeChars);

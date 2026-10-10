@@ -88,7 +88,7 @@ public static class Extras
                 });
             }
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     /// <summary>Audit log entry appended to kv 'audit' (JSON array, capped at 1000).</summary>

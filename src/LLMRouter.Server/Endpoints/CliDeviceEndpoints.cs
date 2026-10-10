@@ -17,7 +17,7 @@ public static class CliDeviceEndpoints
     private static readonly TimeSpan TokenTtl = TimeSpan.FromMinutes(10);
 
     private static bool Expired(CliToken t) =>
-        DateTime.TryParse(t.CreatedAt, out var c) && DateTime.UtcNow - c > TokenTtl;
+        DateTime.TryParse(t.CreatedAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var c) && DateTime.UtcNow - c > TokenTtl;
 
     public static void Map(WebApplication app)
     {

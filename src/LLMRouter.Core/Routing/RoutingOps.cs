@@ -80,7 +80,7 @@ public static class RoutingOps
                     && prov.Length > 0 && prov != provider) continue;
                 if (mx.TryGetProperty("model", out var mo) && mo.GetString() is { } pat
                     && pat.Length > 0 && !(model.Contains(pat, StringComparison.OrdinalIgnoreCase)
-                        || Regex.IsMatch(model, pat, RegexOptions.IgnoreCase))) continue;
+                        || Regex.IsMatch(model, pat, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500)))) continue;
             }
             var field = rule.TryGetProperty("field", out var fl) ? fl.GetString() : null;
             if (string.IsNullOrEmpty(field)) continue;
@@ -146,8 +146,8 @@ public static class RoutingOps
             if (string.IsNullOrEmpty(pattern)) continue;
             var matched = model.Contains(pattern!, StringComparison.OrdinalIgnoreCase);
             if (!matched)
-                try { matched = Regex.IsMatch(model, pattern!, RegexOptions.IgnoreCase); }
-                catch { }
+                try { matched = Regex.IsMatch(model, pattern!, RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500)); }
+                catch { /* best-effort: failure is non-fatal */ }
             if (!matched) continue;
             var effort = rule.TryGetProperty("effort", out var e) ? e.GetString() : null;
             var node = JsonNode.Parse(body.GetRawText())!.AsObject();
@@ -206,7 +206,7 @@ public static class RoutingOps
                         urls.Add($"http://{host}:{port}");
                 }
             }
-            catch { }
+            catch { /* best-effort: failure is non-fatal */ }
             return urls;
         }
         foreach (var line in trimmed.Split('\n', StringSplitOptions.RemoveEmptyEntries))

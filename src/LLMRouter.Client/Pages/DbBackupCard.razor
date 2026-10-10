@@ -42,7 +42,7 @@
             var resp = await Api.Raw.PostAsync("api/db-backups/import", new StreamContent(stream));
             var body = await resp.Content.ReadAsStringAsync();
             _err = !resp.IsSuccessStatusCode;
-            _msg = _err ? body : body;
+            _msg = _err ? body : "Backup imported.";
         }
         catch (Exception ex) { _err = true; _msg = ex.Message; }
         _busy = false;

@@ -28,7 +28,7 @@
                 if (r.IsSuccessStatusCode)
                     _html = $"<pre class='code-block'>{System.Net.WebUtility.HtmlEncode(await r.Content.ReadAsStringAsync())}</pre>";
             }
-            catch { }
+            catch { /* best-effort: failure is non-fatal */ }
             _html ??= "<p>No changelog yet.</p>";
         }
     }

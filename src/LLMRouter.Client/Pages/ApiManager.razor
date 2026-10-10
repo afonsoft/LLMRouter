@@ -147,7 +147,7 @@
                 Expired = x.TryGetProperty("expired", out var ex) && ex.GetBoolean(),
             }).ToList();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task Load()

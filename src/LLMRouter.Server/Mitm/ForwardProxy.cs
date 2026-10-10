@@ -34,7 +34,7 @@ public static class ForwardProxy
             if (ctx.Request.Method == "CONNECT")
             {
                 ctx.Response.StatusCode = 501;
-                await ctx.Response.WriteAsync("CONNECT not supported — use plain forward proxy");
+                await ctx.Response.WriteAsync("CONNECT not supported — use plain forward proxy", ctx.RequestAborted);
                 return;
             }
             await next(ctx);
@@ -56,7 +56,7 @@ public static class ForwardProxy
             {
                 ctx.Response.StatusCode = 407;
                 ctx.Response.Headers.ProxyAuthenticate = "Basic realm=llmrouter";
-                await ctx.Response.WriteAsync("Proxy authentication required");
+                await ctx.Response.WriteAsync("Proxy authentication required", ctx.RequestAborted);
                 return;
             }
         }
@@ -88,14 +88,14 @@ public static class ForwardProxy
             ctx.Response.StatusCode = (int)resp.StatusCode;
             foreach (var h in resp.Headers.Concat(resp.Content.Headers))
                 ctx.Response.Headers[h.Key] = h.Value.ToArray();
-            var body = await resp.Content.ReadAsByteArrayAsync();
-            await ctx.Response.Body.WriteAsync(body);
+            var body = await resp.Content.ReadAsByteArrayAsync(ctx.RequestAborted);
+            await ctx.Response.Body.WriteAsync(body, ctx.RequestAborted);
             Capture(ctx, target, req, resp, body, (int)sw2.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
             ctx.Response.StatusCode = 502;
-            await ctx.Response.WriteAsync($"proxy error: {ex.Message}");
+            await ctx.Response.WriteAsync($"proxy error: {ex.Message}", ctx.RequestAborted);
             if (TrafficCapture.Enabled)
                 TrafficCapture.Add(new(Guid.NewGuid().ToString("N")[..10], DateTime.UtcNow,
                     ctx.Request.Method, new Uri(target).Host, new Uri(target).PathAndQuery,

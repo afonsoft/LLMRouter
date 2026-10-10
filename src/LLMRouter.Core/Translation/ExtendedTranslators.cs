@@ -330,8 +330,8 @@ public static class ExtendedTranslators
                 input.Add(new JsonObject
                 {
                     ["type"] = "function_call_output",
-                    ["call_id"] = m["tool_call_id"]?.DeepClone(),
-                    ["output"] = ExtractText(m["content"]),
+                    ["call_id"] = m?["tool_call_id"]?.DeepClone(),
+                    ["output"] = ExtractText(m?["content"]),
                 });
                 continue;
             }

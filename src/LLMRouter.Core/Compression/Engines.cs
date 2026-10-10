@@ -106,7 +106,7 @@ public sealed class LiteEngine : EngineBase
                 msg = TextOps.MapText(msg, t => t == "" ? t
                     : Regex.Replace(
                         Regex.Replace(
-                            Regex.Replace(t, @"\n{3,}", "\n\n"),
+                            Regex.Replace(t, @"\n{3,}", "\n\n", RegexOptions.None, TimeSpan.FromMilliseconds(500)),
                             @"[ \t]+$", "", RegexOptions.Multiline),
                         @"[^\S\n]{2,}", " "));
                 if (TextOps.ExtractText(msg) != TextOps.ExtractText(m)) { if (!techniques.Contains("whitespace")) techniques.Add("whitespace"); }
@@ -406,7 +406,7 @@ public sealed class CcrEngine : EngineBase
         new("retrievalRampFactor", "number", "Retrieval ramp factor", 2, Min: 0, Max: 20),
     ];
 
-    private static readonly Regex BlockSplit = new(@"\n{2,}", RegexOptions.Compiled);
+    private static readonly Regex BlockSplit = new(@"\n{2,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     public override CompressionResult Apply(JsonObject body, EngineOptions options)
     {
@@ -482,8 +482,8 @@ public sealed class HeadroomEngine : EngineBase
             Description: "Only arrays/tables with at least this many uniform rows are compacted."),
     ];
 
-    private static readonly Regex JsonArrayRe = new(@"\[\s*\{[\s\S]{40,}?\}\s*(?:,\s*\{[\s\S]*?\}\s*)+\]", RegexOptions.Compiled);
-    private static readonly Regex MdTableRe = new(@"(?:^\|.+\|[ \t]*\r?\n){3,}", RegexOptions.Multiline | RegexOptions.Compiled);
+    private static readonly Regex JsonArrayRe = new(@"\[\s*\{[\s\S]{40,}?\}\s*(?:,\s*\{[\s\S]*?\}\s*)+\]", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex MdTableRe = new(@"(?:^\|.+\|[ \t]*\r?\n){3,}", RegexOptions.Multiline | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     /// <summary>Compact columnar encoding: typed cells, one row per line.</summary>
     internal static string EncodeRows(List<Dictionary<string, JsonNode?>> rows, List<string> cols)
@@ -569,12 +569,12 @@ public sealed class CavemanEngine : EngineBase
         new("enabled", "boolean", "Enabled", true),
     ];
 
-    private static readonly Regex CleanupSpaces = new(@"[ \t]{2,}", RegexOptions.Compiled);
-    private static readonly Regex SpaceBeforePunct = new(@"[ \t]+([,.;:!?])", RegexOptions.Compiled);
-    private static readonly Regex MultiPunct = new(@"([.!?]){2,}", RegexOptions.Compiled);
-    private static readonly Regex TrailWs = new(@"[ \t]+$", RegexOptions.Multiline | RegexOptions.Compiled);
-    private static readonly Regex MultiNl = new(@"\n{3,}", RegexOptions.Compiled);
-    private static readonly Regex SentenceStart = new(@"(^|[.!?][ \t]|\n[ \t]*)([a-z])", RegexOptions.Compiled);
+    private static readonly Regex CleanupSpaces = new(@"[ \t]{2,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex SpaceBeforePunct = new(@"[ \t]+([,.;:!?])", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex MultiPunct = new(@"([.!?]){2,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex TrailWs = new(@"[ \t]+$", RegexOptions.Multiline | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex MultiNl = new(@"\n{3,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex SentenceStart = new(@"(^|[.!?][ \t]|\n[ \t]*)([a-z])", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     private static string CleanupArtifacts(string text) => MultiNl.Replace(
         TrailWs.Replace(MultiPunct.Replace(
@@ -591,7 +591,7 @@ public sealed class CavemanEngine : EngineBase
         var lines = text.Split('\n').Where(l => l.Trim().Length > 0).ToArray();
         if (lines.Length < 3) return false;
         var codeLike = lines.Count(l =>
-            Regex.IsMatch(l, @"^\s*(?:[#/]{1,2}|[{}()\[\];]|=>|->|::|\w+\s*[=({]|if|for|while|return|function|def |class |import |using |var |let |const |public |private |#include|#define)\b")
+            Regex.IsMatch(l, @"^\s*(?:[#/]{1,2}|[{}()\[\];]|=>|->|::|\w+\s*[=({]|if|for|while|return|function|def |class |import |using |var |let |const |public |private |#include|#define)\b", RegexOptions.None, TimeSpan.FromMilliseconds(500))
             || l.TrimStart().StartsWith("//") || l.TrimStart().StartsWith('#'));
         return (double)codeLike / lines.Length >= 0.3;
     }
@@ -608,7 +608,7 @@ public sealed class CavemanEngine : EngineBase
         var compressRoles = OptArr(cfg, "compressRoles", ["user", "assistant", "system"]);
         var skipRules = OptArr(cfg, "skipRules", []);
         var preservePatterns = OptArr(cfg, "preservePatterns", [])
-            .Select(p => { try { return new Regex(p, RegexOptions.Compiled); } catch { return null; } })
+            .Select(p => { try { return new Regex(p, RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)); } catch { return null; } })
             .Where(r => r is not null).Cast<Regex>().ToList();
 
         var appliedRules = new List<string>();
@@ -661,7 +661,7 @@ public sealed class AggressiveEngine : EngineBase
         new("minSavingsThreshold", "number", "Minimum savings threshold", 0.05, Min: 0, Max: 1),
     ];
 
-    private static readonly Regex CompressedMarker = new(@"^\[COMPRESSED:", RegexOptions.Compiled);
+    private static readonly Regex CompressedMarker = new(@"^\[COMPRESSED:", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     public override CompressionResult Apply(JsonObject body, EngineOptions options)
     {
@@ -811,9 +811,9 @@ public sealed class UltraEngine : EngineBase
         "need","needs","mustn't","won't","wouldn't","could","couldn't",
     };
 
-    private static readonly Regex ForcePreserve = new(@"\d|https?://|[._/\\]|Error:|Exception:|```", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex Whitespace = new(@"^\s+$", RegexOptions.Compiled);
-    private static readonly Regex MultiSpace = new(@"[ \t]{2,}", RegexOptions.Compiled);
+    private static readonly Regex ForcePreserve = new(@"\d|https?://|[._/\\]|Error:|Exception:|```", RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex Whitespace = new(@"^\s+$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex MultiSpace = new(@"[ \t]{2,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     private static double ScoreToken(string token)
     {
@@ -829,7 +829,7 @@ public sealed class UltraEngine : EngineBase
     internal static string PruneByScore(string text, double keepRate = 0.5, double minScore = 0.3)
     {
         if (string.IsNullOrEmpty(text) || keepRate >= 1) return text;
-        var tokens = Regex.Split(text, @"(\s+)");
+        var tokens = Regex.Split(text, @"(\s+)", RegexOptions.None, TimeSpan.FromMilliseconds(500));
         var wordIdx = tokens.Select((t, i) => (t, i)).Where(x => !Whitespace.IsMatch(x.t)).Select(x => x.i).ToList();
         var targetKeep = (int)Math.Ceiling(wordIdx.Count * keepRate);
         var scored = wordIdx.Select(i => (i, score: ScoreToken(tokens[i]))).ToList();

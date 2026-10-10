@@ -138,10 +138,10 @@ public sealed class A2aTaskExecutor(IServiceProvider sp) : BackgroundService
                     continue; // check for more queued work immediately
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { /* best-effort: failure is non-fatal */ }
             catch { /* transient db error — keep polling */ }
             try { await Task.Delay(1500, stoppingToken); }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) { /* best-effort: failure is non-fatal */ }
         }
     }
 }

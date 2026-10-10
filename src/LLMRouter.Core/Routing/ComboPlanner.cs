@@ -150,7 +150,7 @@ public class ComboPlanner
                         Add(s);
             }
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return caps;
     }
 

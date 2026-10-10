@@ -387,7 +387,7 @@ else if (Current == "backup")
             if (rt.TryGetProperty("dbPath", out var p)) _dbPath = p.GetString() ?? "";
             if (rt.TryGetProperty("dbSizeBytes", out var sz)) _dbSize = sz.GetInt64();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         var hid = await JS.InvokeAsync<string?>("llmrouter.get", "sidebar-hidden-sections");
         if (hid is not null) _hiddenSections = hid.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         else if (_data.TryGetValue("sidebarHidden", out var sh) && sh.ValueKind == JsonValueKind.Array)
@@ -437,7 +437,7 @@ else if (Current == "backup")
             var cur = await Api.GetAsync("api/proxy/oneproxy");
             _onepxCur = cur.TryGetProperty("current", out var c) ? c.GetString() ?? "-" : "-";
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task SaveRouting()
@@ -450,7 +450,7 @@ else if (Current == "backup")
                 ("task-routing", _task, false), ("oneproxy", _onepx, false) })
             {
                 if (string.IsNullOrWhiteSpace(text)) continue;
-                using var doc = JsonDocument.Parse(isArr ? text : text);
+                using var doc = JsonDocument.Parse(text);
                 await Api.PutAsync($"api/settings/{seg}", new { value = doc.RootElement.Clone() });
             }
             _routingMsg = "Routing settings saved.";

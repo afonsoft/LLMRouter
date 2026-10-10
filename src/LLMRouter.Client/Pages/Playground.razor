@@ -147,7 +147,7 @@
             _presets = r.TryGetProperty("presets", out var a)
                 ? a.EnumerateArray().Select(p => (p.GetProperty("id").GetString()!, p.GetProperty("name").GetString()!)).ToList() : [];
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task SavePreset()
@@ -226,7 +226,7 @@
                 .Select(c => (c.GetProperty("id").GetString()!, c.GetProperty("title").GetString() ?? "conv"))
                 .ToList();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task Save()
@@ -263,7 +263,7 @@
             _model = _models.FirstOrDefault() ?? _combos.FirstOrDefault() ?? "";
             await LoadPresets();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task Send()
@@ -304,7 +304,7 @@
                             StateHasChanged();
                         }
                     }
-                    catch { }
+                    catch { /* best-effort: failure is non-fatal */ }
                 }
                 if (sb.Length > 0) { _messages.Add(new("assistant", sb.ToString())); _reply = null; }
             }

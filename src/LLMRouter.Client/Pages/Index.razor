@@ -83,6 +83,6 @@
                 _recent.Add((l.GetProperty("provider").GetString() ?? "", l.GetProperty("model").GetString() ?? "",
                     l.GetProperty("timestamp").GetString() ?? "", l.GetProperty("status").GetString() ?? ""));
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 }

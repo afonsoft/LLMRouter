@@ -201,7 +201,7 @@
                 lt = de.TryGetProperty("lastTestAt", out var l) ? l.GetString() : null;
                 lat = de.TryGetProperty("latencyMs", out var lm) && lm.ValueKind == JsonValueKind.Number ? lm.GetInt64() : null;
             }
-            catch { }
+            catch { /* best-effort: failure is non-fatal */ }
             return new Conn(c.GetProperty("id").GetString()!,
                 c.TryGetProperty("name", out var n) ? n.GetString() : null,
                 c.TryGetProperty("email", out var e) ? e.GetString() : null,

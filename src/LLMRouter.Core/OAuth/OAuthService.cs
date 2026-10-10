@@ -21,7 +21,12 @@ public static class OAuthService
         string? AuthUrl, string? UserCode, string? DeviceCode,
         string? Verifier, string? PollUrl, int IntervalSec);
 
-    public static readonly ConcurrentDictionary<string, Session> Sessions = new();
+    private static readonly ConcurrentDictionary<string, Session> Sessions = new();
+
+    public static bool TryGetSession(string state, out Session session) =>
+        Sessions.TryGetValue(state, out session!);
+
+    public static bool RemoveSession(string state) => Sessions.TryRemove(state, out _);
 
     private static JsonElement OauthBlock(ProviderEntry p) =>
         p.Oauth is JsonElement je ? je

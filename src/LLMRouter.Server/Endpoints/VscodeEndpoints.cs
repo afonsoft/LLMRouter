@@ -21,7 +21,7 @@ public static class VscodeEndpoints
 
     private static async Task<VscodeToken?> Auth(HttpContext ctx, LlmRouterDbContext db, string token)
     {
-        var t = await db.VscodeTokens.FirstOrDefaultAsync(x => x.Token == token && x.IsActive);
+        var t = await db.VscodeTokens.FirstOrDefaultAsync(x => x.Token == token && x.IsActive, ctx.RequestAborted);
         if (t is null)
         {
             ctx.Response.StatusCode = 401;
@@ -127,7 +127,7 @@ public static class VscodeEndpoints
         var t = await Auth(ctx, db, token);
         if (t is null) return;
 
-        var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
+        var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync(ctx.RequestAborted);
         var allowed = Allowed(t);
         if (allowed.Length > 0 || !string.IsNullOrEmpty(t.DefaultCombo))
         {
@@ -139,7 +139,7 @@ public static class VscodeEndpoints
                     model = t.DefaultCombo;
                 if (model.Length > 0) node["model"] = model;
                 if (allowed.Length > 0 && model.Length > 0 && !allowed.Contains(model)
-                    && await db.Combos.AnyAsync(c => c.Name == model))
+                    && await db.Combos.AnyAsync(c => c.Name == model, ctx.RequestAborted))
                 {
                     ctx.Response.StatusCode = 403;
                     ctx.Response.ContentType = "application/json";
@@ -162,7 +162,7 @@ public static class VscodeEndpoints
         var t = await Auth(ctx, db, token);
         if (t is null) return;
 
-        var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
+        var raw = await new StreamReader(ctx.Request.Body).ReadToEndAsync(ctx.RequestAborted);
         string model = "";
         try
         {
@@ -172,7 +172,7 @@ public static class VscodeEndpoints
                 model = t.DefaultCombo;
             var allowed = Allowed(t);
             if (allowed.Length > 0 && model.Length > 0 && !allowed.Contains(model)
-                && await db.Combos.AnyAsync(c => c.Name == model))
+                && await db.Combos.AnyAsync(c => c.Name == model, ctx.RequestAborted))
             {
                 ctx.Response.StatusCode = 403;
                 ctx.Response.ContentType = "application/json";
@@ -198,7 +198,7 @@ public static class VscodeEndpoints
         {
             ctx.Response.StatusCode = 400;
             ctx.Response.ContentType = "application/json";
-            await ctx.Response.WriteAsync("""{"error":"malformed ollama chat body"}""");
+            await ctx.Response.WriteAsync("""{"error":"malformed ollama chat body"}""", ctx.RequestAborted);
             return;
         }
 
@@ -214,7 +214,7 @@ public static class VscodeEndpoints
         if (ctx.Response.StatusCode != 200)
         {
             ctx.Response.ContentType = "application/json";
-            await ctx.Response.WriteAsync(captured);
+            await ctx.Response.WriteAsync(captured, ctx.RequestAborted);
             return;
         }
         try
@@ -240,7 +240,7 @@ public static class VscodeEndpoints
         catch
         {
             ctx.Response.ContentType = "application/json";
-            await ctx.Response.WriteAsync(captured);
+            await ctx.Response.WriteAsync(captured, ctx.RequestAborted);
         }
     }
 
@@ -275,7 +275,7 @@ public static class VscodeEndpoints
             model = req.TryGetProperty("name", out var n) ? n.GetString() : null
                 ?? (req.TryGetProperty("model", out var mm) ? mm.GetString() : null);
         }
-        var combo = model is null ? null : await db.Combos.FirstOrDefaultAsync(c => c.Name == model);
+        var combo = model is null ? null : await db.Combos.FirstOrDefaultAsync(c => c.Name == model, ctx.RequestAborted);
         await ctx.Response.WriteAsJsonAsync(new
         {
             modelfile = combo is null ? "" : $"# combo {combo.Name}\n{combo.Models}",
@@ -306,10 +306,10 @@ public static class VscodeEndpoints
         var registry = ctx.RequestServices.GetRequiredService<ProviderRegistry>();
         var list = new List<ModelEntry>();
         var allowed = Allowed(t);
-        foreach (var combo in await db.Combos.ToListAsync())
+        foreach (var combo in await db.Combos.ToListAsync(ctx.RequestAborted))
             if (allowed.Length == 0 || allowed.Contains(combo.Name))
                 list.Add(new ModelEntry(combo.Name, "combo"));
-        foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync())
+        foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync(ctx.RequestAborted))
         {
             var p = registry.GetProvider(c.Provider);
             if (p?.Models is null) continue;

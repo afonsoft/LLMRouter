@@ -29,8 +29,8 @@ public static class ProtocolEndpoints
             messages = new[] { new { role = "user", content = prompt } },
             stream = false,
         });
-        var resp = await c.SendAsync(req);
-        var json = await resp.Content.ReadAsStringAsync();
+        var resp = await c.SendAsync(req, ctx.RequestAborted);
+        var json = await resp.Content.ReadAsStringAsync(ctx.RequestAborted);
         try
         {
             return JsonDocument.Parse(json).RootElement
@@ -78,7 +78,7 @@ public static class ProtocolEndpoints
                     await ctx.Response.Body.FlushAsync();
                 }
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException) { /* best-effort: failure is non-fatal */ }
             finally { sseSessions.TryRemove(sid, out _); }
         });
         app.MapPost("/mcp/sse/message", async (HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, LLMRouter.Core.Registry.ProviderRegistry registry) =>
@@ -117,7 +117,7 @@ public static class ProtocolEndpoints
                 case "tools/list":
                 {
                     // SPEC-019: canonical tools + dynamic chat__<model> tools
-                    var models = await db.Combos.Select(c => c.Name).ToListAsync();
+                    var models = await db.Combos.Select(c => c.Name).ToListAsync(ctx.RequestAborted);
                     var dynamic = models.Select(mn => (object)new
                     {
                         name = $"chat__{mn.Replace('-', '_').Replace('/', '_')}",
@@ -180,7 +180,7 @@ public static class ProtocolEndpoints
         var raw = ctx.Request.Headers["x-api-key"].FirstOrDefault()
             ?? ctx.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
         if (string.IsNullOrEmpty(raw)) return null;
-        var key = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == raw && k.IsActive);
+        var key = await db.ApiKeys.FirstOrDefaultAsync(k => k.Key == raw && k.IsActive, ctx.RequestAborted);
         if (key is null || !key.AccessRestricted || string.IsNullOrWhiteSpace(key.AccessAllow)) return null;
         return key.AccessAllow.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }

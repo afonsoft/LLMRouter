@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using LLMRouter.Core.Data;
 
 namespace LLMRouter.Server.Endpoints;
@@ -33,14 +34,14 @@ public static class DocsEndpoints
         var toc = new List<(int Level, string Text, string Id)>();
         var inCode = false; var inTable = false; var listDepth = 0;
         string Slug(string t) => System.Text.RegularExpressions.Regex.Replace(
-            System.Text.RegularExpressions.Regex.Replace(t.ToLowerInvariant(), @"[^a-z0-9\s-]", ""), @"\s+", "-").Trim('-');
+            System.Text.RegularExpressions.Regex.Replace(t.ToLowerInvariant(), @"[^a-z0-9\s-]", "", RegexOptions.None, TimeSpan.FromMilliseconds(500)), @"\s+", "-").Trim('-');
         string Enc(string t)
         {
             var e = System.Net.WebUtility.HtmlEncode(t);
-            e = System.Text.RegularExpressions.Regex.Replace(e, @"\*\*([^*]+)\*\*", "<b>$1</b>");
-            e = System.Text.RegularExpressions.Regex.Replace(e, @"\*([^*]+)\*", "<i>$1</i>");
-            e = System.Text.RegularExpressions.Regex.Replace(e, @"`([^`]+)`", "<code>$1</code>");
-            e = System.Text.RegularExpressions.Regex.Replace(e, @"\[([^\]]+)\]\(([^)]+)\)", "<a href='$2'>$1</a>");
+            e = System.Text.RegularExpressions.Regex.Replace(e, @"\*\*([^*]+)\*\*", "<b>$1</b>", RegexOptions.None, TimeSpan.FromMilliseconds(500));
+            e = System.Text.RegularExpressions.Regex.Replace(e, @"\*([^*]+)\*", "<i>$1</i>", RegexOptions.None, TimeSpan.FromMilliseconds(500));
+            e = System.Text.RegularExpressions.Regex.Replace(e, @"`([^`]+)`", "<code>$1</code>", RegexOptions.None, TimeSpan.FromMilliseconds(500));
+            e = System.Text.RegularExpressions.Regex.Replace(e, @"\[([^\]]+)\]\(([^)]+)\)", "<a href='$2'>$1</a>", RegexOptions.None, TimeSpan.FromMilliseconds(500));
             return e;
         }
         void CloseTable() { if (inTable) { sb.Append("</tbody></table>"); inTable = false; } }
@@ -55,7 +56,7 @@ public static class DocsEndpoints
 
             // GFM table row
             var isRow = line.StartsWith('|') && line.EndsWith('|');
-            var nextSep = i + 1 < lines.Length && System.Text.RegularExpressions.Regex.IsMatch(lines[i + 1].Trim(), @"^\|?[\s:|-]+\|[\s:|-]+\|?$");
+            var nextSep = i + 1 < lines.Length && System.Text.RegularExpressions.Regex.IsMatch(lines[i + 1].Trim(), @"^\|?[\s:|-]+\|[\s:|-]+\|?$", RegexOptions.None, TimeSpan.FromMilliseconds(500));
             if (isRow && nextSep)
             {
                 CloseLists();
@@ -93,7 +94,7 @@ public static class DocsEndpoints
             }
 
             // nested list item (2-space indents)
-            var m = System.Text.RegularExpressions.Regex.Match(raw, @"^(\s*)[-*]\s+(.*)$");
+            var m = System.Text.RegularExpressions.Regex.Match(raw, @"^(\s*)[-*]\s+(.*)$", RegexOptions.None, TimeSpan.FromMilliseconds(500));
             if (m.Success)
             {
                 CloseTable();

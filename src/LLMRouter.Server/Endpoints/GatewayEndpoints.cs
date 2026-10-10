@@ -70,7 +70,7 @@ public static class GatewayEndpoints
             model = modelId,
             connections = conns.Select(c => new { c.Id, c.Name, c.Priority }),
         };
-        await ctx.Response.WriteAsJsonAsync(result);
+        await ctx.Response.WriteAsJsonAsync(result, ctx.RequestAborted);
     }
 
     /// <summary>
@@ -201,7 +201,7 @@ public static class GatewayEndpoints
             return;
         }
 
-        var targets = await engine.ResolveAsync(model, body);
+        var targets = await engine.ResolveAsync(model, body, ctx.RequestAborted);
         targets = Core.Routing.MediaKinds.Filter(targets,
             Core.Routing.MediaKinds.KindForPath(ctx.Request.Path.Value ?? ""), t => t.Connection);
         if (targets.Count == 0)
@@ -269,17 +269,17 @@ public static class GatewayEndpoints
                             hookClient, "request",
                             new { model = mdl, status = st, ms = msDone });
                     }
-                    catch { }
+                    catch { /* best-effort: failure is non-fatal */ }
                 });
                 ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
-                await resp.Content.CopyToAsync(ctx.Response.Body);
+                await resp.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
                 if (!resp.IsSuccessStatusCode)
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, path, 0, 0,
                         ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds);
                 return;
             }
-            catch (Exception) when (target != targets[^1]) { }
+            catch (Exception) when (target != targets[^1]) { /* best-effort: failure is non-fatal */ }
         }
         // SPEC-039: every target was skipped by a provider-scope limit → 429
         if (providerLimited)
@@ -296,7 +296,7 @@ public static class GatewayEndpoints
     private static async Task<byte[]?> GetRawBody(HttpContext ctx)
     {
         using var ms = new MemoryStream();
-        await ctx.Request.Body.CopyToAsync(ms);
+        await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
         return ms.ToArray();
     }
 
@@ -304,7 +304,7 @@ public static class GatewayEndpoints
     {
         if (!await Authorized(ctx, db)) { ctx.Response.StatusCode = 401; return; }
         var models = new List<object>();
-        foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync())
+        foreach (var c in await db.ProviderConnections.Where(x => x.IsActive).ToListAsync(ctx.RequestAborted))
         {
             var p = registry.GetProvider(c.Provider);
             if (p?.Models is null) continue;
@@ -317,9 +317,9 @@ public static class GatewayEndpoints
                     owned_by = p.Alias ?? p.Id,
                 });
         }
-        foreach (var combo in await db.Combos.ToListAsync())
+        foreach (var combo in await db.Combos.ToListAsync(ctx.RequestAborted))
             models.Add(new { id = combo.Name, @object = "model", created = 0, owned_by = "combo" });
-        await ctx.Response.WriteAsJsonAsync(new { @object = "list", data = models });
+        await ctx.Response.WriteAsJsonAsync(new { @object = "list", data = models }, ctx.RequestAborted);
     }
 
     internal static async Task Chat(HttpContext ctx, string inbound, string? forcedKey = null)
@@ -585,7 +585,7 @@ public static class GatewayEndpoints
                         _ = writer2.PostAsync(async d =>
                         {
                             d.CompressionRuns.AddRange(toAdd);
-                            await d.SaveChangesAsync();
+                            await d.SaveChangesAsync(); // fire-and-forget — outlives the request
                         });
                     }
                 }
@@ -655,18 +655,18 @@ public static class GatewayEndpoints
         if (!stream && Core.Cache.PromptCache.Enabled(sdata) && body.ValueKind == JsonValueKind.Object)
         {
             cacheHash = Core.Cache.PromptCache.ComputeHash(inbound, model, body);
-            if (await Core.Cache.PromptCache.LookupAsync(db, cacheHash) is { } cached)
+            if (await Core.Cache.PromptCache.LookupAsync(db, cacheHash, ctx.RequestAborted) is { } cached)
             {
                 ctx.Response.ContentType = "application/json";
                 ctx.Response.Headers["x-cache"] = "hit";
-                await ctx.Response.WriteAsync(cached);
+                await ctx.Response.WriteAsync(cached, ctx.RequestAborted);
                 await engine.LogUsageAsync("cache", model, null, apiKey, inbound, 0, 0, "200", null, sw.ElapsedMilliseconds,
                     JsonSerializer.SerializeToElement(new { cached = true }));
                 return;
             }
         }
 
-        var targets = await engine.ResolveAsync(model, body);
+        var targets = await engine.ResolveAsync(model, body, ctx.RequestAborted);
         if (comboEntity?.Kind == "vision-adapter")
         {
             var models = JsonSerializer.Deserialize<List<string>>(comboEntity.Models) ?? [];
@@ -717,7 +717,7 @@ public static class GatewayEndpoints
                 if (!resp.IsSuccessStatusCode)
                 {
                     Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
-                    var errBody = await resp.Content.ReadAsStringAsync();
+                    var errBody = await resp.Content.ReadAsStringAsync(ctx.RequestAborted);
                     // SPEC-021: provider breaker (408/5xx) + model lockout (404/model-429)
                     Core.Resilience.ProviderBreaker.ReportStatus(target.Provider.Id,
                         (int)resp.StatusCode, target.Provider.AuthType);
@@ -785,7 +785,7 @@ public static class GatewayEndpoints
                         target.Connection.Id, target.UpstreamModel);
                     RecordStrategiesSuccess(target, body);
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
-                    await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts));
+                    await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts), ctx.RequestAborted);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail);
@@ -867,7 +867,7 @@ public static class GatewayEndpoints
     {
         var final = Translators.TranslateResponse(ChatResponseJson(model, content), "openai", inbound, model);
         ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsync(final.ToJsonString(JsonOpts));
+        await ctx.Response.WriteAsync(final.ToJsonString(JsonOpts), ctx.RequestAborted);
         await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "200", null, ms);
     }
 
@@ -982,7 +982,7 @@ public static class GatewayEndpoints
     {
         var models = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
         if (models.Count < 2) return null;
-        var stage1 = await engine.ResolveAsync(models[0], body);
+        var stage1 = await engine.ResolveAsync(models[0], body, ctx.RequestAborted);
         var t = stage1.FirstOrDefault();
         if (t is null) return null;
         try
@@ -1073,7 +1073,7 @@ public static class GatewayEndpoints
     {
         int pt = 0, ct = 0;
         var state = new Translators.SseState();
-        var reader = new StreamReader(await resp.Content.ReadAsStreamAsync());
+        var reader = new StreamReader(await resp.Content.ReadAsStreamAsync(ctx.RequestAborted));
         string? line;
         while ((line = await reader.ReadLineAsync()) is not null)
         {
@@ -1108,9 +1108,9 @@ public static class GatewayEndpoints
     private static async Task WriteSseLine(HttpContext ctx, string? ev, string data)
     {
         if (ev is not null)
-            await ctx.Response.WriteAsync($"event: {ev}\n");
-        await ctx.Response.WriteAsync($"data: {data}\n\n");
-        await ctx.Response.Body.FlushAsync();
+            await ctx.Response.WriteAsync($"event: {ev}\n", ctx.RequestAborted);
+        await ctx.Response.WriteAsync($"data: {data}\n\n", ctx.RequestAborted);
+        await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
     }
 
     private static void TrackUsage(string payload, string inbound, ref int pt, ref int ct)
@@ -1143,7 +1143,7 @@ public static class GatewayEndpoints
                 if (u.TryGetProperty("completion_tokens", out var o)) ct = o.GetInt32();
             }
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private static (int, int) ExtractUsage(JsonNodeOrElement response, string inbound)
@@ -1167,7 +1167,7 @@ public static class GatewayEndpoints
                 return (ou.TryGetProperty("prompt_tokens", out var i) ? i.GetInt32() : 0,
                         ou.TryGetProperty("completion_tokens", out var o) ? o.GetInt32() : 0);
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return (0, 0);
     }
 
@@ -1235,7 +1235,7 @@ public static class GatewayEndpoints
             "gemini" => JsonSerializer.Serialize(new { error = new { code = 400, message, status = "INVALID_ARGUMENT" } }),
             _ => JsonSerializer.Serialize(new { error = new { message, type, code = type } }),
         };
-        await ctx.Response.WriteAsync(payload);
+        await ctx.Response.WriteAsync(payload, ctx.RequestAborted);
     }
 
     /// <summary>
@@ -1258,7 +1258,7 @@ public static class GatewayEndpoints
             "gemini" => JsonSerializer.Serialize(new { error = new { code = 400, message, status = "INVALID_ARGUMENT" } }),
             _ => JsonSerializer.Serialize(new { error = new { message, type, code } }),
         };
-        await ctx.Response.WriteAsync(payload);
+        await ctx.Response.WriteAsync(payload, ctx.RequestAborted);
     }
 
     /// <summary>

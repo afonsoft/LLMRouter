@@ -35,31 +35,31 @@ public static class PromptGuard
     [
         ("system_override", new Regex(
             @"\b(ignore|disregard|forget)\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?|context)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "high"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "high"),
         ("role_hijack", new Regex(
             @"\b(you\s+are\s+now|act\s+as\s+if|pretend\s+(to\s+be|you\s+are)|from\s+now\s+on\s+you\s+are)\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "medium"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "medium"),
         ("system_prompt_leak", new Regex(
             @"\b(reveals?|shows?|displays?|prints?|outputs?|repeats?)\s+((your|the)\s+)?(system|initial|hidden|original)\s+(prompt|instructions?)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "high"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "high"),
         ("delimiter_injection", new Regex(
             @"(\[SYSTEM\]|\[INST\]|<<SYS>>|<\|im_start\|>|<\|system\|>|<\|user\|>)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "high"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "high"),
         ("jailbreak_dan", new Regex(
             @"\b(DAN|do\s+anything\s+now|jailbreak|developer\s+mode|enable\s+developer)\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "medium"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "medium"),
         ("encoding_evasion", new Regex(
             @"\b(base64\s+decode|rot13|hex\s+decode|unicode\s+escape)\b.*\b(instruction|prompt|command)\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "medium"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "medium"),
         ("authority_educational_framing", new Regex(
             $@"\b(?:{AuthorityFraming}\b[\s\S]{{0,{AuthorityWindow}}}?\b{BypassRequest}" +
             $@"|{BypassRequest}\b[\s\S]{{0,{AuthorityWindow}}}?\b{AuthorityFraming})\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "medium"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "medium"),
         // upstream DEFAULT_GUARD_PATTERNS
         ("system_override_inline", new Regex(@"\bsystem\s*:\s*override\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "high"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "high"),
         ("markdown_system_block", new Regex(@"```+\s*system\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled), "high"),
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500)), "high"),
     ];
 
     private static readonly Dictionary<string, int> SeverityScore = new()

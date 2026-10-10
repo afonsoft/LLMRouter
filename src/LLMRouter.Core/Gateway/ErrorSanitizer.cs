@@ -22,35 +22,35 @@ public static class ErrorSanitizer
     // ---------- credential patterns (credentialPatterns.ts, order matters) ----------
     private static readonly (string Name, Regex Re)[] CredentialPatterns =
     [
-        ("openai", new Regex(@"\bsk-proj-[A-Za-z0-9_-]{20,}|\bsk-[A-Za-z0-9]{48}\b", RegexOptions.Compiled)),
-        ("anthropic", new Regex(@"\bsk-ant-api[0-9]?-[A-Za-z0-9_-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}", RegexOptions.Compiled)),
-        ("groq", new Regex(@"\bgsk_[A-Za-z0-9]{20,}", RegexOptions.Compiled)),
-        ("xai", new Regex(@"\bxai-[A-Za-z0-9]{20,}", RegexOptions.Compiled)),
-        ("google", new Regex(@"\bAIza[0-9A-Za-z_-]{20,}", RegexOptions.Compiled)),
-        ("huggingface", new Regex(@"\bhf_[A-Za-z0-9]{34}\b", RegexOptions.Compiled)),
-        ("replicate", new Regex(@"\br8_[A-Za-z0-9]{37}\b", RegexOptions.Compiled)),
-        ("github", new Regex(@"\bgh[pousr]_[A-Za-z0-9]{36,}|\bgithub_pat_[A-Za-z0-9_]{20,}", RegexOptions.Compiled)),
-        ("slack", new Regex(@"\bxox[bpoa]-[A-Za-z0-9-]{10,}", RegexOptions.Compiled)),
-        ("linear", new Regex(@"\blin_api_[A-Za-z0-9]{40}\b", RegexOptions.Compiled)),
-        ("notion", new Regex(@"\bsecret_[A-Za-z0-9]{43}\b", RegexOptions.Compiled)),
-        ("npm", new Regex(@"\bnpm_[A-Za-z0-9]{36}\b", RegexOptions.Compiled)),
-        ("postman", new Regex(@"\bPMAK-[a-f0-9]{8}-[a-f0-9]{32}\b", RegexOptions.Compiled)),
-        ("discord", new Regex(@"\b[MN][A-Za-z0-9]{23}\.[A-Za-z0-9]{6}\.[A-Za-z0-9]{27}\b", RegexOptions.Compiled)),
-        ("stripe", new Regex(@"\b(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{24,}", RegexOptions.Compiled)),
-        ("square", new Regex(@"\bsq0(?:atp-[0-9A-Za-z_-]{22}|csp-[0-9A-Za-z_-]{43})", RegexOptions.Compiled)),
-        ("aws", new Regex(@"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", RegexOptions.Compiled)),
-        ("twilio", new Regex(@"\bSK[0-9a-fA-F]{32}\b", RegexOptions.Compiled)),
-        ("sendgrid", new Regex(@"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b", RegexOptions.Compiled)),
-        ("mailgun", new Regex(@"\bkey-[a-f0-9]{32}\b", RegexOptions.Compiled)),
-        ("private_key", new Regex(@"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----", RegexOptions.Compiled)),
-        ("jwt", new Regex(@"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", RegexOptions.Compiled)),
-        ("connection_string", new Regex(@"(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp)://[^:/@\s""']+:[^:/@\s""']+@", RegexOptions.Compiled)),
-        ("gitlab", new Regex(@"\bglpat-[A-Za-z0-9_-]{20,}", RegexOptions.Compiled)),
-        ("openai_compatible", new Regex(@"(?<![A-Za-z0-9])(?:[A-Za-z0-9]{3,})?sk[-_][A-Za-z0-9._~+/=-]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase)),
+        ("openai", new Regex(@"\bsk-proj-[A-Za-z0-9_-]{20,}|\bsk-[A-Za-z0-9]{48}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("anthropic", new Regex(@"\bsk-ant-api[0-9]?-[A-Za-z0-9_-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("groq", new Regex(@"\bgsk_[A-Za-z0-9]{20,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("xai", new Regex(@"\bxai-[A-Za-z0-9]{20,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("google", new Regex(@"\bAIza[0-9A-Za-z_-]{20,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("huggingface", new Regex(@"\bhf_[A-Za-z0-9]{34}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("replicate", new Regex(@"\br8_[A-Za-z0-9]{37}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("github", new Regex(@"\bgh[pousr]_[A-Za-z0-9]{36,}|\bgithub_pat_[A-Za-z0-9_]{20,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("slack", new Regex(@"\bxox[bpoa]-[A-Za-z0-9-]{10,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("linear", new Regex(@"\blin_api_[A-Za-z0-9]{40}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("notion", new Regex(@"\bsecret_[A-Za-z0-9]{43}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("npm", new Regex(@"\bnpm_[A-Za-z0-9]{36}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("postman", new Regex(@"\bPMAK-[a-f0-9]{8}-[a-f0-9]{32}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("discord", new Regex(@"\b[MN][A-Za-z0-9]{23}\.[A-Za-z0-9]{6}\.[A-Za-z0-9]{27}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("stripe", new Regex(@"\b(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{24,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("square", new Regex(@"\bsq0(?:atp-[0-9A-Za-z_-]{22}|csp-[0-9A-Za-z_-]{43})", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("aws", new Regex(@"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("twilio", new Regex(@"\bSK[0-9a-fA-F]{32}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("sendgrid", new Regex(@"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("mailgun", new Regex(@"\bkey-[a-f0-9]{32}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("private_key", new Regex(@"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("jwt", new Regex(@"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("connection_string", new Regex(@"(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp)://[^:/@\s""']+:[^:/@\s""']+@", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("gitlab", new Regex(@"\bglpat-[A-Za-z0-9_-]{20,}", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500))),
+        ("openai_compatible", new Regex(@"(?<![A-Za-z0-9])(?:[A-Za-z0-9]{3,})?sk[-_][A-Za-z0-9._~+/=-]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500))),
     ];
 
     private static readonly Regex BearerBasicRe =
-        new(@"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        new(@"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+", RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
 
     // Labeled assignments: label → failClosed (true = redact to end of string).
     private static readonly (string Label, bool FailClosed)[] CredentialLabels =
@@ -73,19 +73,19 @@ public static class ErrorSanitizer
     ];
 
     private static readonly Regex StackFrameRe =
-        new(@"^\s*(?:at\s+\S+.*\(.*:\d+:\d+\)|at\s+\S+\s+.*:\d+:\d+|File ""[^""]+"", line \d+|at\s+.*\.(?:cs|ts|js|py|go|java|rb|php)[:\s]\d+)", RegexOptions.Compiled);
+        new(@"^\s*(?:at\s+\S+.*\(.*:\d+:\d+\)|at\s+\S+\s+.*:\d+:\d+|File ""[^""]+"", line \d+|at\s+.*\.(?:cs|ts|js|py|go|java|rb|php)[:\s]\d+)", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     private static readonly Regex AbsolutePathRe =
-        new(@"(?:^|[\s(""'`])(/[\w.@~+/-][^\s()\[\]{}""'`;,<>:]*|~[/\\][^\s()\[\]{}""'`;,<>:]*|[A-Za-z]:\\[^\s()\[\]{}""'`;,<>:]*)", RegexOptions.Compiled);
+        new(@"(?:^|[\s(""'`])(/[\w.@~+/-][^\s()\[\]{}""'`;,<>:]*|~[/\\][^\s()\[\]{}""'`;,<>:]*|[A-Za-z]:\\[^\s()\[\]{}""'`;,<>:]*)", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
-    private static readonly Regex HttpUrlRe = new(@"https?://[^\s""'`<>\)\]\},;]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly Regex UrlQueryParamRe = new(@"([?&])([^=&#]+)=([^&#]*)", RegexOptions.Compiled);
-    private static readonly Regex DataUrlRe = new(@"data:([\w.+-]+/[\w.+-]+)?;base64,[A-Za-z0-9+/=_-]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex HttpUrlRe = new(@"https?://[^\s""'`<>\)\]\},;]+", RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex UrlQueryParamRe = new(@"([?&])([^=&#]+)=([^&#]*)", RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+    private static readonly Regex DataUrlRe = new(@"data:([\w.+-]+/[\w.+-]+)?;base64,[A-Za-z0-9+/=_-]+", RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
 
     private static readonly Regex BlockedKeys =
-        new(@"stack|trace|path|file|cwd|dir|password|secret|token|key|authorization|cookie|credential|session(?!_?(?:count|status)$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        new(@"stack|trace|path|file|cwd|dir|password|secret|token|key|authorization|cookie|credential|session(?!_?(?:count|status)$)", RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
     private static readonly Regex BlockedCredentialAliasKeys =
-        new(@"^(?:cf_clearance|__cf_bm|_cfuvid|_puid|sso|sso-rw|arena-auth-prod-v1(?:\.\d+)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        new(@"^(?:cf_clearance|__cf_bm|_cfuvid|_puid|sso|sso-rw|arena-auth-prod-v1(?:\.\d+)?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
     private static readonly HashSet<string> PrototypeKeys = new(["__proto__", "constructor", "prototype"]);
 
     private static readonly string[] SensitiveUrlQueryKeys =
@@ -240,7 +240,7 @@ public static class ErrorSanitizer
 
     private static string RedactPrivateKeyPemBlocks(string value) =>
         Regex.Replace(value, @"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----|$)",
-            "[REDACTED]", RegexOptions.IgnoreCase);
+            "[REDACTED]", RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(500));
 
     private static string RedactBase64DataUrls(string value) =>
         DataUrlRe.Replace(value, "[REDACTED_DATA_URL]");
@@ -297,7 +297,7 @@ public static class ErrorSanitizer
             idx = value.IndexOf('\n', next);
         }
         // inline " at foo (file.ts:1:2)" tail
-        var inline = Regex.Match(value, @"\s+at\s+[^\s]+\s+\([^\s()]+:\d+:\d+\)");
+        var inline = Regex.Match(value, @"\s+at\s+[^\s]+\s+\([^\s()]+:\d+:\d+\)", RegexOptions.None, TimeSpan.FromMilliseconds(500));
         return inline.Success ? value[..inline.Index] : value;
     }
 

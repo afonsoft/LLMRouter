@@ -33,7 +33,8 @@ public static class DbBackupEndpoints
                 await using var conn = new SqliteConnection($"Data Source={dbPath}");
                 await conn.OpenAsync();
                 await using var cmd = conn.CreateCommand();
-                cmd.CommandText = $"VACUUM INTO '{tmp.Replace("'", "''")}'";
+                cmd.CommandText = "VACUUM INTO @p0";
+                cmd.Parameters.AddWithValue("@p0", tmp);
                 await cmd.ExecuteNonQueryAsync();
                 var bytes = await File.ReadAllBytesAsync(tmp);
                 var name = $"llmrouter-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db";
@@ -41,6 +42,7 @@ public static class DbBackupEndpoints
             }
             finally
             {
+                // best-effort: failure is non-fatal
                 try { File.Delete(tmp); } catch { }
             }
         });
@@ -63,7 +65,7 @@ public static class DbBackupEndpoints
                 {
                     var rows = new List<Dictionary<string, object?>>();
                     await using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"SELECT * FROM \"{name.Replace("\"", "\"\"")}\"";
+                    cmd.CommandText = $"SELECT * FROM {SqliteIdent.Quote(name)}";
                     await using var rd = await cmd.ExecuteReaderAsync();
                     while (await rd.ReadAsync())
                     {
@@ -111,7 +113,7 @@ public static class DbBackupEndpoints
                     {
                         await using var del = conn.CreateCommand();
                         del.Transaction = (SqliteTransaction)tx;
-                        del.CommandText = $"DELETE FROM \"{name.Replace("\"", "\"\"")}\"";
+                        del.CommandText = $"DELETE FROM {SqliteIdent.Quote(name)}";
                         await del.ExecuteNonQueryAsync();
 
                         foreach (var rowEl in tbl.Value.EnumerateArray())
@@ -123,14 +125,15 @@ public static class DbBackupEndpoints
                             var i = 0;
                             foreach (var prop in rowEl.EnumerateObject())
                             {
-                                cols.Add($"\"{prop.Name.Replace("\"", "\"\"")}\"");
+                                if (!SqliteIdent.TryQuote(prop.Name, out var colName)) continue;
+                                cols.Add(colName);
                                 vals.Add($"@p{i}");
                                 prms.Add(new SqliteParameter($"@p{i}", ToDbValue(prop.Value)));
                                 i++;
                             }
                             await using var ins = conn.CreateCommand();
                             ins.Transaction = (SqliteTransaction)tx;
-                            ins.CommandText = $"INSERT INTO \"{name.Replace("\"", "\"\"")}\" ({string.Join(",", cols)}) VALUES ({string.Join(",", vals)})";
+                            ins.CommandText = $"INSERT INTO {SqliteIdent.Quote(name)} ({string.Join(",", cols)}) VALUES ({string.Join(",", vals)})";
                             ins.Parameters.AddRange(prms.ToArray());
                             await ins.ExecuteNonQueryAsync();
                             importedRows++;

@@ -39,7 +39,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (string.IsNullOrEmpty(Token)) { _state = "unknown"; return; }
+        if (string.IsNullOrEmpty(Token)
+            || !System.Text.RegularExpressions.Regex.IsMatch(Token, @"^[A-Za-z0-9_-]+$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(200)))
+        { _state = "unknown"; return; }
         try
         {
             // the poll endpoint is unauthenticated — use it to learn device/state

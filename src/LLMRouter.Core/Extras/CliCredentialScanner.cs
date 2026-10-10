@@ -39,11 +39,11 @@ public static class CliCredentialScanner
     /// <summary>JSON keys whose string values count as usable credentials.</summary>
     private static readonly Regex CredKey = new(
         "^(api_?key|key|token|access_?token|id_?token|refresh_?token|apikey)$",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     private static readonly Regex Secretish = new(
         "^(sk-[A-Za-z0-9_-]{8,}|sk-ant-[A-Za-z0-9_-]{8,}|key-[A-Za-z0-9_-]{8,}|[A-Za-z0-9_-]{24,}|ya29\\.[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\\.)",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
 
     public static List<Finding> Scan(string? home = null)
     {

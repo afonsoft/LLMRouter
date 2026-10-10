@@ -39,7 +39,7 @@
                     var j = JsonDocument.Parse(d.GetString()!).RootElement;
                     if (j.TryGetProperty("latencyMs", out var lm)) lat = lm.GetInt64();
                 }
-                catch { }
+                catch { /* best-effort: failure is non-fatal */ }
             return new Row(l.GetProperty("model").GetString() ?? "?", l.GetProperty("status").GetString() ?? "", lat);
         }).ToList();
         _max = _rows.Count == 0 ? 0 : _rows.Max(x => x.Latency);

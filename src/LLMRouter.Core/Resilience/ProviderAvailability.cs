@@ -77,7 +77,7 @@ public static class ProviderAvailability
         var t = value.Trim();
         if (long.TryParse(t, out var ms) && t == ms.ToString())
             return DateTimeOffset.FromUnixTimeMilliseconds(ms);
-        return DateTimeOffset.TryParse(t, null,
+        return DateTimeOffset.TryParse(t, System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.RoundtripKind, out var dto) ? dto : null;
     }
 }

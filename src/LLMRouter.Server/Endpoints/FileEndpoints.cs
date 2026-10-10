@@ -46,7 +46,7 @@ public static class FileEndpoints
 
     private static async Task<IResult> ListAsync(HttpContext ctx, LlmRouterDbContext db, IConfiguration cfg)
     {
-        var files = await db.Files.OrderByDescending(f => f.CreatedAt).ToListAsync();
+        var files = await db.Files.OrderByDescending(f => f.CreatedAt).ToListAsync(ctx.RequestAborted);
         return Results.Json(new { @object = "list", data = files.Select(Shape) }, JsonOpts);
     }
 
@@ -54,7 +54,7 @@ public static class FileEndpoints
     {
         if (!ctx.Request.HasFormContentType)
             return Results.Json(new { error = new { message = "multipart form with a 'file' field required", type = "invalid_request" } }, JsonOpts, statusCode: 400);
-        var form = await ctx.Request.ReadFormAsync();
+        var form = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
         var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
         if (file is null)
             return Results.Json(new { error = new { message = "file required", type = "invalid_request" } }, JsonOpts, statusCode: 400);
@@ -64,7 +64,7 @@ public static class FileEndpoints
         var id = "file-" + Guid.NewGuid().ToString("N")[..16];
         Directory.CreateDirectory(Dir(cfg));
         await using (var fs = File.Create(PathFor(cfg, id)))
-            await file.CopyToAsync(fs);
+            await file.CopyToAsync(fs, ctx.RequestAborted);
 
         var entry = new FileEntry
         {
@@ -76,7 +76,7 @@ public static class FileEndpoints
             CreatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
         };
         db.Files.Add(entry);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ctx.RequestAborted);
         return Results.Json(Shape(entry), JsonOpts);
     }
 
@@ -103,7 +103,7 @@ public static class FileEndpoints
         if (e is null)
             return Results.Json(new { error = new { message = "file not found", type = "invalid_request" } }, JsonOpts, statusCode: 404);
         db.Files.Remove(e);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ctx.RequestAborted);
         try { File.Delete(PathFor(cfg, id)); } catch { }
         return Results.Json(new { id, @object = "file", deleted = true }, JsonOpts);
     }
@@ -124,7 +124,7 @@ public static class FileEndpoints
         if (file is null || path is null || !File.Exists(path))
         {
             ctx.Response.StatusCode = 400;
-            await ctx.Response.WriteAsJsonAsync(new { error = new { message = "input_file_id missing or unreadable", type = "invalid_request" } });
+            await ctx.Response.WriteAsJsonAsync(new { error = new { message = "input_file_id missing or unreadable", type = "invalid_request" } }, ctx.RequestAborted);
             return;
         }
 
@@ -141,7 +141,7 @@ public static class FileEndpoints
             request_counts = new { total = lines.Count, completed = 0, failed = 0 },
             output_file_id = (string?)null, error_file_id = (string?)null, metadata = meta,
         })});
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ctx.RequestAborted);
 
         _ = Task.Run(async () =>
         {
@@ -182,6 +182,7 @@ public static class FileEndpoints
                         if (auth != "") req.Headers.TryAddWithoutValidation("Authorization", auth);
                         if (reqBody is { } rb)
                             req.Content = new StringContent(rb.GetRawText(), System.Text.Encoding.UTF8, "application/json");
+                        // background batch runner — outlives the request; do not use ctx.RequestAborted
                         var resp = await http.SendAsync(req);
                         var respBody = await resp.Content.ReadAsStringAsync();
                         done++;
@@ -216,7 +217,7 @@ public static class FileEndpoints
 
         var row = await db.Kv.FindAsync("v1batches", id);
         ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsync(row!.Value);
+        await ctx.Response.WriteAsync(row!.Value, ctx.RequestAborted);
     }
 
     private static async Task GetBatchAsync(HttpContext ctx, LlmRouterDbContext db, string id)
@@ -225,7 +226,7 @@ public static class FileEndpoints
         var row = await db.Kv.FindAsync("v1batches", id);
         if (row is null) { ctx.Response.StatusCode = 404; return; }
         ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsync(row.Value);
+        await ctx.Response.WriteAsync(row.Value, ctx.RequestAborted);
     }
 
     private static async Task CancelBatchAsync(HttpContext ctx, LlmRouterDbContext db, string id)
@@ -236,9 +237,9 @@ public static class FileEndpoints
         var j = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row.Value) ?? [];
         j["status"] = JsonSerializer.SerializeToElement("cancelling");
         row.Value = JsonSerializer.Serialize(j);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ctx.RequestAborted);
         ctx.Response.ContentType = "application/json";
-        await ctx.Response.WriteAsync(row.Value);
+        await ctx.Response.WriteAsync(row.Value, ctx.RequestAborted);
     }
 
     private static async Task SaveBatch(LlmRouterDbContext db, string id, string status,
@@ -284,7 +285,7 @@ public static class FileEndpoints
     private static object Shape(FileEntry e) => new
     {
         id = e.Id, @object = "file", bytes = e.Bytes,
-        created_at = DateTime.TryParse(e.CreatedAt, out var t)
+        created_at = DateTime.TryParse(e.CreatedAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var t)
             ? new DateTimeOffset(t, TimeSpan.Zero).ToUnixTimeSeconds() : 0,
         filename = e.Filename, purpose = e.Purpose,
     };
@@ -308,6 +309,6 @@ public static class FileEndpoints
             ? a[7..].Trim()
             : ctx.Request.Headers["x-api-key"].FirstOrDefault() ?? ctx.Request.Query["key"].FirstOrDefault();
         if (string.IsNullOrEmpty(key)) return false;
-        return await db.ApiKeys.AnyAsync(k => k.Key == key && k.IsActive);
+        return await db.ApiKeys.AnyAsync(k => k.Key == key && k.IsActive, ctx.RequestAborted);
     }
 }

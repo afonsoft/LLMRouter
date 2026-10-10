@@ -88,12 +88,12 @@ public static class CoreMiscEndpoints
             var all = await db.CredentialExpirations.ToListAsync();
             var now = DateTime.UtcNow;
             var expiring = all
-                .Where(x => DateTime.TryParse(x.ExpiresAt, out var e)
+                .Where(x => DateTime.TryParse(x.ExpiresAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var e)
                     && e <= now.AddDays(Math.Max(x.WarnDays, 0)))
                 .Select(x => new
                 {
                     x.Id, x.ConnectionId, x.ExpiresAt, x.WarnDays,
-                    expired = DateTime.TryParse(x.ExpiresAt, out var e2) && e2 <= now,
+                    expired = DateTime.TryParse(x.ExpiresAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var e2) && e2 <= now,
                     connection = db.ProviderConnections.Where(c => c.Id == x.ConnectionId)
                         .Select(c => new { c.Name, c.Provider }).FirstOrDefault(),
                 }).ToList();

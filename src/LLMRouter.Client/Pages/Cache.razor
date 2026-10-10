@@ -71,7 +71,7 @@
             _tokens = st.GetProperty("tokensSaved").GetInt64();
             _hitRate = st.GetProperty("hitRate").GetDouble() * 100;
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     private async Task Delete(string id) { await Api.DeleteAsync($"api/cache/entries/{id}"); await Refresh(); }

@@ -42,7 +42,7 @@ public sealed class Loc(HttpClient http, IJSRuntime js)
             if (doc.ValueKind == JsonValueKind.Object)
                 return doc.EnumerateObject().ToDictionary(kv => kv.Name, kv => kv.Value.Clone());
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
         return [];
     }
 

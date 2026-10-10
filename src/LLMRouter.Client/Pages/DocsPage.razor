@@ -31,7 +31,7 @@
             var r = await Api.GetAsync("api/docs");
             _files = r.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).OrderBy(x => x).ToList();
         }
-        catch { }
+        catch { /* best-effort: failure is non-fatal */ }
     }
 
     protected override async Task OnParametersSetAsync()

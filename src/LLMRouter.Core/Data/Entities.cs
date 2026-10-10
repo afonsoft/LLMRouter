@@ -695,6 +695,7 @@ public class SkillExecution
     public string At { get; set; } = "";
 }
 
+
 /// <summary>SPEC-055: itens do radar (kind: catalog|offer|intel|referral).</summary>
 [Table("radarItems")]
 public class RadarItem
@@ -707,6 +708,26 @@ public class RadarItem
     public string ItemKey { get; set; } = "";
     public string? Title { get; set; }
     /// <summary>Payload JSON do item.</summary>
+    public string? Data { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}
+
+/// <summary>SPEC-056: itens de gamification (kind: earned|invite|notification|server|transfer|anomaly|scoreEvent).</summary>
+[Table("gamiItems")]
+public class GamiItem
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Tipo: earned, invite, notification, server, transfer, anomaly, scoreEvent.</summary>
+    public string Kind { get; set; } = "";
+    /// <summary>Chave (badge id, invite code, server id…).</summary>
+    public string ItemKey { get; set; } = "";
+    /// <summary>Ator (api key prefix / dashboard).</summary>
+    public string? Actor { get; set; }
+    /// <summary>Pontos associados (scoreEvent/transfer).</summary>
+    public long Points { get; set; }
+    /// <summary>Payload JSON.</summary>
     public string? Data { get; set; }
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";

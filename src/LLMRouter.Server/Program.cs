@@ -74,6 +74,7 @@ builder.Services.AddScoped<GatewayEngine>(sp => new GatewayEngine(
 builder.Services.AddMemoryCache();
 builder.Services.AddHybridCache();
 builder.Services.AddHttpClient("batches");
+builder.Services.AddHttpClient("gami");
 builder.Services.AddHttpClient("logexport");
 builder.Services.AddSingleton<LLMRouter.Core.Routing.OneProxyState>();
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
@@ -230,6 +231,7 @@ VersionManagerEndpoints.Map(app);
 ServiceEndpoints.Map(app);
 SkillsExtrasEndpoints.Map(app);
 RadarEndpoints.Map(app);
+GamiEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

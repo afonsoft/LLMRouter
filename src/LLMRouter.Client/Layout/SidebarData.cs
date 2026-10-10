@@ -140,7 +140,8 @@ public static class SidebarData
                     new("leaderboard", "/dashboard/leaderboard", "leaderboard", "emoji_events", Subtitle: "leaderboardSubtitle"),
                     new("profile", "/dashboard/profile", "profile", "person", Subtitle: "profileSubtitle"),
                     new("tokens", "/dashboard/tokens", "tokens", "toll", Subtitle: "tokensSubtitle"),
-                    new("gamification-admin", "/dashboard/gamification/admin", "gamificationAdmin", "admin_panel_settings", Subtitle: "gamificationAdminSubtitle")
+                    new("gamification-admin", "/dashboard/gamification/admin", "gamificationAdmin", "admin_panel_settings", Subtitle: "gamificationAdminSubtitle"),
+                    new("gamification-hub", "/dashboard/gamification", "gamification", "stars", Subtitle: "gamificationSubtitle")
                 ]),
                 new("batch", "batchGroup", "Batch", [
                     new("batch", "/dashboard/batch", "batch", "view_list", Subtitle: "batchSubtitle"),

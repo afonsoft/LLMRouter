@@ -86,7 +86,11 @@ public sealed class GatewayEngine(
         {
             var required = ComboPlanner.DetectRequiredCapabilities(body);
             if (required.Count > 0)
-                models = planner.ReorderByCapabilities(models, required);
+            {
+                // SPEC-071: capabilityOverrides replace registry-detected caps
+                var overrides = await ComboPlanner.LoadOverridesAsync(db, ct);
+                models = planner.ReorderByCapabilities(models, required, overrides);
+            }
         }
 
         var targets = new List<ResolvedTarget>();

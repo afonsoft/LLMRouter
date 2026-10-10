@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using LLMRouter.Core.Data;
 using LLMRouter.Core.Registry;
+using Microsoft.EntityFrameworkCore;
 
 namespace LLMRouter.Core.Routing;
 
@@ -52,7 +54,8 @@ public class ComboPlanner
     /// Stable tier sort: tier 0 = satisfies hard + soft caps, tier 1 = hard only,
     /// tier 2 = rest. Never drops a model (fallback intact).
     /// </summary>
-    public List<string> ReorderByCapabilities(IReadOnlyList<string> models, HashSet<string> required)
+    public List<string> ReorderByCapabilities(IReadOnlyList<string> models, HashSet<string> required,
+        IReadOnlyDictionary<string, HashSet<string>>? overrides = null)
     {
         if (required.Count == 0 || models.Count <= 1) return models.ToList();
         var hard = required.Where(HardCaps.Contains).ToList();
@@ -60,7 +63,7 @@ public class ComboPlanner
 
         int TierOf(string m)
         {
-            var caps = GetCapabilitiesForModel(m);
+            var caps = GetCapabilitiesForModel(m, overrides);
             if (!hard.All(c => caps.Contains(c))) return 2;
             return soft.All(c => caps.Contains(c)) ? 0 : 1;
         }
@@ -72,8 +75,10 @@ public class ComboPlanner
             .ToList();
     }
 
-    /// <summary>Capability lookup for a "provider/model" ref from the embedded registry.</summary>
-    public HashSet<string> GetCapabilitiesForModel(string providerModel)
+    /// <summary>Capability lookup for a "provider/model" ref from the embedded registry.
+    /// A capabilityOverrides row for that pair REPLACES the detected set (SPEC-071).</summary>
+    public HashSet<string> GetCapabilitiesForModel(string providerModel,
+        IReadOnlyDictionary<string, HashSet<string>>? overrides = null)
     {
         var caps = new HashSet<string>(StringComparer.Ordinal);
         var slash = providerModel.IndexOf('/');
@@ -93,6 +98,59 @@ public class ComboPlanner
                 if (c is "pdf") caps.Add("pdf");
             }
         }
+        if (overrides is not null
+            && (overrides.TryGetValue(providerModel, out var o)
+                || (providerId.Length > 0 && overrides.TryGetValue($"{providerId}/{modelId}", out o))))
+            caps = new HashSet<string>(o, StringComparer.Ordinal);
+        return caps;
+    }
+
+    /// <summary>
+    /// SPEC-071: load capabilityOverrides rows as {"provider/model" -> capability set}.
+    /// The stored JSON may be an object of flags ({vision:true,tools:true}) or an
+    /// array of names (["vision","tools"]).
+    /// </summary>
+    public static async Task<Dictionary<string, HashSet<string>>> LoadOverridesAsync(
+        LlmRouterDbContext db, CancellationToken ct = default)
+    {
+        var rows = await db.CapabilityOverrides
+            .Select(o => new { o.Provider, o.Model, o.Capabilities })
+            .ToListAsync(ct);
+        var map = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+            map[$"{row.Provider}/{row.Model}"] = ParseCapabilities(row.Capabilities);
+        return map;
+    }
+
+    private static HashSet<string> ParseCapabilities(string json)
+    {
+        var caps = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            var el = JsonDocument.Parse(json).RootElement;
+            void Add(string c)
+            {
+                caps.Add(c);
+                if (c is "image" or "vision") caps.Add("vision");
+                if (c is "pdf") caps.Add("pdf");
+            }
+            if (el.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var kv in el.EnumerateObject())
+                {
+                    var on = kv.Value.ValueKind == JsonValueKind.True
+                        || (kv.Value.ValueKind == JsonValueKind.Number && kv.Value.GetDouble() != 0);
+                    if (on) Add(kv.Name);
+                }
+            }
+            else if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var c in el.EnumerateArray())
+                    if (c.ValueKind == JsonValueKind.String && c.GetString() is { Length: > 0 } s)
+                        Add(s);
+            }
+        }
+        catch { }
         return caps;
     }
 

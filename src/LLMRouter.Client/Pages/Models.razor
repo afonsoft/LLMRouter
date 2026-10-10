@@ -36,15 +36,128 @@
     </table>
 </div>
 
+@* SPEC-071: capability override editor — overrides replace registry-detected
+   capabilities in the gateway's capability-based combo reordering. *@
+<div class="card card-p mt-6">
+    <h3 class="bold mb-4">@Loc.T("models.capOverrides", "Capability overrides")</h3>
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+        <div style="min-width:160px">
+            <label class="dim" style="font-size:12px">@Loc.T("providers.provider", "Provider")</label>
+            <input class="input" @bind="_ovProvider" placeholder="openai" />
+        </div>
+        <div style="min-width:220px;flex:1">
+            <label class="dim" style="font-size:12px">@Loc.T("models.model", "Model")</label>
+            <input class="input" @bind="_ovModel" placeholder="gpt-4o" />
+        </div>
+        @foreach (var cap in _capNames)
+        {
+            <label class="xs" style="display:flex;align-items:center;gap:4px;padding-bottom:8px">
+                <input type="checkbox" checked="@_ovCaps[cap]" @onchange="e => _ovCaps[cap] = (bool)(e.Value ?? false)" />@cap
+            </label>
+        }
+        <button class="btn primary" @onclick="SaveOverride" disabled="@_ovBusy">
+            @(_ovEditing is null ? Loc.T("models.addOverride", "Add override") : Loc.T("models.saveOverride", "Save override"))
+        </button>
+        @if (_ovEditing is not null)
+        {
+            <button class="btn ghost" @onclick="ResetOverrideForm">@Loc.T("common.cancel", "Cancel")</button>
+        }
+    </div>
+    @if (_ovError is not null) { <div class="dim mt-2" style="color:var(--danger,#e5484d)">@_ovError</div> }
+
+    @if (_overrides.Count == 0)
+    {
+        <div class="empty mt-4"><span class="material-symbols-outlined">tune</span>@Loc.T("models.noOverrides", "No capability overrides")</div>
+    }
+    else
+    {
+        <table class="table mt-4">
+            <thead><tr>
+                <th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th>
+                <th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("models.updated", "Updated")</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var o in _overrides)
+            {
+                <tr>
+                    <td><span class="badge info">@o.Provider</span></td>
+                    <td class="mono sm">@o.Model</td>
+                    <td class="xs">@o.Caps</td>
+                    <td class="muted xs">@o.UpdatedAt</td>
+                    <td>
+                        <button class="btn ghost sm" @onclick="() => EditOverride(o)">@Loc.T("common.edit", "Edit")</button>
+                        <button class="btn ghost sm" @onclick="() => DeleteOverride(o)">@Loc.T("rateLimits.delete", "Delete")</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@* SPEC-071: synced available models — catalog refreshed from each provider's
+   live /models endpoint. *@
+<div class="card card-p mt-4">
+    <div class="flex" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h3 class="bold">@Loc.T("models.synced", "Synced available models")</h3>
+        <button class="btn" @onclick="SyncNow" disabled="@_syncing">
+            <span class="material-symbols-outlined" style="font-size:16px">sync</span>
+            @(_syncing ? Loc.T("models.syncing", "Syncing…") : Loc.T("models.syncNow", "Sync now"))
+        </button>
+    </div>
+    @if (_syncMsg is not null) { <div class="muted xs mt-2">@_syncMsg</div> }
+    @if (_synced.Count == 0)
+    {
+        <div class="empty mt-4"><span class="material-symbols-outlined">cloud_sync</span>@Loc.T("models.noSynced", "No synced models — run a sync")</div>
+    }
+    else
+    {
+        <table class="table mt-4">
+            <thead><tr>
+                <th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th>
+                <th>@Loc.T("models.available", "Available")</th><th>@Loc.T("models.lastSync", "Last sync")</th>
+            </tr></thead>
+            <tbody>
+            @foreach (var s in _synced)
+            {
+                <tr>
+                    <td><span class="badge info">@s.Provider</span></td>
+                    <td class="mono sm">@s.Model</td>
+                    <td><span class="chip @(s.Available ? "chip-green" : "")">@(s.Available ? "yes" : "no")</span></td>
+                    <td class="muted xs">@s.LastSyncAt</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
 @code {
     private record M(string Model, string Provider, int? ContextLength, string Caps, string Connection);
+    private record OverrideRow(string Id, string Provider, string Model, string Caps, string UpdatedAt);
+    private record SyncedRow(string Provider, string Model, bool Available, string LastSyncAt);
+
     private List<M> _models = [];
     private string _q = "";
     private bool _loading;
 
+    private static readonly string[] _capNames =
+        ["vision", "tools", "json", "streaming", "reasoning", "pdf", "audioInput", "videoInput"];
+    private List<OverrideRow> _overrides = [];
+    private string _ovProvider = "";
+    private string _ovModel = "";
+    private Dictionary<string, bool> _ovCaps = _capNames.ToDictionary(c => c, _ => false);
+    private string? _ovEditing;
+    private string? _ovError;
+    private bool _ovBusy;
+
+    private List<SyncedRow> _synced = [];
+    private string? _syncMsg;
+    private bool _syncing;
+
     protected override async Task OnInitializedAsync()
     {
-        await Reload(false);
+        await Task.WhenAll(Reload(false), LoadOverrides(), LoadSynced());
     }
 
     private async Task Reload(bool live)
@@ -66,4 +179,103 @@
         ? _models
         : _models.Where(m => m.Model.Contains(_q, StringComparison.OrdinalIgnoreCase)
             || m.Provider.Contains(_q, StringComparison.OrdinalIgnoreCase));
+
+    private async Task LoadOverrides()
+    {
+        _overrides = [];
+        var r = await Api.GetAsync("api/model-capability-overrides");
+        foreach (var o in r.GetProperty("overrides").EnumerateArray())
+            _overrides.Add(new(o.GetProperty("id").GetString()!, o.GetProperty("provider").GetString()!,
+                o.GetProperty("model").GetString()!, CapsText(o.GetProperty("capabilities")),
+                o.GetProperty("updatedAt").GetString() ?? ""));
+    }
+
+    private static string CapsText(JsonElement caps) => caps.ValueKind == JsonValueKind.Object
+        ? string.Join(", ", caps.EnumerateObject()
+            .Where(kv => kv.Value.ValueKind == JsonValueKind.True
+                || (kv.Value.ValueKind == JsonValueKind.Number && kv.Value.GetDouble() != 0))
+            .Select(kv => kv.Name))
+        : "";
+
+    private void EditOverride(OverrideRow o)
+    {
+        _ovEditing = o.Id;
+        _ovProvider = o.Provider;
+        _ovModel = o.Model;
+        var enabled = o.Caps.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        _ovCaps = _capNames.ToDictionary(c => c, c => enabled.Contains(c, StringComparer.Ordinal));
+    }
+
+    private void ResetOverrideForm()
+    {
+        _ovEditing = null;
+        _ovProvider = _ovModel = "";
+        _ovCaps = _capNames.ToDictionary(c => c, _ => false);
+        _ovError = null;
+    }
+
+    private async Task SaveOverride()
+    {
+        _ovError = null;
+        if (string.IsNullOrWhiteSpace(_ovProvider) || string.IsNullOrWhiteSpace(_ovModel))
+        {
+            _ovError = Loc.T("models.ovRequired", "provider and model are required");
+            return;
+        }
+        _ovBusy = true;
+        try
+        {
+            var caps = _ovCaps.Where(kv => kv.Value)
+                .ToDictionary(kv => kv.Key, kv => (object)true);
+            if (_ovEditing is null)
+                await Api.PostAsync("api/model-capability-overrides",
+                    new { provider = _ovProvider.Trim(), model = _ovModel.Trim(), capabilities = caps });
+            else
+                await Api.PutAsync($"api/model-capability-overrides/{_ovEditing}",
+                    new { capabilities = caps });
+            ResetOverrideForm();
+            await LoadOverrides();
+        }
+        catch (Exception ex) { _ovError = ex.Message; }
+        finally { _ovBusy = false; }
+    }
+
+    private async Task DeleteOverride(OverrideRow o)
+    {
+        await Api.DeleteAsync($"api/model-capability-overrides/{o.Id}");
+        if (_ovEditing == o.Id) ResetOverrideForm();
+        await LoadOverrides();
+    }
+
+    private async Task LoadSynced()
+    {
+        _synced = [];
+        var r = await Api.GetAsync("api/synced-available-models");
+        foreach (var s in r.GetProperty("models").EnumerateArray())
+            _synced.Add(new(s.GetProperty("provider").GetString()!, s.GetProperty("model").GetString()!,
+                s.GetProperty("available").GetBoolean(), s.GetProperty("lastSyncAt").GetString() ?? ""));
+    }
+
+    private async Task SyncNow()
+    {
+        _syncing = true; _syncMsg = null;
+        try
+        {
+            var r = await Api.Raw.PostAsJsonAsync("api/synced-available-models", new { });
+            var j = await r.Content.ReadFromJsonAsync<JsonElement>();
+            if (!r.IsSuccessStatusCode)
+                _syncMsg = j.TryGetProperty("error", out var e) ? e.GetString() : r.StatusCode.ToString();
+            else
+            {
+                var results = j.GetProperty("results").EnumerateArray();
+                _syncMsg = string.Join("; ", results.Select(x =>
+                    x.GetProperty("ok").GetBoolean()
+                        ? $"{x.GetProperty("provider").GetString()}: {x.GetProperty("count").GetInt32()}"
+                        : $"{x.GetProperty("provider").GetString()}: {x.GetProperty("error").GetString()}"));
+                await LoadSynced();
+            }
+        }
+        catch (Exception ex) { _syncMsg = ex.Message; }
+        finally { _syncing = false; }
+    }
 }

@@ -310,6 +310,26 @@ public class PlaygroundPreset
     public string CreatedAt { get; set; } = "";
 }
 
+// ---- SPEC-048: relay tokens ----
+
+[Table("relayTokens")]
+public class RelayToken
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Token { get; set; } = "";
+    public string? Name { get; set; }
+    // JSON array of allowed "provider/model" strings (empty = all); supports trailing '*'
+    public string AllowedModels { get; set; } = "[]";
+    // requests/day; 0 = unlimited
+    public int QuotaRequests { get; set; }
+    // tokens/day (prompt+completion); 0 = unlimited
+    public long QuotaTokens { get; set; }
+    public string? ExpiresAt { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+}
+
 // ---- SPEC-045: prompt cache ----
 
 [Table("cacheEntries")]

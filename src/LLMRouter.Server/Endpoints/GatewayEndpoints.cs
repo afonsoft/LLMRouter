@@ -619,6 +619,16 @@ public static class GatewayEndpoints
         // SPEC-046: thinking budget clamp/inject from settings.thinkingBudget
         body = Core.Routing.SettingsOps.ClampThinkingBudget(sdata, body, model);
 
+        // SPEC-047: payload rules (set/remove/redact/cap fields pre-dispatch)
+        // then reasoning-routing rules (effort mapping per model pattern)
+        body = Core.Routing.RoutingOps.ApplyPayloadRules(sdata, body, sysProvider, model);
+        (body, _, _) = Core.Routing.RoutingOps.ApplyReasoningRules(sdata, body, model);
+
+        // SPEC-047: oneproxy — all upstream traffic through a single proxy
+        var oneProxy = ctx.RequestServices.GetService<Core.Routing.OneProxyState>();
+        if (oneProxy is not null)
+            oneProxy.Set(await Core.Routing.RoutingOps.OneProxyCurrentAsync(db, sdata));
+
         // SPEC-045: prompt cache — replay stored responses for identical
         // non-stream requests (identity = canonical body minus volatile keys)
         string? cacheHash = null;
@@ -694,6 +704,7 @@ public static class GatewayEndpoints
                         continue; // cascade to next target
                     }
                     try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
+                    if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));
                     ctx.Response.StatusCode = (int)resp.StatusCode;
                     await WriteError(ctx, inbound, "upstream_error", errBody);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
@@ -749,6 +760,7 @@ public static class GatewayEndpoints
             {
                 lastError = ex;
                 try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
+                    if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));
                 if (target == targets[^1]) break;
             }
         }

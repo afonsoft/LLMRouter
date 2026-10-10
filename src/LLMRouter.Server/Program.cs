@@ -62,10 +62,15 @@ builder.Services.AddScoped<GatewayEngine>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("batches");
 builder.Services.AddHttpClient("logexport");
+builder.Services.AddSingleton<LLMRouter.Core.Routing.OneProxyState>();
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(10);
-});
+})
+// SPEC-047: route upstream calls through settings.oneproxy when configured
+.ConfigurePrimaryHttpMessageHandler(sp =>
+    new LLMRouter.Core.Routing.OneProxyHandler(
+        sp.GetRequiredService<LLMRouter.Core.Routing.OneProxyState>()));
 builder.Services.AddAuthentication("cookie")
     .AddCookie("cookie", o =>
     {
@@ -97,6 +102,26 @@ using (var scope = app.Services.CreateScope())
         }
     }
 }
+
+// SPEC-047: ip-filter — checked before auth/routing
+app.Use(async (ctx, next) =>
+{
+    await using var scope = ctx.RequestServices
+        .GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+    var db = scope.ServiceProvider.GetService<LLMRouter.Core.Data.LlmRouterDbContext>();
+    if (db is not null)
+    {
+        var sdata = await LLMRouter.Core.Usage.PricingService.SettingsDataAsync(db);
+        var ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (!LLMRouter.Core.Routing.RoutingOps.IpAllowed(sdata, ip))
+        {
+            ctx.Response.StatusCode = 403;
+            await ctx.Response.WriteAsJsonAsync(new { error = "ip blocked by ipFilter" });
+            return;
+        }
+    }
+    await next();
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -143,6 +168,7 @@ PlaygroundEndpoints.Map(app);
 OpenApiExplorerEndpoints.Map(app);
 CacheEndpoints.Map(app);
 SettingsOpsEndpoints.Map(app);
+SettingsRoutingEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

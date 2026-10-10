@@ -676,6 +676,13 @@ public static class GatewayEndpoints
                     $"rate limited ({pvio.Scope} '{pvio.ScopeValue}' {pvio.Kind} {pvio.Limit}/min)");
                 continue;
             }
+            // SPEC-049: session pool — lease a warm session for providers that
+            // have an active pool; released with the outcome below
+            Core.Data.PoolSession? pooled = null;
+            var sp = await db.SessionPools.FirstOrDefaultAsync(
+                p => p.Provider == target.Provider.Id && p.IsActive);
+            if (sp is not null)
+                pooled = await Core.Routing.SessionPoolOps.AcquireAsync(db, sp);
             try
             {
                 var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
@@ -702,6 +709,9 @@ public static class GatewayEndpoints
                     if (Core.Resilience.ModelLockout.IsModelScoped((int)resp.StatusCode, errBody))
                         Core.Resilience.ModelLockout.Lock(target.Provider.Id,
                             target.Connection.Id, target.UpstreamModel);
+                    if (pooled is not null)
+                        await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled,
+                            success: false, rateLimited: (int)resp.StatusCode == 429);
                     if (ShouldCascade(resp.StatusCode) && target != targets[^1])
                     {
                         lastError = new HttpRequestException($"upstream {(int)resp.StatusCode}: {errBody[..Math.Min(200, errBody.Length)]}");
@@ -724,6 +734,8 @@ public static class GatewayEndpoints
                     ctx.Response.Headers.CacheControl = "no-cache";
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
                     var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
+                    if (pooled is not null)
+                        await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: true);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
@@ -747,6 +759,8 @@ public static class GatewayEndpoints
                             target.Provider.Id, model, body.GetRawText(), translated.ToJsonString(JsonOpts),
                             Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
                     ctx.Response.ContentType = "application/json";
+                    if (pooled is not null)
+                        await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: true);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
@@ -762,6 +776,8 @@ public static class GatewayEndpoints
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ctx.RequestAborted.IsCancellationRequested)
             {
+                if (pooled is not null)
+                    await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: false);
                 lastError = ex;
                 try { await Core.Routing.SettingsOps.ReportConnectionAsync(db, sdata, target.Connection.Id, success: false); } catch { }
                     if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));

@@ -1,0 +1,181 @@
+@page "/dashboard/session-pools"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("sessionPools.title", "Session pools")</h1>
+    <p class="page-desc">@Loc.T("sessionPools.subtitle", "Pools of warm upstream sessions shared across requests")</p>
+</div>
+
+<div class="card card-p mt-6">
+    <h3 class="section-title">@Loc.T("sessionPools.new", "New pool")</h3>
+    <div class="flex gap-2 wrap items-end mt-2">
+        <input class="input" style="width:160px" @bind="_name" placeholder="name" />
+        <input class="input" style="width:160px" @bind="_provider" placeholder="provider" />
+        <select class="input" style="width:140px" @bind="_strategy">
+            <option value="round-robin">round-robin</option>
+            <option value="least-used">least-used</option>
+        </select>
+        <input class="input" style="width:80px" @bind="_min" placeholder="min" />
+        <input class="input" style="width:80px" @bind="_max" placeholder="max" />
+        <button class="btn" @onclick="Create" disabled="@_busy">@Loc.T("sessionPools.create", "Create")</button>
+    </div>
+</div>
+
+<div class="card card-p mt-6">
+    @if (_pools.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">group_work</span>@Loc.T("sessionPools.none", "No session pools")</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr>
+                <th>Pool</th><th>Provider</th><th>Strategy</th><th>Size</th><th>Sessions</th><th>Requests</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var p in _pools)
+            {
+                <tr>
+                    <td><div class="bold">@p.Name</div><div class="mono dim" style="font-size:11px">@p.Id</div></td>
+                    <td class="mono">@p.Provider</td>
+                    <td class="dim">@p.Strategy · lease @p.LeaseSeconds s</td>
+                    <td class="mono dim">@p.MinSize–@p.MaxSize</td>
+                    <td>
+                        <span class="chip chip-green" title="idle">@p.Idle</span>
+                        <span class="chip" title="busy">@p.Busy</span>
+                        <span class="chip chip-yellow" title="cooldown">@p.Cooldown</span>
+                        <span class="chip chip-red" title="dead">@p.Dead</span>
+                    </td>
+                    <td class="mono dim">@p.Successes/@p.Requests</td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn ghost sm" @onclick="() => LoadSessions(p)">@(_openId == p.Id ? "−" : "···")</button>
+                            <button class="btn ghost sm" @onclick='() => Act(p, "drain")'>drain</button>
+                            <button class="btn ghost sm" @onclick='() => Act(p, "refresh")'>refresh</button>
+                            <button class="btn ghost sm" @onclick="() => Del(p)">✕</button>
+                        </div>
+                    </td>
+                </tr>
+                @if (_openId == p.Id)
+                {
+                    <tr><td colspan="7">
+                        @if (_sessions.Count == 0) { <div class="dim">—</div> }
+                        else
+                        {
+                            <table class="table">
+                                <thead><tr><th>Session</th><th>State</th><th>Health</th><th>Requests</th><th>OK</th><th>Fails</th><th>Busy until</th><th>Cooldown until</th></tr></thead>
+                                <tbody>
+                                @foreach (var s in _sessions)
+                                {
+                                    <tr>
+                                        <td class="mono dim">@s.Id</td>
+                                        <td><span class="chip @(s.State == "idle" ? "chip-green" : s.State == "cooldown" ? "chip-yellow" : s.State == "dead" ? "chip-red" : "")">@s.State</span></td>
+                                        <td class="dim">@s.Health</td>
+                                        <td class="mono dim">@s.TotalRequests</td>
+                                        <td class="mono dim">@s.SuccessfulRequests</td>
+                                        <td class="mono dim">@s.ConsecutiveFails</td>
+                                        <td class="mono dim" style="font-size:11px">@(s.BusyUntil ?? "—")</td>
+                                        <td class="mono dim" style="font-size:11px">@(s.CooldownUntil ?? "—")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        }
+                    </td></tr>
+                }
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private bool _busy;
+    private string _name = "", _provider = "", _strategy = "round-robin", _min = "1", _max = "5";
+    private string? _openId;
+    private List<P> _pools = new();
+    private List<S> _sessions = new();
+
+    private sealed record P(string Id, string Name, string Provider, string Strategy,
+        int MinSize, int MaxSize, int LeaseSeconds,
+        int Idle, int Busy, int Cooldown, int Dead, long Requests, long Successes);
+    private sealed record S(string Id, string State, string Health,
+        long TotalRequests, long SuccessfulRequests, int ConsecutiveFails,
+        string? BusyUntil, string? CooldownUntil);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/session-pools");
+        _pools = new();
+        if (!r.TryGetProperty("pools", out var arr)) return;
+        foreach (var p in arr.EnumerateArray())
+        {
+            var ss = p.GetProperty("sessions");
+            _pools.Add(new P(
+                p.GetProperty("id").GetString() ?? "",
+                p.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+                p.GetProperty("provider").GetString() ?? "",
+                p.TryGetProperty("strategy", out var st) ? st.GetString() ?? "round-robin" : "round-robin",
+                p.TryGetProperty("minSize", out var mi) ? mi.GetInt32() : 1,
+                p.TryGetProperty("maxSize", out var ma) ? ma.GetInt32() : 5,
+                p.TryGetProperty("leaseSeconds", out var ls) ? ls.GetInt32() : 60,
+                ss.TryGetProperty("idle", out var i) ? i.GetInt32() : 0,
+                ss.TryGetProperty("busy", out var b) ? b.GetInt32() : 0,
+                ss.TryGetProperty("cooldown", out var cd) ? cd.GetInt32() : 0,
+                ss.TryGetProperty("dead", out var d) ? d.GetInt32() : 0,
+                p.TryGetProperty("requests", out var rq) ? rq.GetInt64() : 0,
+                p.TryGetProperty("successes", out var sc) ? sc.GetInt64() : 0));
+        }
+    }
+
+    private async Task LoadSessions(P p)
+    {
+        if (_openId == p.Id) { _openId = null; return; }
+        _openId = p.Id;
+        var r = await Api.GetAsync($"api/session-pools/{p.Id}/sessions");
+        _sessions = new();
+        if (!r.TryGetProperty("sessions", out var arr)) return;
+        foreach (var s in arr.EnumerateArray())
+            _sessions.Add(new S(
+                s.GetProperty("id").GetString() ?? "",
+                s.GetProperty("state").GetString() ?? "",
+                s.GetProperty("health").GetString() ?? "",
+                s.TryGetProperty("totalRequests", out var tr) ? tr.GetInt64() : 0,
+                s.TryGetProperty("successfulRequests", out var sr) ? sr.GetInt64() : 0,
+                s.TryGetProperty("consecutiveFails", out var cf) ? cf.GetInt32() : 0,
+                s.TryGetProperty("busyUntil", out var bu) ? bu.GetString() : null,
+                s.TryGetProperty("cooldownUntil", out var cu) ? cu.GetString() : null));
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        await Api.PostAsync("api/session-pools", new
+        {
+            name = string.IsNullOrWhiteSpace(_name) ? (string?)null : _name,
+            provider = _provider,
+            strategy = _strategy,
+            minSize = int.TryParse(_min, out var mi) ? mi : 1,
+            maxSize = int.TryParse(_max, out var ma) ? ma : 5,
+        });
+        _name = _provider = "";
+        _busy = false;
+        await Load();
+    }
+
+    private async Task Act(P p, string action)
+    {
+        await Api.PostAsync($"api/session-pools/{p.Id}/{action}", new { });
+        await Load();
+        if (_openId == p.Id) { _openId = null; await LoadSessions(p); }
+    }
+
+    private async Task Del(P p)
+    {
+        await Api.DeleteAsync($"api/session-pools/{p.Id}");
+        await Load();
+    }
+}

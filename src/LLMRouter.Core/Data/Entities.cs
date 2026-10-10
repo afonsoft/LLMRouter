@@ -310,6 +310,45 @@ public class PlaygroundPreset
     public string CreatedAt { get; set; } = "";
 }
 
+// ---- SPEC-049: session pools ----
+
+[Table("sessionPools")]
+public class SessionPoolRow
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Provider { get; set; } = "";
+    // "round-robin" | "least-used"
+    public string Strategy { get; set; } = "round-robin";
+    public int MinSize { get; set; } = 1;
+    public int MaxSize { get; set; } = 5;
+    public int LeaseSeconds { get; set; } = 60;
+    public bool IsActive { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}
+
+[Table("poolSessions")]
+public class PoolSession
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string PoolId { get; set; } = "";
+    public string? ConnectionId { get; set; }
+    // idle | busy | cooldown | dead
+    public string State { get; set; } = "idle";
+    // healthy | degraded | dead
+    public string Health { get; set; } = "healthy";
+    public string? BusyUntil { get; set; }
+    public string? CooldownUntil { get; set; }
+    public string? LastUsedAt { get; set; }
+    public long TotalRequests { get; set; }
+    public long SuccessfulRequests { get; set; }
+    public int ConsecutiveFails { get; set; }
+    public string CreatedAt { get; set; } = "";
+}
+
 // ---- SPEC-048: relay tokens ----
 
 [Table("relayTokens")]

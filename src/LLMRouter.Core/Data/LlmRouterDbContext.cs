@@ -56,6 +56,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<McpToolCall> McpToolCalls => Set<McpToolCall>();
     /// <summary>SPEC-058: histórico de execuções de skills.</summary>
     public DbSet<SkillExecution> SkillExecutions => Set<SkillExecution>();
+    /// <summary>SPEC-055: itens do radar (catalog/offers/intel/referrals).</summary>
+    public DbSet<RadarItem> RadarItems => Set<RadarItem>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

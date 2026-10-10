@@ -1,0 +1,94 @@
+@page "/dashboard/radar"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">Radar</h1>
+<p class="page-desc">Feeds públicos: catálogo, offers, intel, referrals + combos sugeridos</p>
+
+<div class="flex gap-2 mt-4">
+    @foreach (var t in new[] { "catalogs", "offers", "intel", "referrals", "combos", "setup" })
+    {
+        <button class="tab @(_tab == t ? "on" : "")" @onclick="() => Load(t)">@t</button>
+    }
+    <button class="btn btn-sm" style="margin-left:auto" @onclick="SyncAll">Sync all</button>
+</div>
+
+<div class="card card-p mt-4">
+    @if (_tab == "setup")
+    {
+        <h3>Sources (JSON por kind)</h3>
+        @foreach (var k in new[] { "catalog", "offer", "intel", "referral" })
+        {
+            <label class="mt-2" style="display:block">@k
+                <input class="input" @bind="_src[k]" placeholder="https://…feed.json" /></label>
+        }
+        <button class="btn btn-primary mt-4" @onclick="Save">Save</button>
+    }
+    else if (_items.ValueKind == JsonValueKind.Undefined)
+    {
+        <p>Loading…</p>
+    }
+    else if (_tab == "combos")
+    {
+        <ul>
+        @foreach (var s in Enumerate(_items, "suggestions"))
+        {
+            <li><b>@P(s,"name")</b> — @(P(s,"members")?.Replace("\\\"",""))</li>
+        }
+        </ul>
+    }
+    else
+    {
+        <ul>
+        @foreach (var i in Enumerate(_items, "items").Take(60))
+        {
+            <li><b>@P(i,"title")</b> <code>@P(i,"itemKey")</code></li>
+        }
+        </ul>
+    }
+    @if (_msg is not null) { <p class="mt-2">@_msg</p> }
+</div>
+
+@code {
+    private string _tab = "catalogs";
+    private JsonElement _items; private string? _msg;
+    private readonly Dictionary<string, string> _src = new() { ["catalog"] = "", ["offer"] = "", ["intel"] = "", ["referral"] = "" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load("catalogs");
+        try
+        {
+            var s = await Api.GetAsync("api/radar/settings");
+            if (s.TryGetProperty("sources", out var src))
+                foreach (var k in _src.Keys.ToList())
+                    if (src.TryGetProperty(k, out var u) && u.GetArrayLength() > 0) _src[k] = u[0].GetString() ?? "";
+        }
+        catch { }
+    }
+
+    private async Task Load(string t)
+    {
+        _tab = t; _items = default;
+        var path = t is "combos" or "setup" ? t == "setup" ? "settings" : "combos" : t;
+        try { _items = await Api.GetAsync($"api/radar/{path}"); } catch (Exception ex) { _msg = ex.Message; }
+    }
+
+    private async Task SyncAll()
+    {
+        try { var r = await Api.PostAsync("api/radar/sync-all", new { }); _msg = r.GetRawText()[..Math.Min(300, r.GetRawText().Length)]; }
+        catch (Exception ex) { _msg = ex.Message; }
+        await Load(_tab);
+    }
+
+    private async Task Save()
+    {
+        var body = _src.ToDictionary(kv => kv.Key, kv => kv.Value.Length > 0 ? new[] { kv.Value } : Array.Empty<string>());
+        try { await Api.PostAsync("api/radar/settings", body); _msg = "saved"; } catch (Exception ex) { _msg = ex.Message; }
+    }
+
+    private static IEnumerable<JsonElement> Enumerate(JsonElement e, string prop) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(prop, out var a) ? a.EnumerateArray() : [];
+    private static string? P(JsonElement e, string k) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) ? v.GetRawText().Trim('"') : null;
+}

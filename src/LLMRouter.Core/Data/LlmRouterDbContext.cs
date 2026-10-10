@@ -35,6 +35,9 @@ public class LlmRouterDbContext : DbContext
     public DbSet<PoolSession> PoolSessions => Set<PoolSession>();
     public DbSet<CliToken> CliTokens => Set<CliToken>();
     public DbSet<VscodeToken> VscodeTokens => Set<VscodeToken>();
+    public DbSet<EvalSuite> EvalSuites => Set<EvalSuite>();
+    public DbSet<EvalCase> EvalCases => Set<EvalCase>();
+    public DbSet<EvalRun> EvalRuns => Set<EvalRun>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -53,6 +56,8 @@ public class LlmRouterDbContext : DbContext
         mb.Entity<PoolSession>().HasIndex(e => e.PoolId);
         mb.Entity<CliToken>().HasIndex(e => e.Token).IsUnique();
         mb.Entity<VscodeToken>().HasIndex(e => e.Token).IsUnique();
+        mb.Entity<EvalCase>().HasIndex(e => e.SuiteId);
+        mb.Entity<EvalRun>().HasIndex(e => e.SuiteId);
     }
 
     // EnsureCreated isn't atomic across concurrent contexts (parallel WebApplicationFactory
@@ -98,6 +103,9 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS poolSessions (Id TEXT NOT NULL PRIMARY KEY, PoolId TEXT NOT NULL, ConnectionId TEXT NULL, State TEXT NOT NULL DEFAULT 'idle', Health TEXT NOT NULL DEFAULT 'healthy', BusyUntil TEXT NULL, CooldownUntil TEXT NULL, LastUsedAt TEXT NULL, TotalRequests INTEGER NOT NULL DEFAULT 0, SuccessfulRequests INTEGER NOT NULL DEFAULT 0, ConsecutiveFails INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS cliTokens (Id TEXT NOT NULL PRIMARY KEY, Token TEXT NOT NULL, State TEXT NOT NULL DEFAULT 'pending', DeviceName TEXT NULL, ApiKey TEXT NULL, CreatedAt TEXT NOT NULL, ApprovedAt TEXT NULL)""",
                 """CREATE TABLE IF NOT EXISTS vscodeTokens (Id TEXT NOT NULL PRIMARY KEY, Token TEXT NOT NULL, Name TEXT NULL, DefaultCombo TEXT NULL, AllowedCombos TEXT NOT NULL DEFAULT '[]', IsActive INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS evalSuites (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS evalCases (Id TEXT NOT NULL PRIMARY KEY, SuiteId TEXT NOT NULL, Input TEXT NOT NULL, ExpectType TEXT NOT NULL DEFAULT 'contains', ExpectValue TEXT NOT NULL DEFAULT '', Weight REAL NOT NULL DEFAULT 1, Ord INTEGER NOT NULL DEFAULT 0)""",
+                """CREATE TABLE IF NOT EXISTS evalRuns (Id TEXT NOT NULL PRIMARY KEY, SuiteId TEXT NOT NULL, Target TEXT NOT NULL, Status TEXT NOT NULL DEFAULT 'running', Score REAL NOT NULL DEFAULT 0, Results TEXT NOT NULL DEFAULT '[]', StartedAt TEXT NOT NULL, DurationMs INTEGER NOT NULL DEFAULT 0)""",
             })
             {
                 cmd.CommandText = ddl;

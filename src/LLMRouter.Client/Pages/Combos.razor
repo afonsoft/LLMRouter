@@ -40,6 +40,24 @@
             <button class="btn btn-sm" @onclick="SaveDefaults">@Loc.T("common.save", "Save")</button>
         </div>
     </div>
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("combos.auto", "Auto combos")</div></div>
+        <div class="muted sm mt-2">@Loc.T("combos.autoHint", "Virtual combos resolved live from the candidate pool — usable as model auto/x")</div>
+        @foreach (var a in _autoCombos)
+        {
+            <div class="flex between mt-2 items-center">
+                <div>
+                    <span class="mono sm bold">@a.Id</span>
+                    <span class="badge info ml-2">@a.Count models</span>
+                    <div class="muted sm">@a.Description</div>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <input @bind="_dupNames[a.Id]" placeholder="new combo name" style="width:140px" />
+                    <button class="btn btn-sm" @onclick="() => Duplicate(a.Id)">Materialize</button>
+                </div>
+            </div>
+        }
+    </div>
     <div class="grid grid-2 mt-4">
         @foreach (var c in _combos)
         {
@@ -221,6 +239,9 @@ else
     private string _defaultCombo = "";
     private string _handoffModel = "";
     private Dictionary<string, List<PoolProbe>> _testResults = [];
+    private List<AutoVm> _autoCombos = [];
+    private Dictionary<string, string> _dupNames = [];
+    private sealed class AutoVm { public string Id = ""; public string Description = ""; public int Count; }
     private sealed class PoolProbe { public string Model = ""; public bool Ok; public long? LastLatencyMs; }
 
     protected override async Task OnInitializedAsync() => await Load();
@@ -240,6 +261,14 @@ else
         var cd = await Api.GetAsync("api/settings/combo-defaults");
         _defaultCombo = cd.TryGetProperty("defaultCombo", out var dcv) ? dcv.GetString() ?? "" : "";
         _handoffModel = cd.TryGetProperty("handoffModel", out var hmv) ? hmv.GetString() ?? "" : "";
+        var ac = await Api.GetAsync("api/combos/auto");
+        _autoCombos = ac.GetProperty("combos").EnumerateArray().Select(x => new AutoVm
+        {
+            Id = x.GetProperty("id").GetString() ?? "",
+            Description = x.TryGetProperty("description", out var dv) ? dv.GetString() ?? "" : "",
+            Count = x.TryGetProperty("count", out var cv2) ? cv2.GetInt32() : 0,
+        }).ToList();
+        _dupNames = _autoCombos.ToDictionary(x => x.Id, _ => "");
         var ar = await Api.GetAsync("api/model-aliases");
         _aliases = ar.GetProperty("aliases").EnumerateObject()
             .Select(kv => new AliasVm { Name = kv.Name, Target = kv.Value.GetString() ?? "" }).ToList();
@@ -282,6 +311,15 @@ else
             Ok = p.GetProperty("ok").GetBoolean(),
             LastLatencyMs = p.TryGetProperty("lastLatencyMs", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt64() : null,
         }).ToList();
+    }
+
+    private async Task Duplicate(string autoId)
+    {
+        var name = _dupNames.GetValueOrDefault(autoId, "");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        await Api.PostAsync("api/combos/duplicate", new { autoId, name });
+        _dupNames[autoId] = "";
+        await Load();
     }
 
     private async Task SaveDefaults()

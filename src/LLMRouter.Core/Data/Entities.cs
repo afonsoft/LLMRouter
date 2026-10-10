@@ -500,3 +500,110 @@ public class CacheEntry
     public string CreatedAt { get; set; } = "";
     public string ExpiresAt { get; set; } = "";
 }
+
+// ---- SPEC-068: core gateway gaps (scaffold — impls in parallel specs) ----
+
+[Table("modelCooldowns")]
+public class ModelCooldown
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Until { get; set; } = "";
+    public string? Reason { get; set; }
+    public string CreatedAt { get; set; } = "";
+}
+
+[Table("fallbackChains")]
+public class FallbackChain
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    // JSON array of steps [{combo|provider/model, retries, timeoutMs}]
+    public string Steps { get; set; } = "[]";
+    public bool Active { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+}
+
+[Table("capabilityOverrides")]
+public class CapabilityOverride
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Model { get; set; } = "";
+    // JSON {vision,tools,json,streaming,reasoning,...}
+    public string Capabilities { get; set; } = "{}";
+    public string UpdatedAt { get; set; } = "";
+}
+
+[Table("syncedModels")]
+public class SyncedModel
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Model { get; set; } = "";
+    public bool Available { get; set; } = true;
+    public string LastSyncAt { get; set; } = "";
+}
+
+[Table("quotaWindows")]
+public class QuotaWindow
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Name { get; set; } = "";
+    public int WindowMinutes { get; set; }
+    public long MaxTokens { get; set; }
+    public long MaxRequests { get; set; }
+    public string CreatedAt { get; set; } = "";
+}
+
+[Table("credentialExpirations")]
+public class CredentialExpiration
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string ConnectionId { get; set; } = "";
+    public string ExpiresAt { get; set; } = "";
+    public int WarnDays { get; set; } = 7;
+}
+
+[Table("tags")]
+public class Tag
+{
+    [Key]
+    public string Id { get; set; } = "";
+    // "model" | "provider" | "combo" | "key"
+    public string TargetType { get; set; } = "";
+    public string TargetId { get; set; } = "";
+    public string Value { get; set; } = "";
+}
+
+[Table("policies")]
+public class Policy
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public int Priority { get; set; }
+    // JSON {match:{provider,model,key,tag}, action:{block|route-to|require-tag|limit}}
+    public string Rule { get; set; } = "{}";
+    public bool Enabled { get; set; } = true;
+}
+
+[Table("chatSessions")]
+public class ChatSession
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string KeyId { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string StartedAt { get; set; } = "";
+    public string LastSeenAt { get; set; } = "";
+    public int MessageCount { get; set; }
+}

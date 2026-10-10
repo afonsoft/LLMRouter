@@ -14,13 +14,18 @@ public static class HotReads
 {
     private static HotCache Cache => HotCache.Default;
 
+    // HybridCache can't serialize an Undefined JsonElement; callers guard on
+    // ValueKind == Object, so an empty object is the safe "no settings" value.
+    private static readonly JsonElement EmptyObject =
+        JsonDocument.Parse("{}").RootElement.Clone();
+
     public static Task<JsonElement> SettingsDataAsync(LlmRouterDbContext db) =>
         Cache.GetOrAddAsync("settings:data", TimeSpan.FromSeconds(10), async () =>
         {
             var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync();
-            if (row is null) return default;
+            if (row is null) return EmptyObject;
             try { return JsonDocument.Parse(row.Data).RootElement.Clone(); }
-            catch { return default; }
+            catch { return EmptyObject; }
         });
 
     public static Task<ApiKey?> ApiKeyAsync(LlmRouterDbContext db, string key) =>
@@ -52,7 +57,7 @@ public static class HotReads
             var windows = await QuotaWindowsAsync(db, provider);
             if (windows.Count == 0) return false;
             return await Routing.QuotaWindows.ExceededAsync(db, provider, CancellationToken.None);
-        });
+        }, [$"qwx:{provider}"]);
 
     public static Task<List<ProviderConnection>> ActiveConnsAsync(LlmRouterDbContext db, string provider) =>
         Cache.GetOrAddAsync($"conns:{provider}", TimeSpan.FromSeconds(15), () =>
@@ -100,13 +105,19 @@ public static class HotReads
     /// <summary>Daily-token-cap verdict per key; 5s staleness on a soft cap.</summary>
     public static Task<bool> DailyCapExceededAsync(LlmRouterDbContext db, string apiKey, string? model = null) =>
         Cache.GetOrAddAsync($"dcap:{apiKey}:{model}", TimeSpan.FromSeconds(5),
-            () => Routing.KeyQuota.DailyCapExceededAsync(db, apiKey, model));
+            () => Routing.KeyQuota.DailyCapExceededAsync(db, apiKey, model),
+            [$"dcap:{apiKey}"]);
 
     /// <summary>Tier rules (models allow-list + daily tokens) per key.</summary>
-    public static Task<(List<string>? models, int dailyTokens)> TierRulesAsync(
-        LlmRouterDbContext db, JsonElement sdata, string apiKey) =>
-        Cache.GetOrAddAsync($"tier:{apiKey}", TimeSpan.FromSeconds(30),
+    public sealed record TierRules(List<string>? Models, int DailyTokens);
+
+    public static async Task<TierRules> TierRulesAsync(
+        LlmRouterDbContext db, JsonElement sdata, string apiKey)
+    {
+        var (models, dailyTokens) = await Cache.GetOrAddAsync($"tier:{apiKey}", TimeSpan.FromSeconds(30),
             () => Routing.SettingsOps.TierRulesAsync(db, sdata, apiKey));
+        return new TierRules(models, dailyTokens);
+    }
 
     /// <summary>Chaos config match result for a model (kv read cached 10s;
     /// evaluation stays per-request so a hit is deterministic).</summary>

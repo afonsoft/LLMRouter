@@ -36,11 +36,14 @@ public class GatewayThroughputTests : IDisposable
     public async Task HotRead_CachesThenBustsOnConfigWrite()
     {
         await using var reader = SeedCtx();
-        // first read = miss, second = hit
-        var m0 = HotCache.Default.Misses;
-        (await HotReads.ApiKeyAsync(reader, "k1")).ShouldBeNull();
-        (await HotReads.ApiKeyAsync(reader, "k1")).ShouldBeNull();
-        HotCache.Default.Hits.ShouldBeGreaterThan(0);
+        // unique entry + own factory — deterministic regardless of the shared
+        // static cache/counters (parallel test classes touch the same statics)
+        var calls = 0;
+        var ck = $"k1:{Guid.NewGuid():N}";
+        Task<ApiKey?> F() { calls++; return reader.ApiKeys.AsNoTracking().FirstOrDefaultAsync(k => k.Key == "k1")!; }
+        (await HotCache.Default.GetOrAddAsync(ck, TimeSpan.FromSeconds(30), F)).ShouldBeNull();
+        (await HotCache.Default.GetOrAddAsync(ck, TimeSpan.FromSeconds(30), F)).ShouldBeNull();
+        calls.ShouldBe(1); // second read served from cache
 
         // write through another context → cache busted → next read sees the row
         await using (var writer = Ctx())
@@ -48,7 +51,8 @@ public class GatewayThroughputTests : IDisposable
             writer.ApiKeys.Add(new ApiKey { Key = "k1", Name = "n", IsActive = true });
             await writer.SaveChangesAsync();
         }
-        var found = await HotReads.ApiKeyAsync(reader, "k1");
+        var found = await HotCache.Default.GetOrAddAsync(ck, TimeSpan.FromSeconds(30), F);
+        calls.ShouldBe(2);
         found.ShouldNotBeNull();
         found.IsActive.ShouldBeTrue();
     }
@@ -62,9 +66,10 @@ public class GatewayThroughputTests : IDisposable
             seed.ApiKeys.Add(new ApiKey { Key = "k2", Name = "n", IsActive = true });
             await seed.SaveChangesAsync();
         }
-        var k = await HotReads.ApiKeyAsync(reader, "k2");
-        k.ShouldNotBeNull();
-        var hits = HotCache.Default.Hits;
+        var calls = 0;
+        var ck = $"k2:{Guid.NewGuid():N}";
+        Task<ApiKey?> F() { calls++; return reader.ApiKeys.AsNoTracking().FirstOrDefaultAsync(x => x.Key == "k2")!; }
+        (await HotCache.Default.GetOrAddAsync(ck, TimeSpan.FromSeconds(30), F)).ShouldNotBeNull();
 
         await using (var w = Ctx())
         {
@@ -75,8 +80,8 @@ public class GatewayThroughputTests : IDisposable
             });
             await w.SaveChangesAsync();
         }
-        (await HotReads.ApiKeyAsync(reader, "k2")).ShouldNotBeNull();
-        HotCache.Default.Hits.ShouldBe(hits + 1); // served from cache, not re-queried
+        (await HotCache.Default.GetOrAddAsync(ck, TimeSpan.FromSeconds(30), F)).ShouldNotBeNull();
+        calls.ShouldBe(1); // served from cache, not re-queried
     }
 
     [Fact]
@@ -118,5 +123,74 @@ public class GatewayThroughputTests : IDisposable
         await using var check = Ctx();
         (await check.UsageHistory.CountAsync(u => u.ApiKey == "bulk")).ShouldBe(40);
         factory.Dispose();
+    }
+
+    /// <summary>HybridCache wiring — only active when a HybridCache instance is
+    /// configured on the default HotCache (Program.cs does this; the test sets
+    /// it explicitly so the assertion doesn't depend on test order).</summary>
+    private static void UseHybrid()
+    {
+        var sp = new ServiceCollection().AddHybridCache().Services.BuildServiceProvider();
+        HotCache.Configure(sp.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>());
+    }
+
+    [Fact]
+    public async Task HybridCache_StampedeProtection_SingleFactoryCall()
+    {
+        UseHybrid();
+        var key = $"stampede:{Guid.NewGuid():N}";
+        var calls = 0;
+        Func<Task<int>> factory = async () =>
+        {
+            Interlocked.Increment(ref calls);
+            await Task.Delay(80);
+            return 42;
+        };
+        // 12 concurrent misses on the same key must share one factory run
+        var gets = Enumerable.Range(0, 12)
+            .Select(_ => HotCache.Default.GetOrAddAsync(key, TimeSpan.FromMinutes(1), factory))
+            .ToArray();
+        var results = await Task.WhenAll(gets);
+        results.ShouldAllBe(r => r == 42);
+        calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task HybridCache_TagInvalidation_BustsGroup()
+    {
+        UseHybrid();
+        var apiKey = $"k-{Guid.NewGuid():N}";
+        var calls = 0;
+        Task<bool> Factory() => Task.FromResult(++calls > 0);
+
+        var tag = $"dcap:{apiKey}";
+        await HotCache.Default.GetOrAddAsync($"dcap:{apiKey}:modelA", TimeSpan.FromMinutes(1), Factory, [tag]);
+        await HotCache.Default.GetOrAddAsync($"dcap:{apiKey}:modelB", TimeSpan.FromMinutes(1), Factory, [tag]);
+        calls.ShouldBe(2);
+
+        HotCache.Default.InvalidateTag(tag);
+        await HotCache.Default.GetOrAddAsync($"dcap:{apiKey}:modelA", TimeSpan.FromMinutes(1), Factory, [tag]);
+        await HotCache.Default.GetOrAddAsync($"dcap:{apiKey}:modelB", TimeSpan.FromMinutes(1), Factory, [tag]);
+        calls.ShouldBe(4); // both model-scoped entries recomputed
+    }
+
+    [Fact]
+    public async Task HybridCache_InvalidateAll_BustsComboNameCache()
+    {
+        UseHybrid();
+        await using var reader = SeedCtx();
+        var calls = 0;
+        var ckey = $"combo:{Guid.NewGuid():N}";
+        _ = await HotCache.Default.GetOrAddAsync<string?>(ckey, TimeSpan.FromMinutes(1),
+            () => { calls++; return Task.FromResult<string?>("first"); });
+        _ = await HotCache.Default.GetOrAddAsync<string?>(ckey, TimeSpan.FromMinutes(1),
+            () => { calls++; return Task.FromResult<string?>("second"); });
+        calls.ShouldBe(1); // second read was a cache hit
+
+        HotCache.Default.InvalidateAll();
+        var v = await HotCache.Default.GetOrAddAsync<string?>(ckey, TimeSpan.FromMinutes(1),
+            () => { calls++; return Task.FromResult<string?>("second"); });
+        calls.ShouldBe(2);
+        v.ShouldBe("second");
     }
 }

@@ -71,6 +71,7 @@ builder.Services.AddScoped<GatewayEngine>(sp => new GatewayEngine(
     sp.GetRequiredService<RateLimiter>(),
     sp.GetRequiredService<LLMRouter.Core.Gateway.UsageWriter>()));
 builder.Services.AddMemoryCache();
+builder.Services.AddHybridCache();
 builder.Services.AddHttpClient("batches");
 builder.Services.AddHttpClient("logexport");
 builder.Services.AddSingleton<LLMRouter.Core.Routing.OneProxyState>();
@@ -93,6 +94,10 @@ builder.Services.AddAuthentication("cookie")
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// HybridCache backs the SPEC-074 hot-path cache (stampede protection + tag busts).
+LLMRouter.Core.Gateway.HotCache.Configure(
+    app.Services.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>());
 
 using (var scope = app.Services.CreateScope())
 {

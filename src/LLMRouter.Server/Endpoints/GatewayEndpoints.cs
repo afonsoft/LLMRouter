@@ -634,7 +634,8 @@ public static class GatewayEndpoints
         // SPEC-046: tier rules — model allow-list + daily cap for the api key's tier
         if (apiKey != "dashboard")
         {
-            var (tierModels, tierDaily) = await Core.Gateway.HotReads.TierRulesAsync(db, sdata, apiKey);
+            var tierRules = await Core.Gateway.HotReads.TierRulesAsync(db, sdata, apiKey);
+            var (tierModels, tierDaily) = (tierRules.Models, tierRules.DailyTokens);
             if (tierModels is not null && !tierModels.Any(m =>
                     m == model || model.StartsWith(m + "/", StringComparison.Ordinal)))
             {

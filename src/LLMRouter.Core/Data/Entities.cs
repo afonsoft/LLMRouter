@@ -695,6 +695,7 @@ public class SkillExecution
     public string At { get; set; } = "";
 }
 
+
 /// <summary>SPEC-055: itens do radar (kind: catalog|offer|intel|referral).</summary>
 [Table("radarItems")]
 public class RadarItem

@@ -69,7 +69,7 @@ else if (section is "gamification" or "leaderboard")
         </tbody></table>
     }
 }
-else if (section is "free-tiers" or "free-provider-rankings")
+else if (section is "free-tiers")
 {
     <table class="tbl"><thead><tr><th>Provider</th><th>Connection</th><th>Active</th></tr></thead>
     <tbody>
@@ -78,6 +78,32 @@ else if (section is "free-tiers" or "free-provider-rankings")
         @foreach (var f in _free)
         {
             <tr><td>@f.GetProperty("provider").GetString()</td><td class="mono xs">@f.GetProperty("id").GetString()</td><td>@f.GetProperty("isActive").GetBoolean()</td></tr>
+        }
+    }
+    </tbody></table>
+}
+else if (section is "free-provider-rankings")
+{
+    <table class="tbl"><thead><tr>
+        <th>#</th><th>Provider</th><th>Score</th><th>Availability</th><th>Success</th>
+        <th>Avg latency</th><th>Connections</th><th>Breaker</th><th>Cooldown</th>
+    </tr></thead>
+    <tbody>
+    @if (_free is not null)
+    {
+        @foreach (var f in _free)
+        {
+            <tr>
+                <td class="muted xs">@f.GetProperty("rank").GetInt32()</td>
+                <td>@f.GetProperty("provider").GetString()</td>
+                <td class="mono">@f.GetProperty("score").GetDouble()</td>
+                <td>@(f.GetProperty("availability").GetDouble())%</td>
+                <td>@(f.GetProperty("successRate").GetDouble())%</td>
+                <td class="muted xs">@(f.GetProperty("avgLatencyMs").GetInt64())ms</td>
+                <td class="muted xs">@f.GetProperty("activeConnections").GetInt32()/@f.GetProperty("connections").GetInt32()</td>
+                <td class="muted xs">@f.GetProperty("breaker").GetString()</td>
+                <td class="muted xs">@(f.GetProperty("cooldownSec").GetInt32())s</td>
+            </tr>
         }
     }
     </tbody></table>
@@ -277,8 +303,11 @@ else
                 _gam = await Api.GetAsync("api/gamification");
                 _board = (await Api.GetAsync("api/leaderboard")).GetProperty("leaderboard").EnumerateArray().ToArray();
                 break;
-            case "free-tiers": case "free-provider-rankings":
+            case "free-tiers":
                 _free = (await Api.GetAsync("api/free-tiers")).GetProperty("providers").EnumerateArray().ToArray();
+                break;
+            case "free-provider-rankings":
+                _free = (await Api.GetAsync("api/free-provider-rankings")).GetProperty("providers").EnumerateArray().ToArray();
                 break;
             case "chaos":
                 var c = await Api.GetAsync("api/chaos");

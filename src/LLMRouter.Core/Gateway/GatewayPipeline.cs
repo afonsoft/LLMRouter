@@ -292,7 +292,7 @@ public sealed class GatewayEngine(
         // SPEC-074: usage lands via the writer — cached quota/daily-cap
         // verdicts for this provider+key are now stale.
         HotCache.Default.Invalidate($"qwx:{provider}");
-        HotCache.Default.Invalidate($"dcap:{apiKey}");
+        HotCache.Default.InvalidateTag($"dcap:{apiKey}");
 
         // SPEC-074: all DB writes funnel through the UsageWriter's dedicated
         // context — no SaveChanges on the request-scoped context per request.
@@ -346,7 +346,7 @@ public sealed class GatewayEngine(
                 await w.SaveChangesAsync();
                 // verdict keys now reflect the row we just wrote
                 HotCache.Default.Invalidate($"qwx:{provider}");
-                HotCache.Default.Invalidate($"dcap:{apiKey}");
+                HotCache.Default.InvalidateTag($"dcap:{apiKey}");
             });
 
             if (rateLimiter is not null)

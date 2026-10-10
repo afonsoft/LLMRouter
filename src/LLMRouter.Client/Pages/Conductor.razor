@@ -38,14 +38,96 @@
     </div>
 </div>
 
+<h2 class="bold" style="margin-top:28px">@Loc.T("conductor.askTitle", "Ask the conductor")</h2>
+<p class="page-desc">@Loc.T("conductor.askSubtitle", "Natural-language goal — the model decomposes it into steps and runs them")</p>
+<div class="card card-p" style="margin-bottom:14px">
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <input class="input" style="width:180px" @bind="_askModel" placeholder="model (opt)" />
+        <input class="input" style="flex:1;min-width:240px" @bind="_askGoal" placeholder="goal…" />
+        <button class="btn btn-sm" @onclick="Ask" disabled="@_busy">@Loc.T("conductor.ask", "Ask")</button>
+    </div>
+    @if (_fleet is not null)
+    {
+        <p class="dim" style="font-size:12px;margin-top:8px">@_fleet</p>
+    }
+</div>
+
+@if (_tasks is { Length: > 0 })
+{
+    <table class="table" style="font-size:13px">
+        <thead><tr><th>goal</th><th>state</th><th>steps</th><th>created</th><th></th><th></th></tr></thead>
+        <tbody>
+        @foreach (var t in _tasks)
+        {
+            var st = t.GetProperty("state").GetString()!;
+            var tid = t.GetProperty("id").GetString()!;
+            <tr>
+                <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@t.GetProperty("goal").GetString()</td>
+                <td><span class="chip @(st == "done" ? "chip-green" : st is "failed" or "cancelled" ? "chip-red" : "chip-yellow")">@st</span></td>
+                <td>@(t.GetProperty("steps").ValueKind == JsonValueKind.Object && t.GetProperty("steps").TryGetProperty("steps", out var sa) ? sa.GetArrayLength() : 0)</td>
+                <td class="dim">@t.GetProperty("createdAt").GetString()</td>
+                <td><button class="btn btn-sm" @onclick="() => _open = _open == tid ? null : tid">@(_open == tid ? "−" : "+")</button></td>
+                <td>
+                    @if (st is "queued" or "running")
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="() => CancelTask(tid)">@Loc.T("common.cancel", "Cancel")</button>
+                    }
+                </td>
+            </tr>
+            @if (_open == tid && t.TryGetProperty("result", out var res) && res.ValueKind == JsonValueKind.Object)
+            {
+                <tr><td colspan="6">
+                    <pre class="code-block" style="font-size:12px;white-space:pre-wrap">@res.GetRawText()</pre>
+                </td></tr>
+            }
+        }
+        </tbody>
+    </table>
+}
+
 @code {
     private string _wfName = "", _input = "";
+    private string _askGoal = "", _askModel = "";
+    private JsonElement[]? _tasks;
+    private string? _fleet, _open;
     private string _wfJson = "{\n  \"name\": \"review\",\n  \"steps\": [\n    {\"name\": \"draft\", \"model\": \"combo-fast\", \"prompt\": \"Summarize: {{input}}\"},\n    {\"name\": \"critique\", \"fan\": [\"m1\", \"m2\"], \"prompt\": \"Critique: {{prev}}\", \"join\": \"merge\"}\n  ]\n}";
     private JsonElement? _result;
     private List<string> _saved = [];
     private bool _busy;
 
-    protected override async Task OnInitializedAsync() => await LoadSaved();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSaved();
+        await LoadTasks();
+    }
+
+    private async Task LoadTasks()
+    {
+        var r = await Api.GetAsync("api/conductor/tasks");
+        _tasks = r.TryGetProperty("tasks", out var arr) ? arr.EnumerateArray().ToArray() : [];
+        var f = await Api.GetAsync("api/conductor/fleet");
+        if (f.TryGetProperty("workers", out var w))
+            _fleet = $"workers: {w.GetArrayLength()} · a2a: {string.Join(", ", f.GetProperty("a2aQueue").EnumerateObject().Select(kv => $"{kv.Name}={kv.Value.GetInt32()}"))}";
+    }
+
+    private async Task Ask()
+    {
+        _busy = true;
+        try
+        {
+            await Api.PostAsync("api/conductor/ask",
+                new { goal = _askGoal, model = string.IsNullOrWhiteSpace(_askModel) ? (string?)null : _askModel });
+            _askGoal = "";
+            await LoadTasks();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task CancelTask(string id)
+    {
+        await Api.Raw.PostAsJsonAsync($"api/conductor/tasks/{id}/cancel", new { });
+        await LoadTasks();
+    }
 
     private async Task LoadSaved()
     {

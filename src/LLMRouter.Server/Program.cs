@@ -39,6 +39,7 @@ builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
     return sched;
 });
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Jobs.JobScheduler>());
+builder.Services.AddHostedService<LLMRouter.Server.Endpoints.A2aTaskExecutor>();
 builder.Logging.AddProvider(LLMRouter.Server.Services.ConsoleLogBuffer.Instance);
 
 // Resolved inside the AddDbContext factory so test-provided configuration
@@ -174,6 +175,8 @@ SessionPoolEndpoints.Map(app);
 CliDeviceEndpoints.Map(app);
 VscodeEndpoints.Map(app);
 EvalsEndpoints.Map(app);
+A2aEndpoints.Map(app);
+ConductorEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

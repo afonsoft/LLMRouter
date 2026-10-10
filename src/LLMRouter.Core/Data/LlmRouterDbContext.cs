@@ -38,6 +38,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<EvalSuite> EvalSuites => Set<EvalSuite>();
     public DbSet<EvalCase> EvalCases => Set<EvalCase>();
     public DbSet<EvalRun> EvalRuns => Set<EvalRun>();
+    public DbSet<A2aTask> A2aTasks => Set<A2aTask>();
+    public DbSet<ConductorTask> ConductorTasks => Set<ConductorTask>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -58,6 +60,8 @@ public class LlmRouterDbContext : DbContext
         mb.Entity<VscodeToken>().HasIndex(e => e.Token).IsUnique();
         mb.Entity<EvalCase>().HasIndex(e => e.SuiteId);
         mb.Entity<EvalRun>().HasIndex(e => e.SuiteId);
+        mb.Entity<A2aTask>().HasIndex(e => e.State);
+        mb.Entity<ConductorTask>().HasIndex(e => e.State);
     }
 
     // EnsureCreated isn't atomic across concurrent contexts (parallel WebApplicationFactory
@@ -106,6 +110,8 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS evalSuites (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS evalCases (Id TEXT NOT NULL PRIMARY KEY, SuiteId TEXT NOT NULL, Input TEXT NOT NULL, ExpectType TEXT NOT NULL DEFAULT 'contains', ExpectValue TEXT NOT NULL DEFAULT '', Weight REAL NOT NULL DEFAULT 1, Ord INTEGER NOT NULL DEFAULT 0)""",
                 """CREATE TABLE IF NOT EXISTS evalRuns (Id TEXT NOT NULL PRIMARY KEY, SuiteId TEXT NOT NULL, Target TEXT NOT NULL, Status TEXT NOT NULL DEFAULT 'running', Score REAL NOT NULL DEFAULT 0, Results TEXT NOT NULL DEFAULT '[]', StartedAt TEXT NOT NULL, DurationMs INTEGER NOT NULL DEFAULT 0)""",
+                """CREATE TABLE IF NOT EXISTS a2aTasks (Id TEXT NOT NULL PRIMARY KEY, Agent TEXT NULL, Payload TEXT NOT NULL DEFAULT '{}', State TEXT NOT NULL DEFAULT 'queued', Result TEXT NULL, Error TEXT NULL, CreatedAt TEXT NOT NULL, StartedAt TEXT NULL, FinishedAt TEXT NULL)""",
+                """CREATE TABLE IF NOT EXISTS conductorTasks (Id TEXT NOT NULL PRIMARY KEY, Goal TEXT NOT NULL, Model TEXT NULL, Steps TEXT NOT NULL DEFAULT '[]', State TEXT NOT NULL DEFAULT 'queued', Result TEXT NULL, Error TEXT NULL, CreatedAt TEXT NOT NULL, FinishedAt TEXT NULL)""",
             })
             {
                 cmd.CommandText = ddl;

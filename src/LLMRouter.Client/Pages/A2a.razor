@@ -28,9 +28,54 @@
     }
 </div>
 
+<div class="card card-p" style="margin-top:14px">
+    <div class="flex between" style="margin-bottom:8px">
+        <h3 class="bold" style="margin:0">@Loc.T("a2a.tasks", "Task queue")</h3>
+        <button class="btn btn-sm" @onclick="LoadTasks">@Loc.T("common.refresh", "Refresh")</button>
+    </div>
+    <div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input class="input" style="width:160px" @bind="_tModel" placeholder="model/combo" />
+        <input class="input" style="flex:1;min-width:220px" @bind="_tText" placeholder="task text" />
+        <input class="input" style="width:140px" @bind="_tAgent" placeholder="agent (opt)" />
+        <button class="btn btn-sm" @onclick="Enqueue">@Loc.T("a2a.enqueue", "Enqueue")</button>
+    </div>
+    @if (_status is not null)
+    {
+        <p class="dim" style="font-size:12px">@_status</p>
+    }
+    @if (_tasks is { Length: > 0 })
+    {
+        <table class="table" style="font-size:13px">
+            <thead><tr><th>id</th><th>agent</th><th>state</th><th>created</th><th>result</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var t in _tasks)
+            {
+                var st = t.GetProperty("state").GetString()!;
+                <tr>
+                    <td><code>@t.GetProperty("id").GetString()!.Substring(0, 8)</code></td>
+                    <td>@(t.TryGetProperty("agent", out var ag) && ag.ValueKind == JsonValueKind.String ? ag.GetString() : "—")</td>
+                    <td><span class="chip @(st == "done" ? "chip-green" : st is "failed" or "cancelled" ? "chip-red" : "chip-yellow")">@st</span></td>
+                    <td class="dim">@t.GetProperty("createdAt").GetString()</td>
+                    <td class="dim" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                        @(t.TryGetProperty("result", out var rs) && rs.ValueKind == JsonValueKind.String ? rs.GetString() : t.TryGetProperty("error", out var er) && er.ValueKind == JsonValueKind.String ? er.GetString() : "")
+                    </td>
+                    <td>
+                        @if (st is "queued" or "running")
+                        {
+                            <button class="btn btn-sm btn-danger" @onclick='() => Cancel(t.GetProperty("id").GetString()!)'>@Loc.T("common.cancel", "Cancel")</button>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
 @code {
-    private string? _card, _result;
-    private string _model = "", _text = "";
+    private string? _card, _result, _status;
+    private string _model = "", _text = "", _tModel = "", _tText = "", _tAgent = "";
+    private JsonElement[]? _tasks;
 
     protected override async Task OnInitializedAsync()
     {
@@ -40,6 +85,33 @@
             _card = JsonNode.Parse(await r.Content.ReadAsStringAsync())?.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         }
         catch { }
+        await LoadTasks();
+    }
+
+    private async Task LoadTasks()
+    {
+        var r = await Api.GetAsync("api/a2a/tasks");
+        _tasks = r.TryGetProperty("tasks", out var arr) ? arr.EnumerateArray().ToArray() : [];
+        var s = await Api.GetAsync("api/a2a/status");
+        if (s.TryGetProperty("queue", out var q))
+            _status = string.Join(" · ", q.EnumerateObject().Select(kv => $"{kv.Name}: {kv.Value.GetInt32()}"));
+    }
+
+    private async Task Enqueue()
+    {
+        await Api.PostAsync("api/a2a/tasks", new
+        {
+            agent = string.IsNullOrWhiteSpace(_tAgent) ? (string?)null : _tAgent,
+            payload = new { model = _tModel, text = _tText },
+        });
+        _tText = "";
+        await LoadTasks();
+    }
+
+    private async Task Cancel(string id)
+    {
+        await Api.Raw.PostAsJsonAsync($"api/a2a/tasks/{id}/cancel", new { });
+        await LoadTasks();
     }
 
     private async Task Send()

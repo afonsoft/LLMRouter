@@ -326,6 +326,42 @@ public class VscodeToken
     public string CreatedAt { get; set; } = "";
 }
 
+// ---- SPEC-053: A2A tasks + conductor lifecycle ----
+
+[Table("a2aTasks")]
+public class A2aTask
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string? Agent { get; set; }
+    // JSON: {model, text}
+    public string Payload { get; set; } = "{}";
+    // queued | running | done | failed | cancelled
+    public string State { get; set; } = "queued";
+    public string? Result { get; set; }
+    public string? Error { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string? StartedAt { get; set; }
+    public string? FinishedAt { get; set; }
+}
+
+[Table("conductorTasks")]
+public class ConductorTask
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Goal { get; set; } = "";
+    public string? Model { get; set; }
+    // decomposed steps JSON
+    public string Steps { get; set; } = "[]";
+    // queued | running | done | failed | cancelled
+    public string State { get; set; } = "queued";
+    public string? Result { get; set; }
+    public string? Error { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string? FinishedAt { get; set; }
+}
+
 // ---- SPEC-052: evals ----
 
 [Table("evalSuites")]

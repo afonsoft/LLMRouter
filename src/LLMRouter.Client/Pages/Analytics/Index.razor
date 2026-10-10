@@ -1,0 +1,80 @@
+@page "/dashboard/analytics"
+@inject Api Api
+@inject Loc Loc
+@inject NavigationManager Nav
+
+<h1 class="page-title">@Loc.T("analytics.title", "Analytics")</h1>
+<p class="page-desc">@Loc.T("analytics.subtitle", "Request and token usage overview")</p>
+
+<div class="grid grid-4 mt-4">
+    <div class="card card-p"><div class="dim xs">@Loc.T("analytics.requests", "Requests (7d)")</div><div class="bold" style="font-size:22px">@_requests.ToString("N0")</div></div>
+    <div class="card card-p"><div class="dim xs">@Loc.T("analytics.successRate", "Success rate")</div><div class="bold" style="font-size:22px">@_successRate.ToString("F1")%</div></div>
+    <div class="card card-p"><div class="dim xs">@Loc.T("analytics.tokens", "Tokens (7d)")</div><div class="bold" style="font-size:22px">@((_promptTokens + _completionTokens).ToString("N0"))</div></div>
+    <div class="card card-p"><div class="dim xs">@Loc.T("analytics.avgLatency", "Avg latency")</div><div class="bold" style="font-size:22px">@_avgLatencyMs ms</div></div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    @foreach (var s in _sections)
+    {
+        <div class="card card-p" style="cursor:pointer" @onclick="() => Nav.NavigateTo(s.Url)">
+            <div class="flex between">
+                <div>
+                    <div class="bold">@Loc.T(s.Key, s.Fallback)</div>
+                    <div class="dim xs mt-1">@Loc.T(s.Key + "Subtitle", s.SubFallback)</div>
+                </div>
+                <span class="material-symbols-outlined muted">@s.Icon</span>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_topModels.Count > 0)
+{
+    <div class="card card-p mt-4">
+        <h3 class="bold mb-4">@Loc.T("analytics.topModels", "Top models (7d)")</h3>
+        <table class="table">
+            <thead><tr><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("analytics.requests", "Requests")</th><th>@Loc.T("analytics.tokens", "Tokens")</th><th>@Loc.T("costs.cost", "Cost")</th></tr></thead>
+            <tbody>
+            @foreach (var m in _topModels)
+            {
+                <tr><td class="mono sm">@m.Model</td><td>@m.Requests.ToString("N0")</td><td>@m.Tokens.ToString("N0")</td><td class="muted">$@m.Cost.ToString("F4")</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private long _requests, _promptTokens, _completionTokens, _avgLatencyMs;
+    private double _successRate;
+    private List<TopModel> _topModels = new();
+    private sealed record TopModel(string Model, long Requests, long Tokens, double Cost);
+    private sealed record Section(string Key, string Fallback, string SubFallback, string Icon, string Url);
+    private static readonly Section[] _sections =
+    [
+        new("analyticsComboHealth", "Combo health", "Live success and latency per routing combo", "monitor_heart", "/dashboard/analytics/combo-health"),
+        new("analyticsUtilization", "Utilization", "Provider, connection and key usage", "query_stats", "/dashboard/analytics/utilization"),
+        new("analyticsCompression", "Compression", "Context compression savings", "compress", "/dashboard/analytics/compression"),
+        new("analyticsSearch", "Search", "Inspect individual requests", "search", "/dashboard/analytics/search"),
+        new("analyticsEvals", "Evals", "Combo scoring suites", "fact_check", "/dashboard/analytics/evals"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/usage/analytics?days=7");
+        _requests = El(r, "requests");
+        _successRate = Num(r, "successRate");
+        _promptTokens = El(r, "promptTokens");
+        _completionTokens = El(r, "completionTokens");
+        _avgLatencyMs = El(r, "avgLatencyMs");
+        if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("topModels", out var tm))
+            foreach (var m in tm.EnumerateArray())
+                _topModels.Add(new(m.TryGetProperty("model", out var mm) ? mm.GetString() ?? "?" : "?",
+                    El(m, "requests"), El(m, "tokens"), Num(m, "cost")));
+    }
+
+    private static long El(JsonElement e, string k)
+        => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+    private static double Num(JsonElement e, string k)
+        => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+}

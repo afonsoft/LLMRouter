@@ -568,7 +568,17 @@ public static class GatewayEndpoints
                 && await Core.Gateway.HotReads.CompressionComboAsync(db, assigned.CompressionComboId) is { } comboRow)
                 comboPipeline = JsonNode.Parse(comboRow.Pipeline) as JsonObject;
 
-            var steps = Core.Compression.CompressionPipeline.ResolvePlan(compNode, routingComboId, comboPipeline);
+            // settings.compression.exclusions: regexes matched against the combo/model
+            // name — a match bypasses the compression pipeline for this request.
+            var excluded = compNode?["exclusions"] is JsonArray exl
+                && exl.OfType<JsonValue>().Any(e =>
+                {
+                    try { return routingComboId is not null
+                        && System.Text.RegularExpressions.Regex.IsMatch(routingComboId, e.GetValue<string>()); }
+                    catch { return false; }
+                });
+            var steps = excluded ? []
+                : Core.Compression.CompressionPipeline.ResolvePlan(compNode, routingComboId, comboPipeline);
             if (steps.Count > 0 && body.ValueKind == JsonValueKind.Object)
             {
                 var bodyNode = JsonNode.Parse(body.GetRawText()) as JsonObject;

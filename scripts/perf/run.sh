@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 PORT="${PORT:-18000}"; STUB_PORT="${STUB_PORT:-19001}"
 BASE="http://127.0.0.1:$PORT"; D="${DURATION:-20}"
 DB="$(mktemp -d)/perf.db"; JAR="$(mktemp)"; KEYSF="$(mktemp)"
-export Db__Path="$DB" ASPNETCORE_URLS="$BASE" LLMR_SYNC_WRITES=0
+export DB__PATH="$DB" ASPNETCORE_URLS="$BASE" LLMR_SYNC_WRITES=0
 
 cleanup() { kill "${SPID:-}" "${RPID:-}" 2>/dev/null || true; }
 trap cleanup EXIT

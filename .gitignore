@@ -18,3 +18,4 @@ coverage*/
 .env
 !.env.example
 .perf-pub/
+e2e/*-tmp.mjs

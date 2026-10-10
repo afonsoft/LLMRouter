@@ -1,0 +1,74 @@
+@page "/dashboard/costs/quota-share"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("costsQuotaShare", "Quota share")</h1>
+<p class="page-desc">@Loc.T("costsQuotaShareSubtitle", "How quota pools split usage across keys and connections")</p>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("qs.pools", "Quota pools (24h)")</h3>
+        @if (_pools.Count == 0 && _loaded)
+        {
+            <div class="empty"><span class="material-symbols-outlined">pie_chart</span>@Loc.T("qs.empty", "No pools — create one on the Quota page")</div>
+        }
+        @foreach (var p in _pools)
+        {
+            <div class="mt-2 xs" style="border-bottom:1px solid var(--border);padding-bottom:8px">
+                <div class="flex between">
+                    <span class="bold mono">@p.Id</span>
+                    <span class="chip @(p.Errors == 0 ? "chip-green" : "chip-red")">@p.Requests req · @p.Errors err</span>
+                </div>
+                <div class="muted">@Loc.T("analytics.tokens", "Tokens"): @((p.PromptTokens + p.CompletionTokens).ToString("N0")) · @Loc.T("costs.cost", "Cost"): $@p.Cost.ToString("F4")</div>
+            </div>
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("qs.plans", "Quota plans")</h3>
+        @foreach (var pl in _plans)
+        {
+            <div class="mt-2 xs" style="border-bottom:1px solid var(--border);padding-bottom:6px">
+                <span class="bold">@pl.Name</span>
+                <div class="muted">@pl.Summary</div>
+            </div>
+        }
+        @if (_plans.Count == 0 && _loaded)
+        {
+            <div class="empty"><span class="material-symbols-outlined">rule</span>@Loc.T("qs.noPlans", "No plans — define one on the Quota page")</div>
+        }
+    </div>
+</div>
+
+@code {
+    private sealed record Pool(string Id, long Requests, long Errors, long PromptTokens, long CompletionTokens, double Cost);
+    private sealed record Plan(string Name, string Summary);
+    private List<Pool> _pools = new();
+    private List<Plan> _plans = new();
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var conns = await Api.GetAsync("api/provider-connections");
+        var ids = new List<string>();
+        if (conns.ValueKind == JsonValueKind.Object && conns.TryGetProperty("connections", out var cc))
+            ids = cc.EnumerateArray().Select(c => c.TryGetProperty("id", out var i) ? i.GetString() ?? "" : "").Where(x => x.Length > 0).ToList();
+        foreach (var id in ids.Take(20))
+        {
+            var u = await Api.GetAsync($"api/quota/pools/{id}/usage");
+            _pools.Add(new(id,
+                El(u, "requests"), El(u, "errors"), El(u, "promptTokens"), El(u, "completionTokens"), Num(u, "cost")));
+        }
+
+        var plans = await Api.GetAsync("api/quota/plans");
+        if (plans.ValueKind == JsonValueKind.Object && plans.TryGetProperty("plans", out var pp))
+            foreach (var p in pp.EnumerateArray())
+                _plans.Add(new(p.TryGetProperty("name", out var n) ? n.GetString() ?? "?" : "?",
+                    p.TryGetProperty("limits", out var l) ? l.GetRawText() : ""));
+        _loaded = true;
+    }
+
+    private static long El(JsonElement e, string k)
+        => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+    private static double Num(JsonElement e, string k)
+        => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+}

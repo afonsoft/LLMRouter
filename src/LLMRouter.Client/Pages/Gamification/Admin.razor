@@ -1,0 +1,67 @@
+@page "/dashboard/gamification/admin"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("gamificationAdmin", "Gamification")</h1>
+<p class="page-desc">@Loc.T("gamificationAdminSubtitle", "XP, level and badges from gateway usage")</p>
+
+<div class="grid grid-4 mt-4">
+    <div class="card card-p"><div class="dim xs">XP</div><div class="bold" style="font-size:22px">@_xp.ToString("N0")</div></div>
+    <div class="card card-p"><div class="dim xs">Level</div><div class="bold" style="font-size:22px">@_level</div></div>
+    <div class="card card-p"><div class="dim xs">@Loc.T("analytics.requests", "Requests")</div><div class="bold" style="font-size:22px">@_requests.ToString("N0")</div></div>
+    <div class="card card-p"><div class="dim xs">@Loc.T("analytics.tokens", "Tokens")</div><div class="bold" style="font-size:22px">@_tokens.ToString("N0")</div></div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("ga.badges", "Badges")</h3>
+        @if (_badges.Count > 0)
+        {
+            <div class="flex" style="gap:8px;flex-wrap:wrap">
+                @foreach (var b in _badges) { <span class="chip chip-green">@b</span> }
+            </div>
+        }
+        else
+        {
+            <div class="empty"><span class="material-symbols-outlined">emoji_events</span>@Loc.T("ga.noBadges", "No badges yet — keep routing requests")</div>
+        }
+    </div>
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("ga.topModels", "Leaderboard (top models)")</h3>
+        <table class="table">
+            <tbody>
+            @foreach (var m in _top)
+            {
+                <tr><td class="mono sm">@m.Model</td><td class="muted">@m.Requests.ToString("N0") req</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private long _xp, _requests, _tokens;
+    private int _level;
+    private List<string> _badges = new();
+    private List<(string Model, long Requests)> _top = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var g = await Api.GetAsync("api/gamification");
+        if (g.ValueKind == JsonValueKind.Object)
+        {
+            _xp = El(g, "xp"); _requests = El(g, "requests"); _tokens = El(g, "tokens");
+            _level = g.TryGetProperty("level", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt32() : 0;
+            if (g.TryGetProperty("badges", out var b) && b.ValueKind == JsonValueKind.Array)
+                _badges = b.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() ?? "" : x.GetRawText()).Where(x => x.Length > 0).ToList();
+        }
+        var lb = await Api.GetAsync("api/leaderboard");
+        if (lb.ValueKind == JsonValueKind.Object && lb.TryGetProperty("leaderboard", out var arr))
+            _top = arr.EnumerateArray().Take(10).Select(x => (
+                x.TryGetProperty("model", out var m) ? m.GetString() ?? "?" : "?",
+                x.TryGetProperty("requests", out var rq) && rq.ValueKind == JsonValueKind.Number ? rq.GetInt64() : 0L)).ToList();
+    }
+
+    private static long El(JsonElement e, string k)
+        => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+}

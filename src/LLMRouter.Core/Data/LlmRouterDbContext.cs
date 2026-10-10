@@ -33,6 +33,7 @@ public class LlmRouterDbContext : DbContext
     public DbSet<RelayToken> RelayTokens => Set<RelayToken>();
     public DbSet<SessionPoolRow> SessionPools => Set<SessionPoolRow>();
     public DbSet<PoolSession> PoolSessions => Set<PoolSession>();
+    public DbSet<CliToken> CliTokens => Set<CliToken>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -49,6 +50,7 @@ public class LlmRouterDbContext : DbContext
         mb.Entity<RequestDetail>().HasIndex(e => e.Model);
         mb.Entity<ProviderNode>().HasIndex(e => e.Type);
         mb.Entity<PoolSession>().HasIndex(e => e.PoolId);
+        mb.Entity<CliToken>().HasIndex(e => e.Token).IsUnique();
     }
 
     // EnsureCreated isn't atomic across concurrent contexts (parallel WebApplicationFactory
@@ -92,6 +94,7 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS relayTokens (Id TEXT NOT NULL PRIMARY KEY, Token TEXT NOT NULL, Name TEXT NULL, AllowedModels TEXT NOT NULL DEFAULT '[]', QuotaRequests INTEGER NOT NULL DEFAULT 0, QuotaTokens INTEGER NOT NULL DEFAULT 0, ExpiresAt TEXT NULL, IsActive INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS sessionPools (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Provider TEXT NOT NULL, Strategy TEXT NOT NULL DEFAULT 'round-robin', MinSize INTEGER NOT NULL DEFAULT 1, MaxSize INTEGER NOT NULL DEFAULT 5, LeaseSeconds INTEGER NOT NULL DEFAULT 60, IsActive INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS poolSessions (Id TEXT NOT NULL PRIMARY KEY, PoolId TEXT NOT NULL, ConnectionId TEXT NULL, State TEXT NOT NULL DEFAULT 'idle', Health TEXT NOT NULL DEFAULT 'healthy', BusyUntil TEXT NULL, CooldownUntil TEXT NULL, LastUsedAt TEXT NULL, TotalRequests INTEGER NOT NULL DEFAULT 0, SuccessfulRequests INTEGER NOT NULL DEFAULT 0, ConsecutiveFails INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS cliTokens (Id TEXT NOT NULL PRIMARY KEY, Token TEXT NOT NULL, State TEXT NOT NULL DEFAULT 'pending', DeviceName TEXT NULL, ApiKey TEXT NULL, CreatedAt TEXT NOT NULL, ApprovedAt TEXT NULL)""",
             })
             {
                 cmd.CommandText = ddl;

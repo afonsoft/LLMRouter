@@ -1,0 +1,62 @@
+@page "/connect/{Token}"
+@inject Api Api
+@inject Loc Loc
+
+<div>
+    <h1 class="page-title">@Loc.T("connect.title", "Connect a CLI")</h1>
+    <p class="page-desc">@Loc.T("connect.subtitle", "Approve this device to receive an API key for this LLMRouter")</p>
+</div>
+
+<div class="card card-p mt-6" style="max-width:560px">
+    @if (_state == "approved")
+    {
+        <div class="empty"><span class="material-symbols-outlined" style="color:var(--success)">check_circle</span>
+            @Loc.T("connect.approved", "Approved — return to your CLI.")</div>
+    }
+    else if (_state == "expired" || _state == "unknown")
+    {
+        <div class="empty"><span class="material-symbols-outlined" style="color:var(--danger)">error</span>
+            @Loc.T("connect.expired", "This link expired or was revoked — run connect again on the CLI.")</div>
+    }
+    else
+    {
+        <div class="dim" style="font-size:13px">@Loc.T("connect.device", "Device")</div>
+        <div class="bold mt-1">@(_device ?? "—")</div>
+        <div class="dim mt-3" style="font-size:13px">@Loc.T("connect.token", "Token")</div>
+        <code class="mono mt-1" style="font-size:20px;letter-spacing:2px">@Token</code>
+        <div class="mt-4">
+            <button class="btn btn-primary" @onclick="Approve" disabled="@_busy">@Loc.T("connect.approve", "Approve")</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Token { get; set; }
+
+    private string? _device;
+    private string _state = "pending";
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(Token)) { _state = "unknown"; return; }
+        try
+        {
+            // the poll endpoint is unauthenticated — use it to learn device/state
+            var r = await Api.Raw.GetAsync($"api/cli/tokens/{Token}");
+            if (r.StatusCode == System.Net.HttpStatusCode.Gone) { _state = "expired"; return; }
+            if (!r.IsSuccessStatusCode) { _state = "unknown"; return; }
+            var b = await r.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            _state = b.TryGetProperty("state", out var s) ? s.GetString() ?? "pending" : "pending";
+        }
+        catch { _state = "pending"; }
+    }
+
+    private async Task Approve()
+    {
+        _busy = true;
+        var r = await Api.Raw.PostAsJsonAsync($"api/cli/tokens/{Token}/approve", new { });
+        _state = r.IsSuccessStatusCode ? "approved" : "expired";
+        _busy = false;
+    }
+}

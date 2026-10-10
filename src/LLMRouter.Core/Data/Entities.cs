@@ -310,6 +310,24 @@ public class PlaygroundPreset
     public string CreatedAt { get; set; } = "";
 }
 
+// ---- SPEC-050: CLI device login ----
+
+[Table("cliTokens")]
+public class CliToken
+{
+    [Key]
+    public string Id { get; set; } = "";
+    // 12-char code the CLI shows/polls with
+    public string Token { get; set; } = "";
+    // pending | approved | revoked
+    public string State { get; set; } = "pending";
+    public string? DeviceName { get; set; }
+    // apiKeys.Key minted on approve
+    public string? ApiKey { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string? ApprovedAt { get; set; }
+}
+
 // ---- SPEC-049: session pools ----
 
 [Table("sessionPools")]

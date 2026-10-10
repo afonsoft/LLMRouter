@@ -108,7 +108,8 @@
             .FirstOrDefault(e => e.GetProperty("id").GetString() == EngineId);
         _desc = _engine?.TryGetProperty("description", out var d) == true ? d.GetString() ?? "" : "";
 
-        if (_engine?.TryGetProperty("configSchema", out var schema) == true)
+        if (_engine?.TryGetProperty("configSchema", out var schema) == true
+            && schema.ValueKind == JsonValueKind.Array)
             _fields = schema.EnumerateArray().Select(f => new Field(
                 f.GetProperty("key").GetString()!,
                 f.GetProperty("type").GetString()!,

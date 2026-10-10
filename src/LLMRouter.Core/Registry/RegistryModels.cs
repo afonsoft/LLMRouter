@@ -64,6 +64,12 @@ public class RegistryModel
     public string? ScoresAs { get; set; }
     public bool? Vision { get; set; }
     public bool? ImageToText { get; set; }
+    /// <summary>SPEC-087: flags supports* do providers.json.</summary>
+    public bool? SupportsVision { get; set; }
+    public bool? SupportsReasoning { get; set; }
+    public bool? ToolCalling { get; set; }
+    public bool? SupportsAudio { get; set; }
+    public bool? SupportsVideo { get; set; }
     public string[]? Capabilities { get; set; }
     public string[]? UnsupportedParams { get; set; }
     public string[]? SupportedThinkingEfforts { get; set; }

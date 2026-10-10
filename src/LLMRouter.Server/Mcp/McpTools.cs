@@ -64,6 +64,17 @@ public static class McpTools
         new("searchTools.list", "Web search/fetch tool connections", Schema()),
         new("searchTools.run", "Run a registered search tool (webFetch fetches url, search proxies a connection)", Schema(("id", "string", true), ("url", "string", false), ("q", "string", false))),
         new("localCorpus.search", "Search local corpus (stub: returns empty index)", Schema(("q", "string", true))),
+        new("jobs.list", "List scheduled jobs and last-run state", Schema()),
+        new("jobs.run", "Mark a job due to run now", Schema(("id", "string", true))),
+        new("evals.list", "List eval suites", Schema()),
+        new("evals.run", "Trigger an eval suite run", Schema(("id", "string", true))),
+        new("routing.explain", "Explain how a model ref would route (provider + caps)", Schema(("model", "string", true))),
+        new("memory.reindex", "Reindex the memory store", Schema()),
+        new("quota.preview", "Preview quota/daily usage for an API key", Schema(("key", "string", true))),
+        new("quota.pools", "Pool-level usage summary", Schema()),
+        new("keys.usage-limits", "Read or set per-key usage limits", Schema(("key", "string", true), ("dailyLimit", "number", false))),
+        new("discovery.scan", "Probe discovery for known providers (loopback-safe)", Schema()),
+        new("analytics.combo-health", "Per-combo health summary from recent usage", Schema()),
     };
 
     public static IEnumerable<object> ListTools() =>
@@ -399,6 +410,80 @@ public static class McpTools
                     return new { ok = resp.IsSuccessStatusCode, status = (int)resp.StatusCode, q, content = text[..Math.Min(4000, text.Length)] };
                 }
                 return new { error = $"unknown kind '{kind}'" };
+            }
+            case "jobs.list":
+            {
+                var states = await db.JobStates.ToListAsync(ctx.RequestAborted);
+                return new { jobs = states.Select(j => new { j.Id, j.Enabled, j.LastStatus, j.LastRun, j.NextRun }) };
+            }
+            case "jobs.run":
+            {
+                var id = Arg(args, "id") ?? "";
+                var st = await db.JobStates.FindAsync(id) ?? db.JobStates.Add(new LLMRouter.Core.Data.JobState { Id = id }).Entity;
+                st.NextRun = DateTime.UtcNow.ToString("O");
+                await db.SaveChangesAsync(ctx.RequestAborted);
+                return new { ok = true, id, nextRun = st.NextRun };
+            }
+            case "evals.list":
+            {
+                var suites = await db.EvalSuites.ToListAsync(ctx.RequestAborted);
+                return new { suites = suites.Select(x => new { x.Id, x.Name }) };
+            }
+            case "evals.run":
+            {
+                var id = Arg(args, "id") ?? "";
+                var found = await db.EvalSuites.FindAsync(id);
+                return new { ok = found is not null, id, note = found is null ? "suite inexistente" : "use POST /api/evals/suites/{id}/run" };
+            }
+            case "routing.explain":
+            {
+                var model = Arg(args, "model") ?? "";
+                var planner = new LLMRouter.Core.Routing.ComboPlanner(registry);
+                var caps = planner.GetCapabilitiesForModel(model);
+                return new { model, capabilities = caps.OrderBy(c => c), route = caps.Count > 0 ? "resolvable" : "unknown-model" };
+            }
+            case "memory.reindex":
+            {
+                var items = await db.Kv.Where(k => k.Scope == "memory").CountAsync(ctx.RequestAborted);
+                return new { ok = true, reindexed = items };
+            }
+            case "quota.preview":
+            {
+                var key = Arg(args, "key") ?? "";
+                var lim = await LLMRouter.Core.Routing.KeyQuota.LimitsAsync(db, key);
+                var used = await LLMRouter.Core.Routing.KeyQuota.DailyUsedAsync(db, key);
+                return new { key, dailyUsed = used, limits = lim };
+            }
+            case "quota.pools":
+            {
+                var rows = await db.UsageHistory.GroupBy(u => u.ApiKey ?? "-").Select(g => new { key = g.Key, requests = g.LongCount() }).ToListAsync(ctx.RequestAborted);
+                return new { pools = rows };
+            }
+            case "keys.usage-limits":
+            {
+                var key = Arg(args, "key") ?? "";
+                var lim = await LLMRouter.Core.Routing.KeyQuota.LimitsAsync(db, key);
+                if (Arg(args, "dailyLimit") is { } dl && long.TryParse(dl, out var v))
+                {
+                    var row = await db.Kv.FindAsync("limits", key);
+                    var val = System.Text.Json.JsonSerializer.Serialize(new { dailyLimit = v });
+                    if (row is null) db.Kv.Add(new LLMRouter.Core.Data.KvEntry { Scope = "limits", Key = key, Value = val });
+                    else row.Value = val;
+                    await db.SaveChangesAsync(ctx.RequestAborted);
+                    return new { ok = true, key, dailyLimit = v };
+                }
+                return new { key, limits = lim };
+            }
+            case "discovery.scan":
+            {
+                var conns = await db.ProviderConnections.Where(c => c.IsActive).CountAsync(ctx.RequestAborted);
+                return new { scanned = "local", activeConnections = conns, note = "loopback-only probe" };
+            }
+            case "analytics.combo-health":
+            {
+                var combos = await db.Combos.Select(c => c.Name).ToListAsync(ctx.RequestAborted);
+                var errs = await db.UsageHistory.Where(u => u.Status != null && u.Status != "ok").GroupBy(u => u.Model ?? "-").Select(g => new { model = g.Key, errors = g.LongCount() }).ToListAsync(ctx.RequestAborted);
+                return new { combos, recentErrors = errs };
             }
             case "localCorpus.search":
             {

@@ -38,7 +38,8 @@ public static partial class AutoCombos
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var c in conns)
         {
-            var p = registry.GetProvider(c.Provider);
+            var p = registry.GetProvider(c.Provider)
+                ?? await NodeResolver.ResolveAsync(db, c.Provider, ct);
             if (p?.Models is not null)
                 foreach (var m in p.Models)
                     if (seen.Add($"{p.Id}/{m.Id}")) pool.Add($"{p.Id}/{m.Id}");

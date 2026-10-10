@@ -133,7 +133,7 @@ public static class GatewayEndpoints
     /// media kind (auto-derived from path when null); media requests get
     /// kind-aware resolution with fallback to kind-declaring connections.
     /// </summary>
-    internal static async Task Passthrough(HttpContext ctx, string? kind = null)
+    internal static async Task Passthrough(HttpContext ctx, string? kind = null, string? upstreamPath = null)
     {
         var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
         var engine = ctx.RequestServices.GetRequiredService<GatewayEngine>();
@@ -229,7 +229,9 @@ public static class GatewayEndpoints
         }
 
         var path = ctx.Request.Path.Value ?? "";
-        var suffix = path[(path.IndexOf("/v1", StringComparison.Ordinal) + 3)..];
+        // upstreamPath: provider-scoped mounts (e.g. /v1/providers/{p}/embeddings)
+        // override the suffix sent upstream — the scoped prefix is routing, not path.
+        var suffix = upstreamPath ?? path[(path.IndexOf("/v1", StringComparison.Ordinal) + 3)..];
         var providerLimited = false;
         foreach (var target in targets)
         {

@@ -189,6 +189,7 @@ if (!headless)
 app.UseStatusCodePagesWithReExecute("/error/{0}");
 
 app.MapAuthEndpoints();
+ProviderScopedEndpoints.Map(app);
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);

@@ -590,6 +590,23 @@ public static class GatewayEndpoints
             if (body.TryGetProperty("model", out var pm)) model = pm.GetString() ?? model;
         }
 
+        // SPEC-045: prompt cache — replay stored responses for identical
+        // non-stream requests (identity = canonical body minus volatile keys)
+        string? cacheHash = null;
+        if (!stream && Core.Cache.PromptCache.Enabled(sdata) && body.ValueKind == JsonValueKind.Object)
+        {
+            cacheHash = Core.Cache.PromptCache.ComputeHash(inbound, model, body);
+            if (await Core.Cache.PromptCache.LookupAsync(db, cacheHash) is { } cached)
+            {
+                ctx.Response.ContentType = "application/json";
+                ctx.Response.Headers["x-cache"] = "hit";
+                await ctx.Response.WriteAsync(cached);
+                await engine.LogUsageAsync("cache", model, null, apiKey, inbound, 0, 0, "200", null, sw.ElapsedMilliseconds,
+                    JsonSerializer.SerializeToElement(new { cached = true }));
+                return;
+            }
+        }
+
         var targets = await engine.ResolveAsync(model, body);
         if (comboEntity?.Kind == "vision-adapter")
         {
@@ -679,6 +696,10 @@ public static class GatewayEndpoints
                         && translated is JsonObject tj)
                         Core.Extras.PluginHooks.ApplyResponse(plArr, tj);
                     var (pt, ct) = ExtractUsage(translated, inbound);
+                    if (cacheHash is not null)
+                        await Core.Cache.PromptCache.StoreAsync(db, sdata, cacheHash,
+                            target.Provider.Id, model, body.GetRawText(), translated.ToJsonString(JsonOpts),
+                            Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
                     ctx.Response.ContentType = "application/json";
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
                     Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);

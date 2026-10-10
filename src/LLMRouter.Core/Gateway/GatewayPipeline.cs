@@ -245,7 +245,7 @@ public sealed class GatewayEngine(
             Model = model,
             ConnectionId = connectionId,
             Status = status,
-            Data = detail?.GetRawText(),
+            Data = detail?.GetRawText() ?? error ?? "{}",
         });
         await db.SaveChangesAsync();
         await RollupDailyAsync(provider, model, promptTokens, completionTokens);

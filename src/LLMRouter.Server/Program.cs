@@ -140,6 +140,7 @@ KeysQuotaEndpoints.Map(app);
 LogExportEndpoints.Map(app);
 PlaygroundEndpoints.Map(app);
 OpenApiExplorerEndpoints.Map(app);
+CacheEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

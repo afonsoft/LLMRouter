@@ -518,6 +518,51 @@ public static class ManagementEndpoints
             return Results.Json(new { success = true });
         });
 
+        // ---- SPEC-085: combo presets (9router comboPresets.js) — Cursor/Claude
+        // default combos named after client-native model ids, seeded cu//cc routes
+        g.MapPost("/combos/presets", async (HttpContext ctx, LlmRouterDbContext db, ProviderRegistry r) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var source = b.TryGetProperty("source", out var s) ? s.GetString() ?? "claude" : "claude";
+            if (source is not ("cursor" or "claude"))
+                return Results.Json(new { error = "source must be 'cursor' or 'claude'" }, JsonOpts, statusCode: 400);
+
+            var alias = source == "cursor" ? "cu" : "cc";
+            var provider = r.GetProvider(alias); // alias resolves to canonical id
+            if (provider is null)
+                return Results.Json(new { error = $"provider '{alias}' not in registry" }, JsonOpts, statusCode: 400);
+
+            var items = new List<(string name, string route)>();
+            foreach (var m in provider.Models ?? [])
+                items.Add((m.Id, $"{alias}/{m.Id}"));
+            // upstream CLAUDE_EXTRA_ALIAS_TARGETS
+            if (source == "claude")
+            {
+                items.Add(("default", $"{alias}/claude-sonnet-5"));
+                items.Add(("opusplan", $"{alias}/claude-opus-5"));
+            }
+
+            var nameRx = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z0-9_.\-]+$");
+            var existing = await db.Combos.Select(c => c.Name).ToListAsync();
+            var seen = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+            var created = 0; var skipped = 0;
+            foreach (var (name, route) in items)
+            {
+                if (!nameRx.IsMatch(name) || seen.Contains(name)) { skipped++; continue; }
+                seen.Add(name);
+                db.Combos.Add(new Combo
+                {
+                    Id = Guid.NewGuid().ToString("N")[..12], Name = name, Kind = "fallback",
+                    Models = JsonSerializer.Serialize(new[] { route }),
+                    CreatedAt = Now(), UpdatedAt = Now(),
+                });
+                created++;
+            }
+            await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "combo.presets", $"{source}:{created}");
+            return Results.Json(new { created, skipped }, JsonOpts);
+        });
+
         g.MapDelete("/model-combo-mappings/{model}", async (string model, LlmRouterDbContext db) =>
         {
             var e = await db.Kv.FindAsync("modelComboMappings", model);

@@ -100,6 +100,31 @@ public class Combo
     public string UpdatedAt { get; set; } = "";
 }
 
+// ---- SPEC-085: provider discovery results ----
+
+[Table("discoveryResults")]
+public class DiscoveryResult
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string ProviderId { get; set; } = "";
+    /// <summary>free_tier | web_cookie | auto_register | trial | public_api</summary>
+    public string Method { get; set; } = "";
+    public string? Endpoint { get; set; }
+    /// <summary>none | cookie | api_key | oauth</summary>
+    public string AuthType { get; set; } = "none";
+    public string Models { get; set; } = "[]";
+    public string? RateLimit { get; set; }
+    public int Feasibility { get; set; } = 3; // 1-5
+    /// <summary>none | low | medium | high | critical</summary>
+    public string RiskLevel { get; set; } = "none";
+    /// <summary>pending | testing | verified | rejected</summary>
+    public string Status { get; set; } = "pending";
+    public string? Notes { get; set; }
+    public string DiscoveredAt { get; set; } = "";
+    public string? VerifiedAt { get; set; }
+}
+
 [Table("kv")]
 public class KvEntry
 {

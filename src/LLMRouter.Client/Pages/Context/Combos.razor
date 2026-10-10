@@ -7,7 +7,7 @@
 
 <div class="card card-p">
     <div class="flex between">
-        <h3 class="bold" style="margin:0">@Loc.T("ctxCombos.list", "Combos") (@_combos?.Length ?? 0)</h3>
+        <h3 class="bold" style="margin:0">@Loc.T("ctxCombos.list", "Combos") (@(_combos?.Length ?? 0))</h3>
         <button class="btn btn-primary btn-sm" @onclick="New">+ @Loc.T("common.new", "New")</button>
     </div>
     @if (_combos is not null)

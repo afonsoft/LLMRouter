@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Registry;
 using LLMRouter.Core.Routing;
@@ -153,6 +154,10 @@ public sealed class GatewayEngine(
         var provider = target.Provider;
         var outbound = provider.Format;
         var translated = Translators.Translate(body, inboundFormat, outbound, target.UpstreamModel, stream);
+        // SPEC-075: bedrock executors require strict role alternation — merge
+        // consecutive same-role messages (open-sse/executors/bedrock.ts).
+        if (provider.Executor == "bedrock" && translated is JsonObject bj)
+            Translation.ExtendedTranslators.MergeBedrockSameRoleMessages(bj);
         var (url, headers) = BuildUrlAndAuth(target);
         return new UpstreamCall
         {

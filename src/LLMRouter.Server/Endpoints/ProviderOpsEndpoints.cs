@@ -224,6 +224,91 @@ public static class ProviderOpsEndpoints
             await Core.Extras.Extras.AuditAsync(db, "connection.test_batch", $"{conns.Count}/{ids.Count} tested");
             return Results.Json(new { results, tested = conns.Count, total = ids.Count }, JsonOpts);
         });
+
+        // ---- SPEC-075: anthropic API-key rate-limit quota probe
+        // (open-sse/services/usage/anthropicApiKey.ts). Anthropic exposes no
+        // usage endpoint to a plain key, but every /v1/messages response
+        // carries the per-minute windows in headers — one minimal request reads them.
+        g.MapGet("/provider-connections/{id}/usage-quota", async (HttpContext ctx, string id,
+            LlmRouterDbContext db, ProviderRegistry r, IHttpClientFactory hf, CancellationToken ct) =>
+        {
+            var c = await db.ProviderConnections.FindAsync(id);
+            if (c is null) return Results.NotFound(new { error = "connection not found" });
+            var p = r.GetProvider(c.Provider);
+            var apiKey = GatewayEngine.ConnectionSecret(c);
+            if (apiKey is not { Length: > 0 })
+                return Results.Json(new { message = "API key not available on this connection." });
+
+            var baseUrl = (p is not null ? GatewayEngine.ConnectionBaseUrl(c, p) : null)
+                ?? "https://api.anthropic.com";
+            var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}/v1/messages")
+            {
+                Content = JsonContent.Create(new
+                {
+                    model = "claude-haiku-4-5-20251001",
+                    max_tokens = 1,
+                    messages = new[] { new { role = "user", content = "hi" } },
+                }),
+            };
+            req.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+            req.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+
+            HttpResponseMessage resp;
+            try { resp = await hf.CreateClient("upstream").SendAsync(req, ct); }
+            catch { return Results.Json(new { message = "Anthropic usage request failed." }); }
+            if (!resp.IsSuccessStatusCode)
+                return Results.Json(new { message = $"Anthropic usage request returned {(int)resp.StatusCode}" });
+
+            var quotas = AnthropicQuotaProbe.ReadWindows(resp);
+            return quotas.Count == 0
+                ? Results.Json(new { message = "Anthropic response carried no rate-limit headers." })
+                : Results.Json(new { plan = "API key", quotas });
+        });
+    }
+
+    /// <summary>SPEC-075: parse anthropic-ratelimit-* headers into quota windows
+    /// (open-sse/services/usage/anthropicApiKey.ts WINDOWS table).</summary>
+    public static class AnthropicQuotaProbe
+    {
+        private static readonly (string Key, string Header, string Label)[] Windows =
+        [
+            ("requests", "requests", "Requests"),
+            ("input_tokens", "input-tokens", "Input tokens"),
+            ("output_tokens", "output-tokens", "Output tokens"),
+            ("tokens", "tokens", "Tokens"),
+        ];
+
+        public static Dictionary<string, object?> ReadWindows(HttpResponseMessage resp)
+        {
+            var quotas = new Dictionary<string, object?>();
+            foreach (var (key, header, label) in Windows)
+            {
+                if (!TryHeader(resp, $"anthropic-ratelimit-{header}-limit", out var limitRaw)
+                    || !TryHeader(resp, $"anthropic-ratelimit-{header}-remaining", out var remainingRaw)
+                    || !double.TryParse(limitRaw, out var limit) || limit <= 0
+                    || !double.TryParse(remainingRaw, out var remaining))
+                    continue;
+                TryHeader(resp, $"anthropic-ratelimit-{header}-reset", out var reset);
+                quotas[key] = new Dictionary<string, object?>
+                {
+                    ["used"] = Math.Max(0, limit - remaining),
+                    ["total"] = limit,
+                    ["remaining"] = remaining,
+                    ["remainingPercentage"] = (int)Math.Round(remaining / limit * 100),
+                    ["resetAt"] = reset,
+                    ["displayName"] = label,
+                };
+            }
+            return quotas;
+        }
+
+        private static bool TryHeader(HttpResponseMessage resp, string name, out string? value)
+        {
+            value = null;
+            if (resp.Headers.TryGetValues(name, out var v)) value = v.FirstOrDefault();
+            else if (resp.Content.Headers.TryGetValues(name, out v)) value = v.FirstOrDefault();
+            return value is not null;
+        }
     }
 
     /// <summary>Shape-check a candidate credential; null means valid.</summary>

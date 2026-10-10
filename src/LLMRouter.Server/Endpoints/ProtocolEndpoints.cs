@@ -102,7 +102,8 @@ public static class ProtocolEndpoints
             var method = rpc.TryGetProperty("method", out var m) ? m.GetString() : "";
             var id = rpc.TryGetProperty("id", out var i) ? (object)i.Clone() : null;
 
-            switch (method)
+            MgmtBatchEndpoints.NoteMcpRequest();
+        switch (method)
             {
                 case "initialize":
                     return Results.Json(RpcResult(id!, new

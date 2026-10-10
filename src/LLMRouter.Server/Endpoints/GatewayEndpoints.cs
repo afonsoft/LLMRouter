@@ -147,6 +147,9 @@ public static class GatewayEndpoints
             await WriteError(ctx, "openai", "invalid_api_key", "Invalid or missing API key.");
             return;
         }
+        // SPEC-092: key-group scope permissions → 403 when group denies the family
+        if (!await MgmtBatchEndpoints.KeyGroupGateAsync(ctx, db, apiKey,
+                MgmtBatchEndpoints.ScopeFromPath(ctx.Request.Path))) return;
 
         string model = "";
         JsonElement body = default;
@@ -366,10 +369,15 @@ public static class GatewayEndpoints
             await WriteError(ctx, inbound, "invalid_api_key", "Invalid or missing API key.");
             return;
         }
+        if (!await MgmtBatchEndpoints.KeyGroupGateAsync(ctx, db, apiKey, "chat")) return;
 
         JsonElement body;
         try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
         catch { ctx.Response.StatusCode = 400; await WriteError(ctx, inbound, "invalid_request", "Malformed JSON body."); return; }
+        // SPEC-092: custom guardrail rules — block 400 / warn header / redact rewrite
+        var (gateOk, gateBody) = await MgmtBatchEndpoints.GuardrailRequestAsync(ctx, db, body);
+        if (!gateOk) return;
+        body = gateBody;
 
         // SPEC-023: body validation — model + a message container are required
         var hasMsgs = body.TryGetProperty("messages", out var mm) && mm.ValueKind == JsonValueKind.Array && mm.GetArrayLength() > 0
@@ -567,6 +575,8 @@ public static class GatewayEndpoints
 
         // vision-adapter combo: stage-1 imageToText call rewrites the image into
         // a text description, then the remaining combo models serve the request
+        // SPEC-092: model alias resolution before combo expansion
+        model = await MgmtBatchEndpoints.ResolveAliasAsync(db, model);
         var comboEntity = await Core.Gateway.HotReads.ComboAsync(db, model);
         // SPEC-091: budget gate — 429 budget_exceeded when the resolved scope is over cap
         if (!await ComboAnalyticsEndpoints.BudgetGate(ctx, db, model, comboEntity?.Name)) return;
@@ -837,7 +847,9 @@ public static class GatewayEndpoints
                     await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
                         target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
-                    await ctx.Response.WriteAsync(translated.ToJsonString(JsonOpts), ctx.RequestAborted);
+                    await ctx.Response.WriteAsync(
+                        await MgmtBatchEndpoints.RedactResponseAsync(db, translated.ToJsonString(JsonOpts)),
+                        ctx.RequestAborted);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail);

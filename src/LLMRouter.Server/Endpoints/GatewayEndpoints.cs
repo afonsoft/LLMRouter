@@ -260,9 +260,13 @@ public static class GatewayEndpoints
                 if (target.Provider.Headers is { } extra)
                     foreach (var kv in extra) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
                 MergePluginHeaders(ctx, req);
-                if (rawBody is not null)
+                // SPEC-054: per-connection upstream rewrites (interception rules,
+                // param filters, cc aliases) — applied to the outgoing body
+                var targetBody = Core.ProviderOps.ProviderRules.ApplyRewrites(
+                    target.Connection, path, rawBody);
+                if (targetBody is not null)
                 {
-                    req.Content = new ByteArrayContent(rawBody);
+                    req.Content = new ByteArrayContent(targetBody);
                     req.Content.Headers.ContentType =
                         System.Net.Http.Headers.MediaTypeHeaderValue.Parse(
                             ctx.Request.ContentType ?? "application/json");

@@ -545,4 +545,50 @@ public static class ExtendedTranslators
         JsonArray arr => string.Join("\n", arr.Select(b => b?["text"]?.GetValue<string>()).Where(t => t is not null)!),
         _ => "",
     };
+
+    // ---------- SPEC-075: bedrock same-role merge (open-sse/executors/bedrock.ts) ----------
+
+    private static bool IsEmptyTurnFiller(JsonNode? block) =>
+        block is JsonObject o && o.Count == 1
+        && o["text"] is JsonValue v && v.TryGetValue<string>(out var s) && s == " ";
+
+    private static bool HasToolResultBlock(JsonNode? message) =>
+        message?["content"] is JsonArray arr && arr.Any(b =>
+            b?["type"]?.GetValue<string>() == "tool_result" ||
+            b?["tool_result"] is not null || b?["toolResult"] is not null);
+
+    /// <summary>
+    /// Merge consecutive same-role messages (bedrock requires strict role
+    /// alternation). A plain user turn must never absorb a following
+    /// tool-result turn; the other direction still merges. Empty turn fillers
+    /// ({ "text": " " }) are dropped when real content exists.
+    /// </summary>
+    public static void MergeBedrockSameRoleMessages(JsonObject req)
+    {
+        if (req["messages"] is not JsonArray msgs || msgs.Count < 2) return;
+        var merged = new List<JsonNode>();
+        foreach (var message in msgs)
+        {
+            var previous = merged.Count > 0 ? merged[^1] : null;
+            var sameRole = previous?["role"]?.GetValue<string>() == message?["role"]?.GetValue<string>()
+                && previous?["content"] is JsonArray && message?["content"] is JsonArray;
+            var plainUserBeforeToolResult = sameRole
+                && previous!["role"]?.GetValue<string>() == "user"
+                && HasToolResultBlock(message) && !HasToolResultBlock(previous);
+            if (sameRole && !plainUserBeforeToolResult)
+            {
+                var content = new JsonArray();
+                foreach (var b in (JsonArray)previous!["content"]!) content.Add(b?.DeepClone());
+                foreach (var b in (JsonArray)message!["content"]!) content.Add(b?.DeepClone());
+                var real = content.Where(b => !IsEmptyTurnFiller(b)).ToList();
+                previous["content"] = real.Count > 0
+                    ? new JsonArray(real.Select(b => b?.DeepClone()).ToArray())
+                    : new JsonArray(content[0]?.DeepClone());
+                continue;
+            }
+            merged.Add(message!.DeepClone());
+        }
+        msgs.Clear();
+        foreach (var m in merged) msgs.Add(m);
+    }
 }

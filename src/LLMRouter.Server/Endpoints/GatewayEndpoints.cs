@@ -255,6 +255,7 @@ public static class GatewayEndpoints
                 if (!resp.IsSuccessStatusCode && ShouldCascade(resp.StatusCode) && target != targets[^1])
                     continue;
                 ctx.Response.StatusCode = (int)resp.StatusCode;
+                PropagateRateLimitHeaders(ctx, resp);
                 var scopeFactory = ctx.RequestServices.GetRequiredService<IServiceScopeFactory>();
                 var hookClient = httpFactory.CreateClient("webhook");
                 var st = (int)resp.StatusCode; var msDone = sw.ElapsedMilliseconds; var mdl = model;
@@ -734,7 +735,8 @@ public static class GatewayEndpoints
                     try { await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: false); } catch { }
                     if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));
                     ctx.Response.StatusCode = (int)resp.StatusCode;
-                    await WriteError(ctx, inbound, "upstream_error", errBody);
+                    PropagateRateLimitHeaders(ctx, resp);
+                    await WriteUpstreamError(ctx, inbound, errBody);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, 0, 0,
                         ((int)resp.StatusCode).ToString(), errBody[..Math.Min(500, errBody.Length)], sw.ElapsedMilliseconds);
@@ -744,6 +746,7 @@ public static class GatewayEndpoints
                 if (stream)
                 {
                     ctx.Response.StatusCode = 200;
+                    PropagateRateLimitHeaders(ctx, resp);
                     ctx.Response.ContentType = "text/event-stream";
                     ctx.Response.Headers.CacheControl = "no-cache";
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
@@ -773,6 +776,7 @@ public static class GatewayEndpoints
                             target.Provider.Id, model, body.GetRawText(), translated.ToJsonString(JsonOpts),
                             Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
                     ctx.Response.ContentType = "application/json";
+                    PropagateRateLimitHeaders(ctx, resp);
                     if (pooled is not null)
                         await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: true);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);
@@ -809,7 +813,7 @@ public static class GatewayEndpoints
         }
         ctx.Response.StatusCode = 502;
         await WriteError(ctx, inbound, "upstream_unavailable",
-            lastError?.Message ?? "All upstream targets failed.");
+            Core.Gateway.ErrorSanitizer.SanitizeMessage(lastError?.Message ?? "All upstream targets failed."));
         await engine.LogUsageAsync(model, model, null, apiKey, inbound, 0, 0, "502",
             lastError?.Message, sw.ElapsedMilliseconds);
     }
@@ -1148,8 +1152,14 @@ public static class GatewayEndpoints
         {
             var el = response.Element;
             if (inbound == "claude" && el.TryGetProperty("usage", out var u))
-                return (u.TryGetProperty("input_tokens", out var i) ? i.GetInt32() : 0,
-                        u.TryGetProperty("output_tokens", out var o) ? o.GetInt32() : 0);
+            {
+                // SPEC-075: cache creation + cache reads live inside the prompt
+                // total but outside input_tokens (upstream #16100 semantics).
+                var prompt = (u.TryGetProperty("input_tokens", out var i) ? i.GetInt32() : 0)
+                    + (u.TryGetProperty("cache_creation_input_tokens", out var cc) ? cc.GetInt32() : 0)
+                    + (u.TryGetProperty("cache_read_input_tokens", out var cr) ? cr.GetInt32() : 0);
+                return (prompt, u.TryGetProperty("output_tokens", out var o) ? o.GetInt32() : 0);
+            }
             if (inbound == "gemini" && el.TryGetProperty("usageMetadata", out var g))
                 return (g.TryGetProperty("promptTokenCount", out var i) ? i.GetInt32() : 0,
                         g.TryGetProperty("candidatesTokenCount", out var o) ? o.GetInt32() : 0);
@@ -1226,5 +1236,45 @@ public static class GatewayEndpoints
             _ => JsonSerializer.Serialize(new { error = new { message, type, code = type } }),
         };
         await ctx.Response.WriteAsync(payload);
+    }
+
+    /// <summary>
+    /// SPEC-075: upstream error bodies pass through ErrorSanitizer before they
+    /// reach the client (toJsonErrorPayload port) — allow-listed fields, credential
+    /// redaction, stack-tail strip. The sanitized error record is re-shaped to the
+    /// inbound protocol.
+    /// </summary>
+    private static async Task WriteUpstreamError(HttpContext ctx, string inbound, string errBody)
+    {
+        ctx.Response.ContentType = "application/json";
+        var record = Core.Gateway.ErrorSanitizer.ToJsonErrorPayload(errBody)["error"]
+            as Dictionary<string, object?> ?? new Dictionary<string, object?>();
+        var message = record.TryGetValue("message", out var m) ? m as string ?? "Upstream request failed." : "Upstream request failed.";
+        var type = record.TryGetValue("type", out var t) && t is string ts && ts.Length > 0 ? ts : "upstream_error";
+        var code = record.TryGetValue("code", out var c) && c is string cs && cs.Length > 0 ? cs : type;
+        var payload = inbound switch
+        {
+            "claude" => JsonSerializer.Serialize(new { type = "error", error = new { type, message } }),
+            "gemini" => JsonSerializer.Serialize(new { error = new { code = 400, message, status = "INVALID_ARGUMENT" } }),
+            _ => JsonSerializer.Serialize(new { error = new { message, type, code } }),
+        };
+        await ctx.Response.WriteAsync(payload);
+    }
+
+    /// <summary>
+    /// SPEC-075: forward upstream rate-limit headers (anthropic-ratelimit-*,
+    /// x-ratelimit-*, retry-after) so clients see their real budget windows.
+    /// </summary>
+    private static void PropagateRateLimitHeaders(HttpContext ctx, HttpResponseMessage resp)
+    {
+        foreach (var h in resp.Headers.Concat(resp.Content.Headers))
+        {
+            var name = h.Key;
+            if (!(name.StartsWith("anthropic-ratelimit-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("x-ratelimit-", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("retry-after", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            ctx.Response.Headers[name] = h.Value.FirstOrDefault();
+        }
     }
 }

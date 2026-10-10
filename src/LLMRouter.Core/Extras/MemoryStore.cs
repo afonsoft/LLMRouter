@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using LLMRouter.Core.Data;
 
 namespace LLMRouter.Core.Extras;
@@ -188,7 +189,7 @@ public static class MemoryStore
                     ? arr[0].GetProperty("plain_text").GetString() ?? "" : "";
             list.Add(new(r.GetProperty("id").GetString()!,
                 r.TryGetProperty("created_time", out var ct) && ct.TryGetDateTime(out var cd) ? cd : DateTime.UtcNow,
-                title, "notion"));
+                SanitizeNotionText(title), "notion"));
         }
         return list;
     }
@@ -212,6 +213,21 @@ public static class MemoryStore
             },
         });
         return resp.IsSuccessStatusCode ? item : item;
+    }
+
+    /// <summary>
+    /// SPEC-075: sanitizeNotionAssistantText — strip BOM noise + lang tags
+    /// Notion sometimes wraps text in (open-sse/services/notionStreamParser.ts).
+    /// </summary>
+    public static string SanitizeNotionText(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        var clean = text.TrimStart('\uFEFF').Trim();
+        clean = Regex.Replace(clean, @"</?lang\b[^>]*?/?>", "", RegexOptions.IgnoreCase);
+        clean = Regex.Replace(clean, @"</lang>", "", RegexOptions.IgnoreCase);
+        if (Regex.IsMatch(clean, @"^<lang\b", RegexOptions.IgnoreCase) && !clean.Contains('>'))
+            return "";
+        return clean.Trim();
     }
 
     private static async Task<bool> NotionRemoveAsync(IHttpClientFactory hf, JsonElement? s, string id)

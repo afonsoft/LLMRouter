@@ -681,12 +681,14 @@ public static class Translators
         var type = ev["type"]?.GetValue<string>();
         return type switch
         {
-            "response.output_text.delta" or "response.refusal.delta" => new JsonObject
+            "response.output_text.delta" => TextDeltaChunk(ev),
+            // SPEC-075: refusal deltas surface as delta.refusal (OpenAI shape), not content.
+            "response.refusal.delta" => new JsonObject
             {
                 ["choices"] = new JsonArray(new JsonObject
                 {
                     ["index"] = 0,
-                    ["delta"] = new JsonObject { ["content"] = ev["delta"]?.DeepClone() },
+                    ["delta"] = new JsonObject { ["refusal"] = ev["delta"]?.DeepClone() },
                     ["finish_reason"] = (JsonNode?)null,
                 }),
             },
@@ -746,6 +748,22 @@ public static class Translators
                     : null,
             },
             _ => null,
+        };
+    }
+
+    private static JsonObject TextDeltaChunk(JsonObject ev)
+    {
+        var delta = new JsonObject { ["content"] = ev["delta"]?.DeepClone() };
+        // SPEC-075: reasoning phase passes through when present.
+        if (ev["phase"] is { } p) delta["phase"] = p.DeepClone();
+        return new JsonObject
+        {
+            ["choices"] = new JsonArray(new JsonObject
+            {
+                ["index"] = 0,
+                ["delta"] = delta,
+                ["finish_reason"] = (JsonNode?)null,
+            }),
         };
     }
 

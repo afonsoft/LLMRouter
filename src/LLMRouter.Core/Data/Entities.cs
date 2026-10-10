@@ -676,3 +676,21 @@ public class McpToolCall
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";
 }
+
+/// <summary>SPEC-058: histórico de execuções de skills (command declarado).</summary>
+[Table("skillExecutions")]
+public class SkillExecution
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Id (dir) da skill executada.</summary>
+    public string Skill { get; set; } = "";
+    /// <summary>Comando declarado executado.</summary>
+    public string Command { get; set; } = "";
+    public int ExitCode { get; set; }
+    public string? Stdout { get; set; }
+    public string? Stderr { get; set; }
+    public long DurationMs { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}

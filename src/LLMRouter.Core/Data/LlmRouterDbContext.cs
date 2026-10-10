@@ -54,6 +54,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     /// <summary>SPEC-057: trilha de chamadas MCP.</summary>
     public DbSet<McpToolCall> McpToolCalls => Set<McpToolCall>();
+    /// <summary>SPEC-058: histórico de execuções de skills.</summary>
+    public DbSet<SkillExecution> SkillExecutions => Set<SkillExecution>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

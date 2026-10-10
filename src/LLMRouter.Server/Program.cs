@@ -82,7 +82,9 @@ builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 // SPEC-047: route upstream calls through settings.oneproxy when configured
 .ConfigurePrimaryHttpMessageHandler(sp =>
     new LLMRouter.Core.Routing.OneProxyHandler(
-        sp.GetRequiredService<LLMRouter.Core.Routing.OneProxyState>()));
+        sp.GetRequiredService<LLMRouter.Core.Routing.OneProxyState>()))
+// SPEC-066: global upstream concurrency cap (settings.data.concurrency)
+.AddHttpMessageHandler(() => new LLMRouter.Core.Gateway.ConcurrencyGateHandler());
 builder.Services.AddAuthentication("cookie")
     .AddCookie("cookie", o =>
     {
@@ -116,6 +118,10 @@ using (var scope = app.Services.CreateScope())
             double? ms = r.TryGetProperty("cooldownMaxSeconds", out var t3) && t3.TryGetDouble(out var d3) ? d3 : null;
             LLMRouter.Core.Resilience.CooldownTracker.Configure(th, bs, ms);
         }
+        // SPEC-066: persisted global upstream concurrency cap
+        if (sd.ValueKind == System.Text.Json.JsonValueKind.Object
+            && sd.TryGetProperty("concurrency", out var cc) && cc.TryGetInt32(out var cap))
+            LLMRouter.Core.Gateway.ConcurrencyGate.Set(cap);
     }
 }
 
@@ -203,6 +209,7 @@ RoutingOpsEndpoints.Map(app);
 CoreMiscEndpoints.Map(app);
 MediaEndpoints.Map(app);
 V1ExtrasEndpoints.Map(app);
+AdminOpsEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

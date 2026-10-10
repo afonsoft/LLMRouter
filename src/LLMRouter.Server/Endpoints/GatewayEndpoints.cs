@@ -459,6 +459,12 @@ public static class GatewayEndpoints
         }
 
         var model = body.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "";
+        // SPEC-069: requests with no/blank model fall through to the configured default combo
+        if (string.IsNullOrEmpty(model))
+        {
+            var cd = JsonNode.Parse((await db.Settings.FirstOrDefaultAsync())?.Data ?? "{}")?.AsObject();
+            model = (cd?["comboDefaults"] as JsonObject)?["defaultCombo"]?.GetValue<string>() ?? "";
+        }
         if (inbound == "gemini" && string.IsNullOrEmpty(model))
         {
             var routeModel = ctx.Request.RouteValues["model"]?.ToString() ?? "";

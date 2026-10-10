@@ -21,6 +21,25 @@
 
 @if (_tab == "combos")
 {
+    <div class="card card-p mt-4">
+        <div class="flex between">
+            <div class="bold">@Loc.T("combos.defaults", "Defaults")</div>
+        </div>
+        <div class="flex gap-2 mt-2 items-end">
+            <div class="col">
+                <label class="muted sm">@Loc.T("combos.defaultCombo", "Default combo (empty model)")</label>
+                <select @bind="_defaultCombo">
+                    <option value="">—</option>
+                    @foreach (var c in _combos) { <option value="@c.Name">@c.Name</option> }
+                </select>
+            </div>
+            <div class="col">
+                <label class="muted sm">@Loc.T("combos.handoffModel", "Handoff model")</label>
+                <input @bind="_handoffModel" placeholder="provider/model" />
+            </div>
+            <button class="btn btn-sm" @onclick="SaveDefaults">@Loc.T("common.save", "Save")</button>
+        </div>
+    </div>
     <div class="grid grid-2 mt-4">
         @foreach (var c in _combos)
         {
@@ -35,6 +54,9 @@
                         }
                     </div>
                     <div class="flex gap-2">
+                        <button class="btn btn-sm" title="Move up" @onclick="() => Move(c, -1)">↑</button>
+                        <button class="btn btn-sm" title="Move down" @onclick="() => Move(c, 1)">↓</button>
+                        <button class="btn btn-sm" @onclick="() => TestPool(c.Id!)">Test</button>
                         <a class="btn btn-sm" href="/dashboard/combos/live?id=@c.Id">Live</a>
                         <button class="btn btn-sm" @onclick="() => _editing = c">Edit</button>
                         <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id!)">Delete</button>
@@ -49,6 +71,19 @@
                         </div>
                     }
                 </div>
+                @if (_testResults.TryGetValue(c.Id ?? "", out var tr))
+                {
+                    <div class="col gap-2 mt-2">
+                        @foreach (var p in tr)
+                        {
+                            <div class="flex gap-2">
+                                <span class="badge @(p.Ok ? "success" : "danger")">@(p.Ok ? "ok" : "no conn")</span>
+                                <span class="mono sm">@p.Model</span>
+                                @if (p.LastLatencyMs is not null) { <span class="muted sm">@p.LastLatencyMs ms</span> }
+                            </div>
+                        }
+                    </div>
+                }
             </div>
         }
         @if (_combos.Count == 0)
@@ -183,6 +218,10 @@ else
     private List<MappingVm> _mappings = [];
     private ComboVm? _editing;
     private string _modelsText = "";
+    private string _defaultCombo = "";
+    private string _handoffModel = "";
+    private Dictionary<string, List<PoolProbe>> _testResults = [];
+    private sealed class PoolProbe { public string Model = ""; public bool Ok; public long? LastLatencyMs; }
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -198,6 +237,9 @@ else
             ModelsList = c.TryGetProperty("models", out var m)
                 ? JsonSerializer.Deserialize<List<string>>(m.GetRawText()) ?? [] : [],
         }).ToList();
+        var cd = await Api.GetAsync("api/settings/combo-defaults");
+        _defaultCombo = cd.TryGetProperty("defaultCombo", out var dcv) ? dcv.GetString() ?? "" : "";
+        _handoffModel = cd.TryGetProperty("handoffModel", out var hmv) ? hmv.GetString() ?? "" : "";
         var ar = await Api.GetAsync("api/model-aliases");
         _aliases = ar.GetProperty("aliases").EnumerateObject()
             .Select(kv => new AliasVm { Name = kv.Name, Target = kv.Value.GetString() ?? "" }).ToList();
@@ -221,6 +263,31 @@ else
     }
 
     private async Task Delete(string id) { await Api.DeleteAsync($"api/combos/{id}"); await Load(); }
+
+    private async Task Move(ComboVm c, int dir)
+    {
+        var i = _combos.IndexOf(c);
+        var j = i + dir;
+        if (i < 0 || j < 0 || j >= _combos.Count) return;
+        (_combos[i], _combos[j]) = (_combos[j], _combos[i]);
+        await Api.PostAsync("api/combos/reorder", new { ids = _combos.Select(x => x.Id).ToList() });
+    }
+
+    private async Task TestPool(string id)
+    {
+        var r = await Api.PostAsync($"api/combos/{id}/test", new { });
+        _testResults[id] = r.GetProperty("pool").EnumerateArray().Select(p => new PoolProbe
+        {
+            Model = p.GetProperty("model").GetString() ?? "",
+            Ok = p.GetProperty("ok").GetBoolean(),
+            LastLatencyMs = p.TryGetProperty("lastLatencyMs", out var l) && l.ValueKind == JsonValueKind.Number ? l.GetInt64() : null,
+        }).ToList();
+    }
+
+    private async Task SaveDefaults()
+    {
+        await Api.PutAsync("api/settings/combo-defaults", new { defaultCombo = _defaultCombo, handoffModel = _handoffModel });
+    }
 
     private async Task SaveAliases()
     {

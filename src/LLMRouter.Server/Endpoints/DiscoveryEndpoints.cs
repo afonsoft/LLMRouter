@@ -52,12 +52,14 @@ public static class DiscoveryEndpoints
                 var accessible = false; string[] models = [];
                 try
                 {
+                    using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    probeCts.CancelAfter(TimeSpan.FromSeconds(3));
                     using var resp = await hcf.CreateClient("logexport")
-                        .GetAsync(target.url, ct);
+                        .GetAsync(target.url, probeCts.Token);
                     accessible = resp.IsSuccessStatusCode;
                     if (accessible)
                     {
-                        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+                        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(probeCts.Token));
                         var arr = doc.RootElement.TryGetProperty("models", out var mm) ? mm
                             : doc.RootElement.TryGetProperty("data", out var dd) ? dd
                             : doc.RootElement.TryGetProperty("models", out _) ? mm : default;

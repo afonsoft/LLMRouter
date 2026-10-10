@@ -65,7 +65,12 @@ public sealed class GatewayEngine(
 
         var combo = await db.Combos.FirstOrDefaultAsync(c => c.Name == effectiveModel, ct);
         List<string> models;
-        if (combo is not null)
+        if (Routing.AutoCombos.IsAuto(effectiveModel))
+        {
+            // SPEC-072: virtual auto/* combo — pool resolved live, no persisted row
+            models = await Routing.AutoCombos.ResolveCandidatesAsync(db, registry, effectiveModel, ct);
+        }
+        else if (combo is not null)
         {
             var list = JsonSerializer.Deserialize<List<string>>(combo.Models) ?? [];
             models = await ComboStrategies.OrderAsync(combo.Kind, combo.Name, list,

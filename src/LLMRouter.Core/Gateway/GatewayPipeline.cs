@@ -200,6 +200,9 @@ public sealed class GatewayEngine(
 
         var secret = ConnectionSecret(t.Connection);
         if (secret is not null) ApplyAuth(headers, t.Provider, secret);
+        // SPEC-077: connection-level customHeaders ride every upstream request
+        // (e.g. anthropic-workspace-id); auth/hop-by-hop names are denied inside.
+        CustomHeaders.Apply(headers, t.Connection.Data);
         return (url, headers);
     }
 

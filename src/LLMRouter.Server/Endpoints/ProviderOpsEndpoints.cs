@@ -252,6 +252,10 @@ public static class ProviderOpsEndpoints
             };
             req.Headers.TryAddWithoutValidation("x-api-key", apiKey);
             req.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            // SPEC-077: connection customHeaders on the quota probe as well
+            var custom = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Core.Gateway.CustomHeaders.Apply(custom, c.Data);
+            foreach (var kv in custom) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
 
             HttpResponseMessage resp;
             try { resp = await hf.CreateClient("upstream").SendAsync(req, ct); }

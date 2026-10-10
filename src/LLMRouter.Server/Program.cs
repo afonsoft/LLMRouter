@@ -202,6 +202,7 @@ AutoCombosEndpoints.Map(app);
 RoutingOpsEndpoints.Map(app);
 CoreMiscEndpoints.Map(app);
 MediaEndpoints.Map(app);
+V1ExtrasEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

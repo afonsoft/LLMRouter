@@ -88,7 +88,12 @@ public static class ComboStrategies
         {
             var candidates = await AutoRouter.CandidatesAsync(db, models, ct);
             var cfg = await AutoRouter.LoadConfigAsync(db, ct);
-            return await AutoRouter.OrderAsync(k, candidates, cfg, requestBody, db, ct);
+            // SPEC-084: task type from the combo name suffix ("auto/coding" →
+            // coding) — upstream derives taskType from the auto variant.
+            var suffix = comboName?.Contains('/') == true ? comboName[(comboName.LastIndexOf('/') + 1)..] : comboName;
+            var taskType = suffix is not null && TaskFitness.TaskTypes.Contains(suffix.ToLowerInvariant())
+                ? suffix.ToLowerInvariant() : "default";
+            return await AutoRouter.OrderAsync(k, candidates, cfg, requestBody, db, ct, taskType);
         }
 
         switch (k)

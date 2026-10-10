@@ -39,12 +39,15 @@ public static partial class AutoCombos
         foreach (var c in conns)
         {
             var p = registry.GetProvider(c.Provider);
-            if (p?.Models is null) continue;
-            foreach (var m in p.Models)
-            {
-                var key = $"{p.Id}/{m.Id}";
-                if (seen.Add(key)) pool.Add(key);
-            }
+            if (p?.Models is not null)
+                foreach (var m in p.Models)
+                    if (seen.Add($"{p.Id}/{m.Id}")) pool.Add($"{p.Id}/{m.Id}");
+            // live-synced catalog (SPEC-071) — custom providers/nodes carry models
+            // the static registry doesn't know about
+            var synced = await db.SyncedModels
+                .Where(sm => sm.Provider == c.Provider && sm.Available).ToListAsync(ct);
+            foreach (var sm in synced)
+                if (seen.Add($"{c.Provider}/{sm.Model}")) pool.Add($"{c.Provider}/{sm.Model}");
         }
         return pool;
     }

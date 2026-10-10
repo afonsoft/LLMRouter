@@ -113,8 +113,8 @@
                 f.GetProperty("key").GetString()!,
                 f.GetProperty("type").GetString()!,
                 f.GetProperty("label").GetString()!,
-                f.TryGetProperty("options", out var o) ? o.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : null,
-                f.TryGetProperty("description", out var ds) ? ds.GetString() : null,
+                f.TryGetProperty("options", out var o) && o.ValueKind == JsonValueKind.Array ? o.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : null,
+                f.TryGetProperty("description", out var ds) && ds.ValueKind == JsonValueKind.String ? ds.GetString() : null,
                 f.TryGetProperty("defaultValue", out var dv) ? dv.Clone() : null)).ToList();
 
         var st = await Api.GetAsync("api/settings/compression");

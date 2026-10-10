@@ -3865,7 +3865,7 @@
     },
     "templateFreeStack": "Free Stack ($0)",
     "templateFreeStackDesc": "Round-robin across free providers: Antigravity (Gemini), Kiro (Claude), Qoder (3 models), NVIDIA and Groq. Zero cost, never stops coding.",
-    "auto": "Intelligent Auto",
+    "auto": "Auto combos",
     "autoDesc": "Self-healing smart routing pool with multi-factor scoring",
     "lkgp": "LKGP Mode",
     "lkgpDesc": "Prioritizes the last provider that successfully completed a request",
@@ -4019,7 +4019,11 @@
     "empty": "No combos yet",
     "edit": "Edit combo",
     "name": "Name",
-    "kind": "Strategy"
+    "kind": "Strategy",
+    "autoHint": "Virtual combos resolved live from the candidate pool — usable as model auto/x",
+    "poolEmpty": "pool empty — no active connections/models resolved",
+    "materialize": "Materialize",
+    "dupName": "new combo name"
   },
   "costs": {
     "title": "Costs",
@@ -5027,7 +5031,12 @@
     "issueCount": "{count} issues",
     "score": "Score",
     "lastRequest": "Last request",
-    "lastError": "Last error"
+    "lastError": "Last error",
+    "fallbackChains": "Fallback chains",
+    "policies": "Routing policies",
+    "sessions": "Chat sessions",
+    "tags": "Tags",
+    "modelCooldowns": "Model cooldowns"
   },
   "telemetry": {
     "title": "System Telemetry",
@@ -14978,7 +14987,10 @@
   "costsOverview": "Costs",
   "quota": {
     "title": "Provider quota",
-    "subtitle": "Token caps per connection — exhausted connections are skipped by the cascade"
+    "subtitle": "Token caps per connection — exhausted connections are skipped by the cascade",
+    "windows": "Quota windows",
+    "windowsDesc": "Sliding windows per provider — provider is skipped while a window is saturated",
+    "windowMinutes": "Window (min)"
   },
   "consoleLogs": "Console",
   "logsTimeline": "Request timeline",
@@ -15015,7 +15027,8 @@
     "key": "Key",
     "status": "Status",
     "created": "Created",
-    "empty": "No API keys — create one to start using the gateway"
+    "empty": "No API keys — create one to start using the gateway",
+    "expiring": "Credentials expiring soon"
   },
   "changelog": {
     "title": "Changelog"

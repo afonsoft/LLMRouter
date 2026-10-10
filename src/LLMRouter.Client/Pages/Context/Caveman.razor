@@ -37,7 +37,8 @@
                 <div class="mt-2 xs" style="border-bottom:1px solid var(--border);padding-bottom:6px">
                     <span class="bold">@r.GetProperty("name").GetString()</span>
                     <span class="muted">· @r.GetProperty("category").GetString() · @r.GetProperty("minIntensity").GetString()</span>
-                    <div class="mono muted">@r.GetProperty("pattern").GetString() → @r.GetProperty("replacement").GetString()</div>
+                    <div class="muted">@r.GetProperty("description").GetString()</div>
+                    <div class="muted sm">context: @r.GetProperty("context").GetString() · intensities: @string.Join(", ", r.GetProperty("intensities").EnumerateArray().Select(i => i.GetString()))</div>
                 </div>
             }
             </div>

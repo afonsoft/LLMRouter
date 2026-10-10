@@ -3864,7 +3864,7 @@
     },
     "templateFreeStack": "Stack gratuito ($0)",
     "templateFreeStackDesc": "Distribución round-robin entre todos los proveedores gratuitos: Antigravity (Gemini), Kiro (Claude), Qoder (3 modelos), NVIDIA, Groq. Sin coste y sin dejar nunca de programar.",
-    "auto": "Auto Combo",
+    "auto": "Combos automáticos",
     "autoDesc": "Self-healing smart routing pool (Performance optimized)",
     "lkgp": "Modo LKGP",
     "lkgpDesc": "Last Known Good Provider (Predictable resilience)",
@@ -4018,7 +4018,11 @@
     "empty": "Ningún combo",
     "aliases": "Aliases",
     "mappings": "Mapeos",
-    "subtitle": "Combina providers con fallback"
+    "subtitle": "Combina providers con fallback",
+    "autoHint": "Combos virtuales resueltos en vivo desde el pool de candidatos — utilizables como model auto/x",
+    "poolEmpty": "pool vacío — no se resolvieron conexiones/modelos activos",
+    "materialize": "Materializar",
+    "dupName": "nombre del nuevo combo"
   },
   "costs": {
     "title": "Costos",
@@ -5022,7 +5026,12 @@
     "issueCount": "{count} problemas",
     "score": "Puntuación",
     "lastRequest": "Última solicitud",
-    "lastError": "Último error"
+    "lastError": "Último error",
+    "fallbackChains": "Cadenas de fallback",
+    "policies": "Políticas de enrutamiento",
+    "sessions": "Sesiones de chat",
+    "tags": "Etiquetas",
+    "modelCooldowns": "Cooldowns de modelo"
   },
   "telemetry": {
     "title": "Telemetría del sistema",
@@ -14909,7 +14918,8 @@
     "key": "Key",
     "status": "Estado",
     "empty": "Ninguna key creada",
-    "created": "Key creada — cópiala ahora, no se mostrará de nuevo"
+    "created": "Key creada — cópiala ahora, no se mostrará de nuevo",
+    "expiring": "Credenciales por expirar"
   },
   "inspector": {
     "title": "Traffic Inspector",
@@ -14994,7 +15004,10 @@
   },
   "quota": {
     "title": "Cuota de provider",
-    "subtitle": "Límites de tokens por conexión — las conexiones agotadas son omitidas por el cascade"
+    "subtitle": "Límites de tokens por conexión — las conexiones agotadas son omitidas por el cascade",
+    "windows": "Ventanas de cuota",
+    "windowsDesc": "Ventanas deslizantes por proveedor — el proveedor se omite mientras la ventana esté saturada",
+    "windowMinutes": "Ventana (min)"
   },
   "services": {
     "title": "Servicios embebidos",

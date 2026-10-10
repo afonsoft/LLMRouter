@@ -3864,7 +3864,7 @@
     },
     "templateFreeStack": "Stack gratuito ($0)",
     "templateFreeStackDesc": "Distribuição round-robin entre todos os provedores gratuitos: Antigravity (Gemini), Kiro (Claude), Qoder (3 modelos), NVIDIA, Groq. Custo zero, nunca para de programar.",
-    "auto": "Auto Combo",
+    "auto": "Combos automáticos",
     "autoDesc": "Pool de roteamento inteligente (Otimizado)",
     "lkgp": "Modo LKGP",
     "lkgpDesc": "Último Provedor Bom Conhecido (Resiliência previsível)",
@@ -4018,7 +4018,11 @@
     "empty": "Nenhum combo",
     "aliases": "Aliases",
     "mappings": "Mapeamentos",
-    "subtitle": "Combine providers com fallback"
+    "subtitle": "Combine providers com fallback",
+    "autoHint": "Combos virtuais resolvidos ao vivo do pool de candidatos — usáveis como model auto/x",
+    "poolEmpty": "pool vazio — nenhuma conexão/modelo ativo resolvido",
+    "materialize": "Materializar",
+    "dupName": "nome do novo combo"
   },
   "costs": {
     "title": "Custos",
@@ -5022,7 +5026,12 @@
     "issueCount": "{count} problemas",
     "score": "Pontuação",
     "lastRequest": "Última requisição",
-    "lastError": "Último erro"
+    "lastError": "Último erro",
+    "fallbackChains": "Cadeias de fallback",
+    "policies": "Políticas de roteamento",
+    "sessions": "Sessões de chat",
+    "tags": "Tags",
+    "modelCooldowns": "Cooldowns de modelo"
   },
   "telemetry": {
     "title": "Telemetria do Sistema",
@@ -14909,7 +14918,8 @@
     "key": "Key",
     "status": "Status",
     "empty": "Nenhuma key criada",
-    "created": "Key criada — copie agora, não será exibida de novo"
+    "created": "Key criada — copie agora, não será exibida de novo",
+    "expiring": "Credenciais expirando em breve"
   },
   "inspector": {
     "title": "Traffic Inspector",
@@ -14994,7 +15004,10 @@
   },
   "quota": {
     "title": "Quota de provider",
-    "subtitle": "Limites de tokens por conexão — conexões esgotadas são puladas pelo cascade"
+    "subtitle": "Limites de tokens por conexão — conexões esgotadas são puladas pelo cascade",
+    "windows": "Janelas de quota",
+    "windowsDesc": "Janelas deslizantes por provider — o provider é pulado enquanto a janela estiver saturada",
+    "windowMinutes": "Janela (min)"
   },
   "services": {
     "title": "Serviços embutidos",

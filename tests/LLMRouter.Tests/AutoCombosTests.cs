@@ -102,6 +102,32 @@ public class AutoCombosTests : IDisposable
     }
 
     [Fact]
+    public async Task Pool_includes_synced_models_for_custom_providers()
+    {
+        await SeedAsync();
+        await using var db = Db();
+        db.SyncedModels.Add(new SyncedModel
+        {
+            Id = "sm1", Provider = "openai", Model = "gpt-4o-synced",
+            Available = true, LastSyncAt = "x",
+        });
+        db.SyncedModels.Add(new SyncedModel
+        {
+            Id = "sm2", Provider = "openai", Model = "unavailable-model",
+            Available = false, LastSyncAt = "x",
+        });
+        await db.SaveChangesAsync();
+
+        var c = LoginClient();
+        var pool = await c.GetFromJsonAsync<JsonElement>("/api/combos/auto/pool?name=auto/gpt-4o-synced");
+        pool.GetProperty("candidates").EnumerateArray()
+            .Select(x => x.GetString()).ShouldContain("openai/gpt-4o-synced");
+        var poolAll = await c.GetFromJsonAsync<JsonElement>("/api/combos/auto/pool?name=auto/unavailable");
+        poolAll.GetProperty("candidates").EnumerateArray()
+            .Select(x => x.GetString()).ShouldNotContain("openai/unavailable-model");
+    }
+
+    [Fact]
     public async Task Gateway_resolves_auto_model_live()
     {
         await SeedAsync();

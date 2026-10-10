@@ -52,8 +52,8 @@
                     <div class="muted sm">@a.Description</div>
                 </div>
                 <div class="flex gap-2 items-center">
-                    <input @bind="_dupNames[a.Id]" placeholder="new combo name" style="width:140px" />
-                    <button class="btn btn-sm" @onclick="() => Duplicate(a.Id)">Materialize</button>
+                    <input @bind="_dupNames[a.Id]" placeholder="@Loc.T("combos.dupName", "new combo name")" style="width:140px" />
+                    <button class="btn btn-sm" @onclick="() => Duplicate(a.Id)">@Loc.T("combos.materialize", "Materialize")</button>
                 </div>
             </div>
         }
@@ -91,6 +91,10 @@
                 </div>
                 @if (_testResults.TryGetValue(c.Id ?? "", out var tr))
                 {
+                    @if (tr.Count == 0)
+                    {
+                        <div class="muted sm mt-2">@Loc.T("combos.poolEmpty", "pool empty — no active connections/models resolved")</div>
+                    }
                     <div class="col gap-2 mt-2">
                         @foreach (var p in tr)
                         {

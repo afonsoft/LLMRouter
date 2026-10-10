@@ -238,12 +238,12 @@ public static class ManagementEndpoints
                     ? (mu.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? mu : $"{baseUrl}/{mu.TrimStart('/')}")
                     : $"{baseUrl}/v1/models";
             var req = new HttpRequestMessage(HttpMethod.Get, modelsUrl);
+            var authHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (Core.Gateway.GatewayEngine.ConnectionSecret(c) is { } secret)
-            {
-                var authHeaders = new Dictionary<string, string>();
                 Core.Gateway.GatewayEngine.ApplyAuth(authHeaders, p, secret);
-                foreach (var kv in authHeaders) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            }
+            // SPEC-077: the connection's customHeaders ride the probe too
+            Core.Gateway.CustomHeaders.Apply(authHeaders, c.Data);
+            foreach (var kv in authHeaders) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
             var sw = System.Diagnostics.Stopwatch.StartNew();
             string status; string? errBody = null; int httpStatus = 0;
             try

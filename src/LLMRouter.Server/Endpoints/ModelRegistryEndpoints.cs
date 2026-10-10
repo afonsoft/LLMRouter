@@ -300,12 +300,13 @@ public static class ModelRegistryEndpoints
         var url = modelsUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? modelsUrl : $"{baseUrl}/{modelsUrl.TrimStart('/')}";
         var req = new HttpRequestMessage(HttpMethod.Get, url);
+        // SPEC-077: discovery sends auth + the connection's customHeaders — a key
+        // needing a routing header (e.g. anthropic-workspace-id) can list models too.
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (GatewayEngine.ConnectionSecret(conn) is { } secret)
-        {
-            var authHeaders = new Dictionary<string, string>();
-            GatewayEngine.ApplyAuth(authHeaders, p, secret);
-            foreach (var kv in authHeaders) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-        }
+            GatewayEngine.ApplyAuth(headers, p, secret);
+        CustomHeaders.Apply(headers, conn.Data);
+        foreach (var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
         var resp = await hf.CreateClient("upstream").SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode) return null;
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));

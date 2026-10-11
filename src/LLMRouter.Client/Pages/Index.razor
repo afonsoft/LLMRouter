@@ -2,9 +2,21 @@
 @page "/home"
 @inject Api Api
 @inject Loc Loc
+@inject IJSRuntime JS
 
 <h1 class="page-title">@Loc.T("home.title", "Welcome to LLMRouter")</h1>
 <p class="page-desc">@Loc.T("home.subtitle", "Unified AI gateway — one endpoint, every provider")</p>
+
+@if (_announcement is not null && !_announcementDismissed)
+{
+    <div class="card card-p mt-4 flex between items-center" style="border-left:3px solid var(--accent,#f4a7c3)">
+        <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined" style="color:var(--accent,#f4a7c3)">campaign</span>
+            <span class="sm">@_announcement</span>
+        </div>
+        <button class="btn btn-sm ghost" @onclick="DismissAnnouncement">✕</button>
+    </div>
+}
 
 <div class="grid grid-4 mt-6">
     <div class="card stat">
@@ -25,18 +37,66 @@
     </div>
 </div>
 
-<div class="grid grid-2 mt-6">
+<div class="card card-p mt-6">
+    <div class="flex between items-center" style="margin-bottom:16px">
+        <div>
+            <h3 class="bold" style="margin:0">@Loc.T("home.quickStart", "Quick start")</h3>
+            <p class="sm muted" style="margin:2px 0 0">@Loc.T("home.quickStartDesc", "Get your first request through the gateway in minutes")</p>
+        </div>
+        <a class="btn btn-sm" href="/docs">
+            <span class="material-symbols-outlined" style="font-size:14px">menu_book</span>
+            @Loc.T("home.fullDocs", "Full docs")
+        </a>
+    </div>
+    <div class="grid grid-2">
+        <a class="card card-p flex gap-3" href="/dashboard/api-manager" style="text-decoration:none">
+            <div class="stat-icon" style="background:rgba(229,77,94,.12);color:var(--primary)"><span class="material-symbols-outlined" style="font-size:18px">key</span></div>
+            <div><div class="bold sm">1. @Loc.T("home.step1Title", "Create an API key")</div>
+            <p class="sm muted" style="margin:2px 0 0">@Loc.T("home.step1Desc", "Issue a key in API manager for your client apps")</p></div>
+        </a>
+        <a class="card card-p flex gap-3" href="/dashboard/providers" style="text-decoration:none">
+            <div class="stat-icon" style="background:rgba(22,163,74,.12);color:var(--success)"><span class="material-symbols-outlined" style="font-size:18px">dns</span></div>
+            <div><div class="bold sm">2. @Loc.T("home.step2Title", "Connect providers")</div>
+            <p class="sm muted" style="margin:2px 0 0">@Loc.T("home.step2Desc", "Add connections for the providers you use")</p></div>
+        </a>
+        <a class="card card-p flex gap-3" href="/dashboard/endpoint" style="text-decoration:none">
+            <div class="stat-icon" style="background:rgba(14,165,233,.12);color:#0ea5e9"><span class="material-symbols-outlined" style="font-size:18px">link</span></div>
+            <div><div class="bold sm">3. @Loc.T("home.step3Title", "Point your client")</div>
+            <p class="sm muted" style="margin:2px 0 0">@Loc.T("home.step3Desc", "Point any OpenAI-compatible app at the gateway endpoint")</p></div>
+        </a>
+        <a class="card card-p flex gap-3" href="/dashboard/analytics" style="text-decoration:none">
+            <div class="stat-icon" style="background:rgba(217,119,6,.12);color:var(--warning)"><span class="material-symbols-outlined" style="font-size:18px">analytics</span></div>
+            <div><div class="bold sm">4. @Loc.T("home.step4Title", "Monitor & optimize")</div>
+            <p class="sm muted" style="margin:2px 0 0">@Loc.T("home.step4Desc", "Watch logs and analytics to tune routing")</p></div>
+        </a>
+    </div>
+</div>
+
+<div class="grid mt-6" style="grid-template-columns:2fr 1fr">
     <div class="card card-p">
-        <h3 class="bold" style="margin:0 0 12px">@Loc.T("home.quickStart", "Quick start")</h3>
-        <div class="col gap-3">
-            <div class="flex gap-3"><span class="badge info">1</span><span class="sm">@Loc.T("home.step1", "Add a provider connection")</span></div>
-            <div class="flex gap-3"><span class="badge info">2</span><span class="sm">@Loc.T("home.step2", "Create an API key")</span></div>
-            <div class="flex gap-3"><span class="badge info">3</span><span class="sm">@Loc.T("home.step3", "Point your app at the gateway")</span></div>
-        </div>
-        <div class="flex gap-2 mt-4">
-            <a class="btn btn-primary btn-sm" href="/dashboard/providers">@Loc.T("home.addProvider", "Add provider")</a>
-            <a class="btn btn-sm" href="/dashboard/endpoint">@Loc.T("home.viewEndpoints", "View endpoints")</a>
-        </div>
+        <h3 class="bold" style="margin:0 0 12px">@Loc.T("home.topology", "Provider Topology")</h3>
+        @if (_topology.Count == 0)
+        {
+            <p class="muted sm">@Loc.T("home.noProviders", "No provider connections yet.")</p>
+        }
+        else
+        {
+            @foreach (var p in _topology)
+            {
+                <div class="flex between items-center" style="padding:8px 0;border-bottom:1px solid var(--grid-line,rgba(255,255,255,.06))">
+                    <div class="flex items-center gap-3">
+                        <span class="badge @(p.Errors > 0 ? "err" : p.Active > 0 ? "ok" : "")">●</span>
+                        <div>
+                            <div class="bold sm">@p.Provider</div>
+                            <div class="xs muted">@p.Active/@p.Total @Loc.T("home.connections", "connections")</div>
+                        </div>
+                    </div>
+                    <span class="badge @(p.Errors > 0 ? "err" : p.Active > 0 ? "ok" : "info")">
+                        @(p.Errors > 0 ? Loc.T("home.statusError", "error") : p.Active > 0 ? Loc.T("home.statusConnected", "connected") : Loc.T("home.statusIdle", "idle"))
+                    </span>
+                </div>
+            }
+        }
     </div>
     <div class="card card-p">
         <h3 class="bold" style="margin:0 0 12px">@Loc.T("home.recentActivity", "Recent requests")</h3>
@@ -47,13 +107,18 @@
         else
         {
             <table class="table">
+                <thead>
+                    <tr><th></th><th>@Loc.T("home.colModel", "Model")</th><th>@Loc.T("home.colProvider", "Provider")</th><th>@Loc.T("home.colStatus", "Status")</th><th style="text-align:right">@Loc.T("home.colWhen", "When")</th></tr>
+                </thead>
                 <tbody>
                     @foreach (var r in _recent)
                     {
                         <tr>
-                            <td class="mono sm">@r.Provider/@r.Model</td>
-                            <td class="muted sm">@r.Timestamp</td>
+                            <td><span class="badge @(r.Status == "200" ? "ok" : "err")" style="padding:2px 6px">●</span></td>
+                            <td class="mono sm">@r.Model</td>
+                            <td class="muted sm">@r.Provider</td>
                             <td><span class="badge @(r.Status == "200" ? "ok" : "err")">@r.Status</span></td>
+                            <td class="muted sm" style="text-align:right">@When(r.Timestamp)</td>
                         </tr>
                     }
                 </tbody>
@@ -65,14 +130,54 @@
 @code {
     private int _providers, _combos, _requests;
     private string _tokens = "0";
+    private string? _announcement;
+    private bool _announcementDismissed;
     private List<(string Provider, string Model, string Timestamp, string Status)> _recent = [];
+    private List<(string Provider, int Active, int Total, int Errors)> _topology = [];
+
+    private static string When(string ts)
+    {
+        if (!DateTime.TryParseExact(ts, "yyyy-MM-dd HH:mm:ss",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal, out var t)) return ts;
+        var d = DateTime.UtcNow - t;
+        if (d.TotalSeconds < 60) return $"{(int)d.TotalSeconds}s ago";
+        if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes}m ago";
+        if (d.TotalHours < 24) return $"{(int)d.TotalHours}h ago";
+        return $"{(int)d.TotalDays}d ago";
+    }
+
+    private async Task DismissAnnouncement()
+    {
+        _announcementDismissed = true;
+        try { await JS.InvokeVoidAsync("llmrouter.set", "announcement-dismissed", _announcement); } catch { }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            var settings = await Api.GetAsync("api/settings");
+            if (settings.TryGetProperty("data", out var sdata)
+                && sdata.ValueKind == JsonValueKind.Object
+                && sdata.TryGetProperty("announcement", out var an))
+            {
+                if (an.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(an.GetString()))
+                    _announcement = an.GetString();
+                else if (an.ValueKind == JsonValueKind.Object && an.TryGetProperty("text", out var tx)
+                    && tx.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(tx.GetString())
+                    && (!an.TryGetProperty("enabled", out var en) || en.GetBoolean()))
+                    _announcement = tx.GetString();
+            }
             var conns = await Api.GetAsync("api/provider-connections");
-            _providers = conns.GetProperty("connections").EnumerateArray().Count(c => c.GetProperty("isActive").GetBoolean());
+            var list = conns.GetProperty("connections").EnumerateArray().ToList();
+            _providers = list.Count(c => c.GetProperty("isActive").GetBoolean());
+            _topology = list.GroupBy(c => c.GetProperty("provider").GetString() ?? "")
+                .Select(g => (Provider: g.Key,
+                    Active: g.Count(c => c.GetProperty("isActive").GetBoolean()),
+                    Total: g.Count(),
+                    Errors: g.Count(c => c.TryGetProperty("testStatus", out var ts) && ts.GetString() is "unavailable" or "error")))
+                .OrderByDescending(p => p.Active).ThenBy(p => p.Provider).Take(12).ToList();
             var combos = await Api.GetAsync("api/combos");
             _combos = combos.GetProperty("combos").EnumerateArray().Count();
             var usage = await Api.GetAsync("api/usage?range=today");
@@ -84,5 +189,18 @@
                     l.GetProperty("timestamp").GetString() ?? "", l.GetProperty("status").GetString() ?? ""));
         }
         catch { /* best-effort: failure is non-fatal */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _announcement is not null)
+        {
+            try
+            {
+                var dismissed = await JS.InvokeAsync<string?>("llmrouter.get", "announcement-dismissed");
+                if (dismissed == _announcement) { _announcementDismissed = true; StateHasChanged(); }
+            }
+            catch { }
+        }
     }
 }

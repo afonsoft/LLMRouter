@@ -47,6 +47,31 @@ try {
   const onBogus = (await page.textContent('.tab.on')) || '';
   if (!/general/i.test(onBogus)) fail(`expected General fallback, got "${onBogus.trim()}"`);
 
+  // 8. SPEC-124: home Quick Start — 4 steps linking to their pages + Full docs
+  await page.goto(base + '/home', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.page-title', { timeout: 60_000 });
+  for (const href of ['/dashboard/api-manager', '/dashboard/providers', '/dashboard/endpoint', '/dashboard/analytics']) {
+    if (!(await page.$(`a[href="${href}"]`))) fail(`home missing quick-start link ${href}`);
+  }
+  if (!(await page.$('a[href="/docs"]'))) fail('home missing Full docs link');
+
+  // 9. Provider Topology card present
+  if (!(await page.textContent('body'))?.match(/provider topology/i)) fail('home missing topology card');
+
+  // 10. announcement banner: hidden by default, shown when settings.announcement set
+  const ann = await page.$('text=/maintenance-window-test/i');
+  if (ann) fail('announcement visible before being set');
+  const setRes = await page.request.put(base + '/api/settings', {
+    data: { announcement: 'maintenance-window-test' },
+  });
+  if (!setRes.ok()) fail('settings PUT failed: ' + setRes.status());
+  await page.goto(base + '/home', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('text=maintenance-window-test', { timeout: 60_000 });
+  await page.request.put(base + '/api/settings', { data: { announcement: '' } });
+  await page.goto(base + '/home', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.page-title', { timeout: 60_000 });
+  if (await page.$('text=maintenance-window-test')) fail('announcement still visible after clear');
+
   console.log('E2E smoke OK');
 } catch (err) {
   fail(err.message);

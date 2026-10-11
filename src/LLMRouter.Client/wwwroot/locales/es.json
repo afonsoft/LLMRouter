@@ -1938,7 +1938,17 @@
   "viewEndpoints": "Ver endpoints",
   "step1": "Crea una conexión de provider",
   "step2": "Genera una API key",
-  "step3": "Apunta tu cliente al gateway"
+  "step3": "Apunta tu cliente al gateway",
+  "topology": "Topología de Providers",
+  "noProviders": "Aún no hay conexiones de providers.",
+  "connections": "conexiones",
+  "statusError": "error",
+  "statusConnected": "conectado",
+  "statusIdle": "inactivo",
+  "colModel": "Modelo",
+  "colProvider": "Provider",
+  "colStatus": "Estado",
+  "colWhen": "Cuándo"
  },
  "analytics": {
   "noData": "Sin datos aún",

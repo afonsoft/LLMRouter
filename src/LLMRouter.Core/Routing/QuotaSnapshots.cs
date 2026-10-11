@@ -43,7 +43,7 @@ public static class QuotaSnapshots
                 .FirstOrDefaultAsync();
             var exhausted = (w.Exhausted ?? (w.RemainingPct <= 0)) ? 1 : 0;
             if (last is not null
-                && last.RemainingPercentage == w.RemainingPct
+                && Math.Abs((last.RemainingPercentage ?? -1) - (w.RemainingPct ?? -1)) < 1e-9
                 && last.IsExhausted == exhausted)
                 continue;
             db.QuotaSnapshots.Add(new QuotaSnapshot

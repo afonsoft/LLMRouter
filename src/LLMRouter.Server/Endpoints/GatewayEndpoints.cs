@@ -172,6 +172,7 @@ public static class GatewayEndpoints
         var rlRules = await Core.Gateway.HotReads.EnabledRateLimitsAsync(db);
         if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } ptVio)
         {
+            Core.Gateway.GatewayMetrics.RateLimitViolation(ptVio.Scope);
             ctx.Response.StatusCode = 429;
             ctx.Response.Headers.RetryAfter = ptVio.RetryAfterSec.ToString();
             await WriteError(ctx, "openai", "rate_limit",
@@ -269,8 +270,9 @@ public static class GatewayEndpoints
         {
             // SPEC-039: provider-scope rate limits — skip this target, try the next
             if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey,
-                    target.Provider.Id, model, providerOnly: true) is not null)
+                    target.Provider.Id, model, providerOnly: true) is { } gvio)
             {
+                Core.Gateway.GatewayMetrics.RateLimitViolation(gvio.Scope);
                 providerLimited = true;
                 continue;
             }
@@ -610,6 +612,7 @@ public static class GatewayEndpoints
         var rlRules = await Core.Gateway.HotReads.EnabledRateLimitsAsync(db);
         if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } rlVio)
         {
+            Core.Gateway.GatewayMetrics.RateLimitViolation(rlVio.Scope);
             ctx.Response.StatusCode = 429;
             ctx.Response.Headers.RetryAfter = rlVio.RetryAfterSec.ToString();
             await WriteError(ctx, inbound, "rate_limit",
@@ -815,6 +818,7 @@ public static class GatewayEndpoints
             if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey,
                     target.Provider.Id, model, providerOnly: true) is { } pvio)
             {
+                Core.Gateway.GatewayMetrics.RateLimitViolation(pvio.Scope);
                 lastError = new HttpRequestException(
                     $"rate limited ({pvio.Scope} '{pvio.ScopeValue}' {pvio.Kind} {pvio.Limit}/min)");
                 continue;
@@ -840,7 +844,18 @@ public static class GatewayEndpoints
                         (call.Url.Contains('?') ? "&" : "?") + "alt=sse");
                 req.Content = new StringContent(call.Body, Encoding.UTF8, "application/json");
 
+                // SPEC-101: dispatch activity + upstream ttfb / stream / combo-step metrics
+                if (target.ComboName is { Length: > 0 } comboNm)
+                    Core.Gateway.GatewayMetrics.ComboStepSelected(comboNm);
+                using var act = Core.Gateway.GatewayMetrics.ActivitySource.StartActivity("llmr.dispatch");
+                act?.SetTag("llmr.provider", target.Provider.Id);
+                act?.SetTag("llmr.model", target.UpstreamModel);
+                act?.SetTag("llmr.connection", target.Connection.Id);
+                var sendAt = sw.ElapsedMilliseconds;
                 using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
+                var respAt = sw.ElapsedMilliseconds;
+                Core.Gateway.GatewayMetrics.UpstreamTtfb(target.Provider.Id, target.UpstreamModel, respAt - sendAt);
+                act?.SetTag("llmr.upstream_status", (int)resp.StatusCode);
                 if (!resp.IsSuccessStatusCode)
                 {
                     Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
@@ -883,6 +898,8 @@ public static class GatewayEndpoints
                     ctx.Response.Headers.CacheControl = "no-cache";
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
                     var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
+                    Core.Gateway.GatewayMetrics.StreamDuration(target.Provider.Id, target.UpstreamModel,
+                        sw.ElapsedMilliseconds - respAt);
                     if (pooled is not null)
                         await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: true);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);

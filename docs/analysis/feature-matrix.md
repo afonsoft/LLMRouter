@@ -28,3 +28,18 @@ Status: ✅ done · 🟡 partial · ⬜ planned (spec)
 | MITM relay + traffic inspector + pxpipe | `src/mitm`, pages | 014 | ⬜ |
 | Gamification/radar/discovery/free-tiers/batch/etc | various | 015 | ⬜ |
 | CLI + Docker + release CI | `bin/`, Dockerfile | 016 | ⬜ |
+
+## SPEC-1xx (melhorias de mercado)
+
+| Feature | Eixo | Spec | Status |
+|---|---|---|---|
+| EF Core migrations | config | 109 | ✅ |
+| Usage sink assíncrono | performance | 108 | ✅ |
+| OTEL `/metrics` + OTLP (Prom/Grafana) | performance | 101 | ✅ |
+| Routing hints por request | parametrização | 102 | ⬜ |
+| Audit retention TTL + purge | auditoria | 103 | ⬜ |
+| Config-as-code export/import | parametrização | 104 | ⬜ |
+| Benchmark público | performance | 105 | ⬜ |
+| Cache semântico | performance | 106 | ⬜ |
+| Response guardrails + PII | auditoria | 107 | ⬜ |
+| Audit hash-chain | auditoria | 110 | ⬜ |

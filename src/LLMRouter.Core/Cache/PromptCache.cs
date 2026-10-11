@@ -64,11 +64,23 @@ public static class PromptCache
         body.ValueKind == JsonValueKind.Object
         && (body.TryGetProperty("reasoning", out _) || body.TryGetProperty("thinking", out _));
 
+    // SPEC-101: in-memory hit/miss counters behind llmr_promptcache_hit_ratio
+    // (per-row Hits stay persisted; these gauge the lookup path itself).
+    private static long _hits, _misses;
+    public static double HitRatio =>
+        _hits + _misses == 0 ? 0 : (double)_hits / (_hits + _misses);
+    public static void ResetHitStats() { _hits = 0; _misses = 0; }
+
     /// <summary>Hit: returns the stored response JSON and bumps Hits; misses and expired → null.</summary>
     public static async Task<string?> LookupAsync(LlmRouterDbContext db, string hash, CancellationToken ct = default)
     {
         var e = await db.CacheEntries.FirstOrDefaultAsync(c => c.Hash == hash, ct);
-        if (e is null || string.Compare(e.ExpiresAt, Now(), StringComparison.Ordinal) <= 0) return null;
+        if (e is null || string.Compare(e.ExpiresAt, Now(), StringComparison.Ordinal) <= 0)
+        {
+            Interlocked.Increment(ref _misses);
+            return null;
+        }
+        Interlocked.Increment(ref _hits);
         e.Hits++;
         await db.SaveChangesAsync(ct);
         return e.Response;

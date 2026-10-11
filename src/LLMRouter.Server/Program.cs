@@ -7,6 +7,8 @@ using LLMRouter.Core.Gateway;
 using LLMRouter.Server.Endpoints;
 using LLMRouter.Server.Mitm;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 
 // SPEC-016: CLI verbs — `llmrouter serve` (default), `reset-password`, `version`.
 if (args is ["version" or "--version", ..])
@@ -43,6 +45,30 @@ builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LLMRouter.Core.Jobs.JobScheduler>());
 builder.Services.AddHostedService<LLMRouter.Server.Endpoints.A2aTaskExecutor>();
 builder.Logging.AddProvider(LLMRouter.Server.Services.ConsoleLogBuffer.Instance);
+
+// SPEC-101: OpenTelemetry — Prometheus /metrics always on; OTLP exporter
+// (metrics+traces) when settings.observability.otlp is configured. Read
+// best-effort before migrations run — absent table → OTLP simply stays off.
+var obsCfg = LLMRouter.Core.Gateway.ObservabilitySettings.LoadEarly(
+    builder.Configuration["Db:Path"]
+    ?? Environment.GetEnvironmentVariable("LLMROUTER_DB_PATH")
+    ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "LLMRouter", "llmrouter.db"));
+var otel = builder.Services.AddOpenTelemetry();
+otel.WithMetrics(m =>
+{
+    m.AddMeter(LLMRouter.Core.Gateway.GatewayMetrics.MeterName);
+    m.AddPrometheusExporter();
+    if (obsCfg.Otlp is { } mo)
+        m.AddOtlpExporter(o => ApplyOtlp(o, mo));
+});
+otel.WithTracing(t =>
+{
+    t.AddSource(LLMRouter.Core.Gateway.GatewayMetrics.MeterName);
+    t.AddAspNetCoreInstrumentation();
+    if (obsCfg.Otlp is { } to)
+        t.AddOtlpExporter(o => ApplyOtlp(o, to));
+});
 
 // Resolved inside the AddDbContext factory so test-provided configuration
 // (WebApplicationFactory ConfigureAppConfiguration) is visible — reading
@@ -102,6 +128,8 @@ var app = builder.Build();
 // HybridCache backs the SPEC-074 hot-path cache (stampede protection + tag busts).
 LLMRouter.Core.Gateway.HotCache.Configure(
     app.Services.GetRequiredService<Microsoft.Extensions.Caching.Hybrid.HybridCache>());
+// SPEC-101: live gauges — breaker state, cooldowns, lockouts, prompt-cache ratio.
+LLMRouter.Core.Gateway.GatewayMetrics.RegisterRuntimeGauges();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -178,6 +206,26 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// SPEC-101: settings.observability.metricsAuth gates /metrics behind a valid
+// gateway api key (default off — local Prometheus scrapes need no auth). Read
+// live so toggling the flag doesn't require a restart.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.Equals("/metrics", StringComparison.OrdinalIgnoreCase))
+    {
+        var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
+        var sdata = await LLMRouter.Core.Gateway.HotReads.SettingsDataAsync(db);
+        if (LLMRouter.Core.Gateway.ObservabilitySettings.Parse(sdata).MetricsAuth
+            && !(await LLMRouter.Server.Endpoints.GatewayEndpoints.AuthenticatedKey(ctx, db)).Authed)
+        {
+            ctx.Response.StatusCode = 401;
+            await ctx.Response.WriteAsJsonAsync(new { error = "metrics_auth_required" });
+            return;
+        }
+    }
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 // .NET 10 static-asset fingerprinting: index.html references assets as
@@ -220,6 +268,7 @@ if (!headless)
 app.UseStatusCodePagesWithReExecute("/error/{0}");
 
 app.MapAuthEndpoints();
+app.MapPrometheusScrapingEndpoint(); // SPEC-101: GET /metrics
 ProviderScopedEndpoints.Map(app);
 V1LeftoversEndpoints.Map(app);
 UsageDepthEndpoints.Map(app);
@@ -332,6 +381,17 @@ static string? FrameworkDir(IWebHostEnvironment env)
         }
     }
     return null;
+}
+
+static void ApplyOtlp(OpenTelemetry.Exporter.OtlpExporterOptions o,
+    LLMRouter.Core.Gateway.ObservabilitySettings.OtlpConfig c)
+{
+    o.Endpoint = new Uri(c.Endpoint);
+    o.Protocol = c.Protocol.Replace('/', '_').Equals("http_protobuf", StringComparison.OrdinalIgnoreCase)
+        ? OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf
+        : OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
+    if (c.Headers.Count > 0)
+        o.Headers = string.Join(",", c.Headers.Select(kv => $"{kv.Key}={kv.Value}"));
 }
 
 public partial class Program { }

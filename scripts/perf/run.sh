@@ -40,3 +40,28 @@ wc -l "$KEYSF"
 
 COMBOS="combo-a,combo-b,combo-c,auto/gpt" GATEWAY_URL="$BASE" \
   python3 scripts/perf/load.py "$KEYSF" "$D" | tee perf-results.txt
+
+# Append a citable results row to docs/perf.md (SPEC-105) — env label via
+# PERF_LABEL, commit sha, and the RESULT_JSON metrics of this run.
+if [ "${PERF_APPEND:-1}" = "1" ] && [ -f docs/perf.md ]; then
+  python3 - <<'EOF' || echo "warn: could not append docs/perf.md row" >&2
+import json, os, re, subprocess
+line = [l for l in open("perf-results.txt") if l.startswith("RESULT_JSON=")]
+if not line: raise SystemExit(1)
+r = json.loads(line[-1].split("=", 1)[1])
+sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                     capture_output=True, text=True).stdout.strip()
+label = os.environ.get("PERF_LABEL",
+    "ci" if os.environ.get("CI") else "local")
+import datetime
+row = (f"| {datetime.date.today():%Y-%m-%d} | {label} | {sha} "
+       f"| {r.get('scenario','combo')} | {r['rps']:.0f} "
+       f"| {r['p50'] if r['p50'] is not None else '-'} "
+       f"| {r['p95'] if r['p95'] is not None else '-'} "
+       f"| {r.get('p99') if r.get('p99') is not None else '-'} "
+       f"| {r['errors']} |\n")
+p = "docs/perf.md"; doc = open(p).read()
+doc = doc.replace("<!-- results:end -->", row + "<!-- results:end -->")
+open(p, "w").write(doc)
+EOF
+fi

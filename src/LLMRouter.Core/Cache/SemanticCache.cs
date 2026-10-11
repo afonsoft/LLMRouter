@@ -60,7 +60,10 @@ public static class SemanticCache
         && connData.Contains("\"cacheOptOut\"", StringComparison.OrdinalIgnoreCase)
         && connData.Contains("true", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Prompt text for embedding: all message contents joined.</summary>
+    /// <summary>Prompt text for embedding: user/assistant message contents
+    /// joined. System, developer and tool-role messages are skipped — injected
+    /// scaffolding (e.g. "Active skills: ...") is identical across requests and
+    /// would make every pair of prompts look similar.</summary>
     public static string TextOf(JsonElement body)
     {
         var sb = new StringBuilder();
@@ -68,6 +71,10 @@ public static class SemanticCache
             && body.TryGetProperty("messages", out var ms) && ms.ValueKind == JsonValueKind.Array)
             foreach (var m in ms.EnumerateArray())
             {
+                if (m.TryGetProperty("role", out var r)
+                    && r.ValueKind == JsonValueKind.String
+                    && r.GetString() is "system" or "developer" or "tool")
+                    continue;
                 if (m.TryGetProperty("content", out var c))
                 {
                     if (c.ValueKind == JsonValueKind.String) sb.Append(c.GetString()).Append(' ');

@@ -165,19 +165,15 @@ public class Spec106SemanticCacheTests : IDisposable
     }
 
     [Fact]
-    public async Task Debug_cosine_direct()
+    public async Task System_scaffold_does_not_dominate_embedding()
     {
-        await SeedAsync(threshold: 0.80);
-        await using var db = Db();
-        var sdata = JsonDocument.Parse((await db.Settings.FirstAsync()).Data).RootElement;
-        var cfg = LLMRouter.Core.Cache.SemanticCache.Read(sdata);
-        var hf = _factory.Services.GetRequiredService<IHttpClientFactory>();
-        var va = LLMRouter.Core.Memory.VectorMemory.LocalEmbed("what is the capital of france");
-        await LLMRouter.Core.Cache.SemanticCache.StoreAsync(db, sdata, "h1", "openai/gpt-4o", va, "{}", cfg);
-        var vb = LLMRouter.Core.Memory.VectorMemory.LocalEmbed("北京大学在哪里");
-        var hit = await LLMRouter.Core.Cache.SemanticCache.LookupAsync(db, hf, sdata, "openai/gpt-4o", vb, cfg);
-        Console.Error.WriteLine($"SIM={hit?.Similarity} RESP={(hit is null ? "null" : "hit")}");
-        hit.ShouldBeNull();
+        // The skills feature injects a large "Active skills: ..." system
+        // message; TextOf must skip system/developer/tool roles so two
+        // different user prompts don't look identical.
+        var scaffolded = """{"model":"x","messages":[{"role":"system","content":"Active skills: AAA BBB CCC DDD EEE FFF GGG HHH"},{"role":"user","content":"hello"}]}""";
+        var t = LLMRouter.Core.Cache.SemanticCache.TextOf(
+            JsonDocument.Parse(scaffolded).RootElement);
+        t.ShouldBe("hello");
     }
 
     [Fact]

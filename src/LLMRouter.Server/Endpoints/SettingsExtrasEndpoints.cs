@@ -27,7 +27,7 @@ public static class SettingsExtrasEndpoints
 
     private static async Task<IResult> PutAsync(HttpContext ctx, LlmRouterDbContext db, string key)
     {
-        var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body, ctx.RequestAborted);
+        var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body, JsonOpts, ctx.RequestAborted);
         var s = await db.Settings.FirstOrDefaultAsync(ctx.RequestAborted)
             ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
         var d = AuthEndpoints.Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];

@@ -200,12 +200,14 @@ public static class OAuthService
         var o = OauthBlock(p);
         var d = JsonSerializer.Deserialize<JsonElement>(c.Data);
         if (!d.TryGetProperty("refreshToken", out var rt)) return false;
+        var refreshToken = Security.OmniCrypto.MaybeDecrypt(rt.GetString());
+        if (refreshToken is null) return false;
         var url = S(o, "refreshUrl") ?? S(o, "tokenUrl");
         if (url is null) return false;
         var form = new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
-            ["refresh_token"] = rt.GetString()!,
+            ["refresh_token"] = refreshToken,
             ["client_id"] = ClientId(p, o) ?? "",
         };
         if (ClientSecret(p, o) is { } sec) form["client_secret"] = sec;

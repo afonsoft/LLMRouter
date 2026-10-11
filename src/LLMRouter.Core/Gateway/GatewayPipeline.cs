@@ -257,8 +257,12 @@ public sealed class GatewayEngine(
         {
             var el = JsonDocument.Parse(d).RootElement;
             foreach (var k in new[] { "apiKey", "accessToken", "token", "key", "secret" })
-                if (el.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String)
-                    return v.GetString();
+                // enc:v1: ciphertext migrado do OmniRoute — decifra com
+                // STORAGE_ENCRYPTION_KEY; pula para o próximo campo se falhar.
+                if (el.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String
+                    && Security.OmniCrypto.MaybeDecrypt(v.GetString()) is { } s)
+                    return s;
+            return null;
         }
         catch { /* best-effort: failure is non-fatal */ }
         return null;
@@ -292,8 +296,9 @@ public sealed class GatewayEngine(
             provider, model, promptTokens, completionTokens) ?? 0;
 
         // SPEC-101: every logged request feeds the scrapeable meter source.
-        GatewayMetrics.RecordRequest(provider, model, connectionId, apiKey,
-            endpoint, promptTokens, completionTokens, cost, latencyMs, status);
+        GatewayMetrics.RecordRequest(new GatewayMetrics.RequestMetric(
+            provider, model, connectionId, apiKey,
+            endpoint, promptTokens, completionTokens, cost, latencyMs, status));
 
         // SPEC-074: usage lands via the writer — cached quota/daily-cap
         // verdicts for this provider+key are now stale.

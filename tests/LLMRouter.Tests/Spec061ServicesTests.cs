@@ -47,7 +47,7 @@ public class Spec061ServicesTests : WebAppTestBase
         await using var db = Db();
         var c = await db.ProviderConnections.FindAsync("svc-llmlingua");
         c.ShouldNotBeNull();
-        c!.Data.ShouldContain("127.0.0.1:8899");
+        c!.Data.ShouldContain("127.0.0.1:20135");
     }
 
     [Fact]

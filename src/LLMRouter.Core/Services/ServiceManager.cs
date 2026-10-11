@@ -17,7 +17,11 @@ public static class ServiceManager
     /// <summary>Descritor de um serviço do catálogo.</summary>
     public sealed record Descriptor(
         string Id, string Name, string? BinaryUrl, int Port, string HealthPath,
-        string Args, string[] Env);
+        string Args, string[] Env,
+        // SPEC-099: pacote npm instalado em services/{id}/ (quando o sidecar é um script node).
+        string? NpmPackage = null,
+        // SPEC-099: script entrypoint copiado do repo para services/{id}/ e executado via `node`.
+        string? EntryScript = null);
 
     private sealed class ProcState
     {
@@ -43,7 +47,7 @@ public static class ServiceManager
         new("dario", "Dario", null, 9229, "/health", "", []),
         new("mux", "Mux", null, 9933, "/health", "", []),
         new("openwa", "OpenWA", null, 3737, "/health", "", []),
-        new("llmlingua", "LLMLingua", null, 8899, "/health", "", []),
+        new("llmlingua", "LLMLingua", null, 20135, "/health", "", [], "@atjsh/llmlingua-2", "llmlingua-sidecar.mjs"),
         new("redis", "Redis (bundled)", "https://download.redis.io/releases", 6379, "/", "--port 6379", []),
         new("novnc", "noVNC desktop", null, 6080, "/", "--listen 6080", []),
     ];
@@ -105,16 +109,60 @@ public static class ServiceManager
 
     /// <summary>"Install" = cria o diretório do serviço e marca instalado (binário real
     /// só quando BinaryUrl é um arquivo .tar.gz/.zip baixável — stubs não baixam).</summary>
-    public static Task<(bool ok, string detail)> InstallAsync(string id)
+    public static async Task<(bool ok, string detail)> InstallAsync(string id)
     {
         var d = Find(id);
-        if (d is null) return Task.FromResult((false, "unknown service"));
+        if (d is null) return (false, "unknown service");
         var dir = DirFor(RootDir, id);
         Directory.CreateDirectory(dir);
+        // SPEC-099: npm-backed sidecars — `npm install <pkg>` + copy the
+        // entry script committed in the repo into services/{id}/.
+        if (d.NpmPackage is not null)
+        {
+            if (d.EntryScript is not null)
+            {
+                var src = Path.Combine(AppContext.BaseDirectory, "scripts", d.EntryScript);
+                if (!File.Exists(src)) src = Path.Combine(RepoRoot(), "scripts", d.EntryScript);
+                if (!File.Exists(src)) return (false, $"entry script not found: {d.EntryScript}");
+                File.Copy(src, Path.Combine(dir, d.EntryScript), overwrite: true);
+            }
+            var npm = await RunProcAsync("npm", $"install {d.NpmPackage}", dir, 120_000, id);
+            if (!npm.ok) return (false, npm.detail);
+        }
         File.WriteAllText(Path.Combine(dir, "installed.json"),
             JsonSerializer.Serialize(new { id = d.Id, at = DateTime.UtcNow.ToString("O") }));
         State(id).Log("installed marker written");
-        return Task.FromResult((true, dir));
+        return (true, dir);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
+            if (dir!.GetFiles("*.sln*").Length > 0) return dir.FullName;
+        return AppContext.BaseDirectory;
+    }
+
+    private static async Task<(bool ok, string detail)> RunProcAsync(
+        string file, string args, string cwd, int timeoutMs, string logId)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(file, args)
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                UseShellExecute = false, WorkingDirectory = cwd,
+            };
+            using var p = Process.Start(psi)!;
+            var st = State(logId);
+            p.OutputDataReceived += (_, a) => { if (a.Data is not null) st.Log(a.Data); };
+            p.ErrorDataReceived += (_, a) => { if (a.Data is not null) st.Log(a.Data); };
+            p.BeginOutputReadLine(); p.BeginErrorReadLine();
+            using var cts = new CancellationTokenSource(timeoutMs);
+            await p.WaitForExitAsync(cts.Token);
+            return p.ExitCode == 0 ? (true, $"{file} {args} ok") : (false, $"{file} exit {p.ExitCode}");
+        }
+        catch (Exception ex) { return (false, ex.Message); }
     }
 
     /// <summary>Start: se o binário existir em services/{id}/bin spawna; senão apenas
@@ -126,10 +174,23 @@ public static class ServiceManager
         var st = State(id);
         if (st.Proc is { HasExited: false }) return (true, "already running");
 
-        var binDir = Path.Combine(DirFor(RootDir, id), "bin");
-        var bin = Directory.Exists(binDir)
-            ? Directory.EnumerateFiles(binDir).FirstOrDefault(f => !f.EndsWith(".txt"))
-            : null;
+        // SPEC-099: script-backed sidecars spawn `node <EntryScript>` from the service dir.
+        var serviceDir = DirFor(RootDir, id);
+        string? bin = null;
+        string? fileName = null;
+        var workDir = Path.Combine(serviceDir, "bin");
+        if (d.EntryScript is not null)
+        {
+            var script = Path.Combine(serviceDir, d.EntryScript);
+            if (File.Exists(script)) { fileName = "node"; bin = d.EntryScript; workDir = serviceDir; }
+        }
+        else
+        {
+            bin = Directory.Exists(workDir)
+                ? Directory.EnumerateFiles(workDir).FirstOrDefault(f => !f.EndsWith(".txt"))
+                : null;
+            fileName = bin;
+        }
         if (bin is null)
         {
             // sem binário local: só "start" se já estiver adotado na porta
@@ -138,10 +199,10 @@ public static class ServiceManager
         }
         try
         {
-            var psi = new ProcessStartInfo(bin, d.Args)
+            var psi = new ProcessStartInfo(fileName!, d.EntryScript is not null ? $"{bin} {d.Args}".Trim() : d.Args)
             {
                 RedirectStandardOutput = true, RedirectStandardError = true,
-                UseShellExecute = false, WorkingDirectory = binDir,
+                UseShellExecute = false, WorkingDirectory = workDir,
             };
             foreach (var e in d.Env) { var i = e.IndexOf('='); if (i > 0) psi.Environment[e[..i]] = e[(i + 1)..]; }
             var p = Process.Start(psi);

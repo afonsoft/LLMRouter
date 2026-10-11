@@ -332,7 +332,8 @@ else if (Current == "backup")
 
 @code {
     [Parameter] public string? Section { get; set; }
-    private string Current => string.IsNullOrEmpty(Section) ? "general" : Section;
+    private string Current => string.IsNullOrEmpty(Section) || !Sections.Any(s => s.Id == Section)
+        ? "general" : Section;
 
     private static readonly (string Id, string Label)[] Sections =
     [

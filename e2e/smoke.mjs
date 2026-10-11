@@ -29,6 +29,24 @@ try {
   await page.goto(base + '/dashboard/playground', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.page-title', { timeout: 60_000 });
 
+  // 5. SPEC-123: /dashboard/settings/security deep-links the Security tab
+  await page.goto(base + '/dashboard/settings/security', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.tab.on', { timeout: 60_000 });
+  const onTab = (await page.textContent('.tab.on')) || '';
+  if (!/security/i.test(onTab)) fail(`expected Security tab active, got "${onTab.trim()}"`);
+
+  // 6. tab switch updates the URL (client-side nav)
+  await page.click('a.tab[href="/dashboard/settings/cache"]');
+  await page.waitForURL(/settings\/cache/, { timeout: 30_000 });
+  const onCache = (await page.textContent('.tab.on')) || '';
+  if (!/cache/i.test(onCache)) fail(`expected Cache tab active after nav, got "${onCache.trim()}"`);
+
+  // 7. unknown section falls back to General
+  await page.goto(base + '/dashboard/settings/bogus-section', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.tab.on', { timeout: 60_000 });
+  const onBogus = (await page.textContent('.tab.on')) || '';
+  if (!/general/i.test(onBogus)) fail(`expected General fallback, got "${onBogus.trim()}"`);
+
   console.log('E2E smoke OK');
 } catch (err) {
   fail(err.message);

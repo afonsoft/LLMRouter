@@ -21,6 +21,10 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --no-restore -c Release
+      - name: EF migrations drift check (SPEC-109)
+        run: |
+          dotnet tool restore
+          dotnet dotnet-ef migrations has-pending-model-changes --project src/LLMRouter.Core
       - name: Test
         run: dotnet test --no-build -c Release --logger "trx;LogFileName=tests.trx"
       - name: Publish test results

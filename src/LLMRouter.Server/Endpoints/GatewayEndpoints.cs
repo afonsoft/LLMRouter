@@ -1446,7 +1446,7 @@ public static class GatewayEndpoints
         if (key.StartsWith("vk-", StringComparison.OrdinalIgnoreCase)
             && await Core.Gateway.HotReads.UserKeyAsync(db, key) is { IsActive: true } uk
             && await db.Users.AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Id == uk.UserId) is { IsActive: true })
+                .FirstOrDefaultAsync(u => u.Id == uk.UserId, ctx.RequestAborted) is { IsActive: true })
             return new AuthKey(key, true, uk.UserId, uk);
         return new AuthKey(key, false);
     }
@@ -1486,7 +1486,7 @@ public static class GatewayEndpoints
         if (vk.BudgetUsd > 0)
         {
             var fresh = await db.UserKeys.AsNoTracking()
-                .FirstOrDefaultAsync(k => k.Id == vk.Id);
+                .FirstOrDefaultAsync(k => k.Id == vk.Id, ctx.RequestAborted);
             if (fresh is not null && Core.Gateway.VirtualKeyGate.BudgetExceeded(fresh, DateTime.UtcNow))
             {
                 ctx.Response.StatusCode = 402;

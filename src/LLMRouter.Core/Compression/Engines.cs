@@ -2,8 +2,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using LLMRouter.Core.Extras;
+using LLMRouter.Core.Services;
 
 namespace LLMRouter.Core.Compression;
 
@@ -934,12 +936,30 @@ public sealed class RtkEngine : EngineBase
     }
 }
 
-/// <summary>llmlingua — registered for catalog parity; the SLM backend isn't bundled, Apply is fail-open pass-through.</summary>
+/// <summary>
+/// llmlingua — SPEC-099: when the sidecar service reports running, dispatch
+/// each long message text to `POST http://127.0.0.1:20135/compress`
+/// (@atjsh/llmlingua-2, ONNX TinyBERT). ANY error (service down, timeout,
+/// bad body) → fail-open pass-through: worst case is no savings, never
+/// corruption. Sidecar opt-in via /api/services/llmlingua/* — no auto-install.
+/// </summary>
 public sealed class LlmlinguaEngine : EngineBase
 {
+    private const int Port = 20135;
+    private const int MinTextChars = 512;
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
+    private static readonly HttpClient SharedHttp = new() { Timeout = Timeout };
+    private readonly HttpClient _http;
+    private readonly Func<Task<bool>> _running;
+
+    public LlmlinguaEngine() : this(SharedHttp, () => ServiceManager.RunningAsync("llmlingua")) { }
+    /// <summary>TEST-ONLY ctor: injected client + running probe.</summary>
+    public LlmlinguaEngine(HttpClient http, Func<Task<bool>> running) { _http = http; _running = running; }
+
     public override string Id => "llmlingua";
     public override string Name => "LLMLingua";
-    public override string Description => "Semantic pruning via a local SLM backend (not bundled — engine is fail-open).";
+    public override string Description => "Semantic pruning via the llmlingua sidecar (opt-in service; engine fail-opens when it's down).";
     public override int StackPriority => 35;
     public override bool Stable => false;
     public override IReadOnlyList<EngineConfigField> ConfigSchema =>
@@ -947,8 +967,44 @@ public sealed class LlmlinguaEngine : EngineBase
         new("compressionRate", "number", "Compression rate", 0.5, Min: 0, Max: 1),
         new("modelPath", "string", "Model path", ""),
     ];
-    public override CompressionResult Apply(JsonObject body, EngineOptions options) =>
+    public override CompressionResult Apply(JsonObject body, EngineOptions options)
+    {
+        try { return ApplyAsync(body, options).GetAwaiter().GetResult(); }
+        catch { return PassThrough(body); }
+    }
+
+    private CompressionResult PassThrough(JsonObject body) =>
         new(body, false, new EngineRunStats(Id, TextOps.BodyTextChars(body), TextOps.BodyTextChars(body), [], "backend_unavailable"));
+
+    private async Task<CompressionResult> ApplyAsync(JsonObject body, EngineOptions options)
+    {
+        if (!await _running()) return PassThrough(body);
+        var messages = TextOps.Messages(body);
+        if (messages is null) return PassThrough(body);
+        var rate = OptDouble(options.StepConfig, "compressionRate", 0.5);
+        var outMsgs = TextOps.CloneMessages(messages);
+        var applied = false;
+        for (var i = 0; i < outMsgs.Count; i++)
+        {
+            var text = TextOps.ExtractText(outMsgs[i]);
+            if (text.Length < MinTextChars) continue;
+            try
+            {
+                using var resp = await _http.PostAsJsonAsync(
+                    $"http://127.0.0.1:{Port}/compress", new { text, rate });
+                if (!resp.IsSuccessStatusCode) return PassThrough(body);
+                var doc = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                var compressed = doc.TryGetProperty("compressed", out var c)
+                    ? c.GetString() : null;
+                if (compressed is not { Length: > 0 }) return PassThrough(body);
+                outMsgs[i] = TextOps.SetText((JsonObject)outMsgs[i]!, compressed);
+                applied = true;
+            }
+            catch { return PassThrough(body); }
+        }
+        return applied ? Done(body, TextOps.NewBody(body, outMsgs), ["llmlingua"])
+                       : PassThrough(body);
+    }
 }
 
 /// <summary>omniglyph — registered for catalog parity; needs the renderer + byte-preserving provider transport.</summary>

@@ -84,11 +84,175 @@ public static class AnalyticsEndpoints
             // combos with no traffic still show up
             foreach (var name in comboNames.Where(n => health.All(h => h.Combo != n)))
                 health.Add(new ComboHealthRow(name, 0, 0, 0, null, 0));
-            return Results.Json(new { combos = health.OrderByDescending(h => h.Score) }, JsonOpts);
+
+            // ---- SPEC-117: Combo Health Autopilot (upstream
+            // lib/usage/comboHealthDashboard → autopilot report) ----
+            var combosFull = await db.Combos.ToListAsync();
+            var quotaLatest = await Core.Routing.QuotaSnapshots.LatestAsync(db);
+            var exhaustedProviders = quotaLatest
+                .Where(s => s.IsExhausted == 1)
+                .Select(s => s.Provider).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var breakerOpen = Core.Resilience.ProviderBreaker.Snapshot()
+                .Where(i => i.State is "OPEN" or "HALFOPEN")
+                .Select(i => i.ProviderId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var autopilotCombos = new List<object>();
+            var issueCount = 0; var actionable = 0; var anyCritical = false;
+            var down = 0; var degraded = 0; var healthy = 0;
+            foreach (var c in combosFull)
+            {
+                var h = health.FirstOrDefault(x => x.Combo == c.Name)
+                    ?? new ComboHealthRow(c.Name, 0, 0, 0, null, 0);
+                var models = JsonDocument.Parse(c.Models).RootElement
+                    .EnumerateArray().Select(m => m.GetString() ?? "").Where(s => s.Length > 0).ToList();
+                var providers = models.Select(m => m.Split('/', 2)[0])
+                    .Where(s => s.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+                var issues = new List<object>();
+                var severities = new List<string>();
+                void Issue(string severity, string kind, string title, string rec,
+                    string? provider, params (string type, string label, string href)[] actions)
+                {
+                    issueCount++;
+                    severities.Add(severity);
+                    if (severity != "info") actionable++;
+                    if (severity == "critical") anyCritical = true;
+                    issues.Add(new
+                    {
+                        id = $"{c.Id}:{kind}",
+                        severity, kind, title,
+                        recommendation = rec,
+                        evidence = new { requests = h.Requests, successRate = h.SuccessRate, score = h.Score },
+                        target = new { comboId = c.Id, comboName = c.Name, provider },
+                        actions = actions.Select(a => new
+                        {
+                            type = a.type, mode = "manual", label = a.label,
+                            href = a.href,
+                            target = new { comboId = c.Id, comboName = c.Name, provider },
+                        }).ToArray(),
+                    });
+                }
+
+                if (models.Count == 0)
+                    Issue("critical", "combo_no_targets", "Combo has no targets",
+                        "Add at least one provider/model target to this combo.", null,
+                        ("open_combo_editor", "Open combo editor", $"/dashboard/combos/{c.Id}"));
+                else if (h.Requests == 0)
+                    Issue("info", "combo_no_recent_traffic", "No recent traffic",
+                        "The combo saw no requests in this window.", null,
+                        ("run_combo_test", "Run cookbook", "/dashboard/combos"));
+                if (h.Requests >= 10 && h.SuccessRate < 50)
+                    Issue("critical", "combo_low_success_rate", "Combo success rate below target",
+                        "Success rate under 50%. Review failing targets or reorder the combo.", null,
+                        ("open_combo_editor", "Open combo editor", $"/dashboard/combos/{c.Id}"),
+                        ("run_combo_test", "Run cookbook", "/dashboard/combos"));
+                else if (h.Requests >= 10 && h.SuccessRate < 90)
+                    Issue("warning", "combo_low_success_rate", "Combo success rate below target",
+                        "Success rate under 90%. Check the latest errors on the request log.", null,
+                        ("open_combo_editor", "Open combo editor", $"/dashboard/combos/{c.Id}"));
+                if (h.LastError is not null)
+                    Issue("info", "target_last_error", "Recent upstream error",
+                        "Inspect the last failed request on the request log.", null,
+                        ("open_combo_editor", "Open combo editor", $"/dashboard/combos/{c.Id}"));
+                foreach (var p in providers)
+                {
+                    if (exhaustedProviders.Contains(p))
+                        Issue("critical", "target_quota_exhausted", "Target quota exhausted",
+                            $"Provider {p} reported 0% remaining quota.", p,
+                            ("review_quota_limits", "Review quota limits", "/dashboard/providers"),
+                            ("open_combo_editor", "Open combo editor", $"/dashboard/combos/{c.Id}"));
+                    else if (await Core.Routing.QuotaWindows.ExceededAsync(db, p))
+                        Issue("warning", "target_quota_exhausted", "Provider quota window saturated",
+                            $"Configured quota window for {p} is saturated.", p,
+                            ("review_quota_limits", "Review quota limits", "/dashboard/providers"));
+                    if (breakerOpen.Contains(p))
+                        Issue("warning", "provider_health_issue", "Provider health issue",
+                            $"Circuit breaker for {p} is open; requests are being skipped.", p,
+                            ("open_provider_health_autopilot", "Open health autopilot", "/dashboard/health"));
+                }
+
+                var state = h.Requests > 0 && h.Score < 40 ? "down"
+                    : h.Score < 80 || severities.Any(s => s != "info") ? "degraded"
+                    : "healthy";
+                _ = state == "down" ? down++ : state == "degraded" ? degraded++ : healthy++;
+                autopilotCombos.Add(new
+                {
+                    comboId = c.Id, comboName = c.Name,
+                    strategy = c.Kind ?? "round-robin",
+                    score = h.Score, state, issues,
+                });
+            }
+            var status = down > 0 || anyCritical
+                ? "critical"
+                : degraded > 0 || actionable > 0 ? "warning" : "healthy";
+            var autopilot = new
+            {
+                status,
+                summary = new
+                {
+                    issueCount, suggestionCount = actionable,
+                    actionableCount = actionable,
+                    downCount = down, degradedCount = degraded, healthyCount = healthy,
+                    totalCombos = combosFull.Count,
+                },
+                combos = autopilotCombos,
+            };
+            return Results.Json(new
+            {
+                combos = health.OrderByDescending(h => h.Score),
+                autopilot,
+            }, JsonOpts);
         });
 
         g.MapGet("/usage/utilization", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
+            // SPEC-117: upstream contract — range + aggregateBy serve bucketed
+            // quotaSnapshots (provider utilization over time).
+            if (ctx.Request.Query.TryGetValue("range", out var rangeParam)
+                && rangeParam.Count > 0)
+            {
+                var range = rangeParam.ToString();
+                if (!Core.Routing.QuotaSnapshots.ValidRanges.Contains(range))
+                    return Results.Json(
+                        new { error = "Invalid range. Must be one of: 1h, 24h, 7d, 30d" },
+                        JsonOpts, statusCode: 400);
+                var since = (range switch
+                {
+                    "1h" => DateTime.UtcNow.AddHours(-1),
+                    "24h" => DateTime.UtcNow.AddDays(-1),
+                    "7d" => DateTime.UtcNow.AddDays(-7),
+                    _ => DateTime.UtcNow.AddDays(-30),
+                }).ToString("yyyy-MM-dd HH:mm:ss");
+                var aggregateBy = ctx.Request.Query["aggregateBy"].ToString() == "connection"
+                    ? "connection" : "provider";
+                var providerFilter = ctx.Request.Query["provider"].ToString();
+                var bucketMinutes = Core.Routing.QuotaSnapshots.BucketSizes[range];
+                var data = await Core.Routing.QuotaSnapshots.AggregatedAsync(db,
+                    since, bucketMinutes, aggregateBy,
+                    string.IsNullOrEmpty(providerFilter) ? null : providerFilter);
+                var providers = data.Select(d => d.Provider).Distinct().ToArray();
+                object? connectionMeta = null;
+                if (aggregateBy == "connection")
+                {
+                    var ids = data.Select(d => d.Provider.Split(':', 2))
+                        .Where(p => p.Length == 2).Select(p => p[1])
+                        .Distinct().ToArray();
+                    var conns = await db.ProviderConnections
+                        .Where(c => ids.Contains(c.Id))
+                        .Select(c => new { c.Id, c.Name, c.Email }).ToListAsync();
+                    connectionMeta = conns.ToDictionary(c => c.Id,
+                        c => new { email = c.Email, name = c.Name, displayName = c.Name ?? c.Email });
+                }
+                return Results.Json(new
+                {
+                    timeRange = range,
+                    bucketSizeMinutes = bucketMinutes,
+                    providers,
+                    data,
+                    connectionMeta,
+                }, JsonOpts);
+            }
+
             var cutoff = Since(Days(ctx));
             var rows = await db.UsageHistory.Where(r => string.Compare(r.Timestamp, cutoff) >= 0).ToListAsync();
             return Results.Json(new

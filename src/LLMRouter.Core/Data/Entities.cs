@@ -922,3 +922,28 @@ public class ProxyLog
     /// <summary>Send start → first useful body byte.</summary>
     public long? FirstChunkMs { get; set; }
 }
+
+/// <summary>
+/// SPEC-117: provider-reported quota telemetry (upstream quota_snapshots).
+/// One row per quota window observation — written (deduped) whenever an
+/// upstream response carries rate-limit headers (anthropic-ratelimit-*,
+/// x-ratelimit-*) or the usage-quota probe runs.
+/// </summary>
+[Table("quotaSnapshots")]
+public class QuotaSnapshot
+{
+    [Key]
+    public long Id { get; set; }
+    public string Provider { get; set; } = "";
+    public string? ConnectionId { get; set; }
+    /// <summary>Quota window key, e.g. requests/input_tokens/tokens.</summary>
+    public string WindowKey { get; set; } = "";
+    /// <summary>0-100; null when the provider reports no fraction.</summary>
+    public double? RemainingPercentage { get; set; }
+    public int IsExhausted { get; set; }
+    public string? NextResetAt { get; set; }
+    public long? WindowDurationMs { get; set; }
+    /// <summary>Interpreted metadata only — never raw provider payloads.</summary>
+    public string? RawData { get; set; }
+    public string CreatedAt { get; set; } = "";
+}

@@ -1312,6 +1312,47 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("quotaSchedules");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.QuotaSnapshot", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConnectionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("IsExhausted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("NextResetAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RawData")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("RemainingPercentage")
+                        .HasColumnType("REAL");
+
+                    b.Property<long?>("WindowDurationMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WindowKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("quotaSnapshots");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.QuotaWindow", b =>
                 {
                     b.Property<string>("Id")

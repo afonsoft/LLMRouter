@@ -2,6 +2,10 @@
 @inject Api Api
 @inject Loc Loc
 
+@* SPEC-117: port of upstream ComboHealthTab.tsx — Combo Health Autopilot card
+   (status badge + issue/degraded/healthy counters + actionable alert cards)
+   above the per-combo score table. *@
+
 <div class="flex between">
     <div>
         <h1 class="page-title">@Loc.T("analyticsComboHealth", "Combo health")</h1>
@@ -12,6 +16,75 @@
     </select>
 </div>
 
+@if (_ap is not null)
+{
+    <div class="card mt-6" style="padding:0;overflow:hidden">
+        <div class="flex between" style="align-items:flex-start;gap:16px;padding:20px 24px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+            <div>
+                <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+                    <h3 class="bold" style="margin:0;font-size:16px">@Loc.T("analytics.comboHealthAutopilotTitle", "Combo Health Autopilot")</h3>
+                    <span class="badge @BadgeOf(_ap.Status)">@_ap.Status</span>
+                </div>
+                <p class="dim" style="margin:6px 0 0;font-size:13px">@Loc.T("analytics.comboHealthAutopilotDescription", "Continuously scans combos for failing targets, quota exhaustion and traffic anomalies.")</p>
+            </div>
+            <div class="ap-metrics">
+                <div class="ap-metric">
+                    <span class="m-label"><span class="material-symbols-outlined">monitor_heart</span>@Loc.T("analytics.comboHealthIssues", "Issues")</span>
+                    <span class="m-val">@_ap.IssueCount</span>
+                    <span class="m-sub">@Loc.T("analytics.comboHealthActionable", $"{_ap.Actionable} actionable")</span>
+                </div>
+                <div class="ap-metric">
+                    <span class="m-label"><span class="material-symbols-outlined">error</span>@Loc.T("analytics.comboHealthDown", "Down")</span>
+                    <span class="m-val">@_ap.DownCount</span>
+                </div>
+                <div class="ap-metric">
+                    <span class="m-label"><span class="material-symbols-outlined">warning</span>@Loc.T("analytics.comboHealthDegraded", "Degraded")</span>
+                    <span class="m-val">@_ap.DegradedCount</span>
+                </div>
+                <div class="ap-metric">
+                    <span class="m-label"><span class="material-symbols-outlined">task_alt</span>@Loc.T("analytics.comboHealthHealthy", "Healthy")</span>
+                    <span class="m-val">@_ap.HealthyCount</span>
+                </div>
+            </div>
+        </div>
+        <div style="padding:20px 24px">
+            @if (_topIssues.Count > 0)
+            {
+                <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px">
+                    @foreach (var (combo, issue) in _topIssues)
+                    {
+                        <div class="ap-issue">
+                            <div class="flex between" style="align-items:flex-start;gap:12px">
+                                <div style="min-width:0">
+                                    <div class="ap-issue-title">@issue.Title</div>
+                                    <div class="ap-issue-sub">@combo.Name · score @combo.Score.ToString("F0")</div>
+                                </div>
+                                <span class="badge @BadgeOf(issue.Severity)">@issue.Severity</span>
+                            </div>
+                            <p class="ap-issue-rec">@issue.Recommendation</p>
+                            @if (issue.Actions.Count > 0)
+                            {
+                                <div class="flex" style="flex-wrap:wrap;gap:8px;margin-top:14px">
+                                    @foreach (var a in issue.Actions.Take(3))
+                                    {
+                                        <a class="btn btn-sm" href="@a.Href">
+                                            <span class="material-symbols-outlined" style="font-size:14px">arrow_forward</span>@a.Label
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="ap-ok">@Loc.T("analytics.comboHealthNoActiveIssues", "No active issues — every combo is routing cleanly.")</div>
+            }
+        </div>
+    </div>
+}
+
 <div class="card card-p mt-6">
     @if (_combos.Count == 0)
     {
@@ -20,13 +93,19 @@
     else
     {
         <table class="table">
-            <thead><tr><th>Combo</th><th>Score</th><th>Requests</th><th>Success</th><th>Avg latency</th><th>Last error</th></tr></thead>
+            <thead><tr><th>Combo</th><th>@Loc.T("analytics.score", "Score")</th><th>@Loc.T("analytics.state", "State")</th><th>@Loc.T("analytics.requests", "Requests")</th><th>@Loc.T("analytics.success", "Success")</th><th>@Loc.T("analytics.avgLatency", "Avg latency")</th><th>@Loc.T("analytics.lastError", "Last error")</th></tr></thead>
             <tbody>
             @foreach (var c in _combos)
             {
                 <tr>
                     <td class="bold">@c.Combo</td>
                     <td><span class="chip @(c.Score >= 80 ? "chip-green" : c.Score >= 50 ? "chip-amber" : "chip-red")">@c.Score.ToString("F0")</span></td>
+                    <td>
+                        @if (StateOf(c.Combo) is { } st)
+                        {
+                            <span class="badge @BadgeOf(st)">@st</span>
+                        }
+                    </td>
                     <td>@c.Requests.ToString("N0")</td>
                     <td>@c.SuccessRate.ToString("F1")%</td>
                     <td>@c.AvgLatencyMs ms</td>
@@ -41,10 +120,28 @@
 @code {
     private int _days = 7;
     private List<Row> _combos = new();
+    private Ap? _ap;
+    private List<(ApCombo Combo, ApIssue Issue)> _topIssues = new();
+    private Dictionary<string, string> _states = new();
 
     private sealed record Row(string Combo, long Requests, double SuccessRate, long AvgLatencyMs, string? LastError, double Score);
+    private sealed record Ap(string Status, int IssueCount, int Actionable, int DownCount, int DegradedCount, int HealthyCount);
+    private sealed record ApCombo(string Id, string Name, double Score, string State);
+    private sealed record ApAction(string Label, string Href);
+    private sealed record ApIssue(string Severity, string Title, string Recommendation, List<ApAction> Actions);
 
     protected override async Task OnInitializedAsync() => await Load();
+
+    private static string BadgeOf(string s) => s switch
+    {
+        "critical" or "down" => "badge-error",
+        "warning" or "degraded" => "badge-warning",
+        "info" => "badge-info",
+        _ => "badge-success",
+    };
+
+    private string? StateOf(string combo) =>
+        _states.TryGetValue(combo, out var s) ? s : null;
 
     private async Task Load()
     {
@@ -54,10 +151,10 @@
             foreach (var c in arr.EnumerateArray())
             {
                 string? err = null;
-                if (c.TryGetProperty("lastError", out var le) && le.ValueKind == System.Text.Json.JsonValueKind.Object)
+                if (c.TryGetProperty("lastError", out var le) && le.ValueKind == JsonValueKind.Object)
                 {
-                    var e = le.TryGetProperty("error", out var ee) && ee.ValueKind == System.Text.Json.JsonValueKind.String ? ee.GetString() : null;
-                    var at = le.TryGetProperty("at", out var aa) && aa.ValueKind == System.Text.Json.JsonValueKind.String ? aa.GetString() : "";
+                    var e = le.TryGetProperty("error", out var ee) && ee.ValueKind == JsonValueKind.String ? ee.GetString() : null;
+                    var at = le.TryGetProperty("at", out var aa) && aa.ValueKind == JsonValueKind.String ? aa.GetString() : "";
                     err = $"{at} {(e is null ? "" : e[..Math.Min(80, e.Length)])}";
                 }
                 list.Add(new Row(
@@ -69,5 +166,45 @@
                     c.GetProperty("score").GetDouble()));
             }
         _combos = list;
+
+        _ap = null; _topIssues = new(); _states = new();
+        if (r.TryGetProperty("autopilot", out var ap) && ap.ValueKind == JsonValueKind.Object)
+        {
+            var s = ap.GetProperty("summary");
+            _ap = new Ap(
+                ap.TryGetProperty("status", out var st) ? st.GetString() ?? "healthy" : "healthy",
+                s.TryGetProperty("issueCount", out var ic) ? ic.GetInt32() : 0,
+                s.TryGetProperty("suggestionCount", out var sc) ? sc.GetInt32() : 0,
+                s.TryGetProperty("downCount", out var dc) ? dc.GetInt32() : 0,
+                s.TryGetProperty("degradedCount", out var dg) ? dg.GetInt32() : 0,
+                s.TryGetProperty("healthyCount", out var hc) ? hc.GetInt32() : 0);
+            if (ap.TryGetProperty("combos", out var acs))
+                foreach (var ac in acs.EnumerateArray())
+                {
+                    var combo = new ApCombo(
+                        ac.TryGetProperty("comboId", out var ci) ? ci.GetString() ?? "" : "",
+                        ac.TryGetProperty("comboName", out var cn) ? cn.GetString() ?? "?" : "?",
+                        ac.TryGetProperty("score", out var sco) ? sco.GetDouble() : 0,
+                        ac.TryGetProperty("state", out var stt) ? stt.GetString() ?? "healthy" : "healthy");
+                    _states[combo.Name] = combo.State;
+                    if (ac.TryGetProperty("issues", out var iss))
+                        foreach (var i in iss.EnumerateArray())
+                        {
+                            var actions = new List<ApAction>();
+                            if (i.TryGetProperty("actions", out var acts))
+                                foreach (var a in acts.EnumerateArray())
+                                    if (a.TryGetProperty("href", out var h) && h.ValueKind == JsonValueKind.String)
+                                        actions.Add(new ApAction(
+                                            a.TryGetProperty("label", out var lb) ? lb.GetString() ?? "Open" : "Open",
+                                            h.GetString()!));
+                            _topIssues.Add((combo, new ApIssue(
+                                i.TryGetProperty("severity", out var sv) ? sv.GetString() ?? "info" : "info",
+                                i.TryGetProperty("title", out var ti) ? ti.GetString() ?? "" : "",
+                                i.TryGetProperty("recommendation", out var rc) ? rc.GetString() ?? "" : "",
+                                actions)));
+                        }
+                }
+            _topIssues = _topIssues.Take(5).ToList();
+        }
     }
 }

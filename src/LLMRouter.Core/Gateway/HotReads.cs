@@ -32,6 +32,15 @@ public static class HotReads
         Cache.GetOrAddAsync($"key:{key}", TimeSpan.FromSeconds(30), () =>
             db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(k => k.Key == key));
 
+    /// <summary>SPEC-111: virtual key lookup (vk-…), cached like ApiKeyAsync.</summary>
+    public static Task<UserKey?> UserKeyAsync(LlmRouterDbContext db, string key) =>
+        Cache.GetOrAddAsync($"ukey:{key}", TimeSpan.FromSeconds(15), () =>
+            db.UserKeys.AsNoTracking().FirstOrDefaultAsync(k => k.Key == key));
+
+    /// <summary>SPEC-111: mutações em userKeys invalidam o cache na hora
+    /// (chave desativada tem que parar de autenticar imediatamente).</summary>
+    public static void InvalidateUserKey(string key) => Cache.Invalidate($"ukey:{key}");
+
     public static Task<Combo?> ComboAsync(LlmRouterDbContext db, string name) =>
         Cache.GetOrAddAsync($"combo:{name}", TimeSpan.FromSeconds(30), () =>
             db.Combos.AsNoTracking().FirstOrDefaultAsync(c => c.Name == name));

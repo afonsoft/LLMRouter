@@ -77,6 +77,10 @@ public class ApiKey
     public string CreatedAt { get; set; } = "";
     public bool AccessRestricted { get; set; }
     public string? AccessAllow { get; set; }
+    /// <summary>SPEC-111: dono usuário final; null = chave de admin/global.</summary>
+    public string? UserId { get; set; }
+    /// <summary>SPEC-111: reservado p/ agrupamento futuro (teams).</summary>
+    public string? TeamId { get; set; }
 }
 
 [Table("combos")]
@@ -152,6 +156,10 @@ public class UsageRecord
     public string? Status { get; set; }
     public string? Tokens { get; set; }
     public string? Meta { get; set; }
+    /// <summary>SPEC-111: usuário dono da chave que originou o uso.</summary>
+    public string? UserId { get; set; }
+    /// <summary>SPEC-111: userKeys.Id que originou o uso.</summary>
+    public string? UserKeyId { get; set; }
 }
 
 [Table("usageDaily")]
@@ -784,4 +792,85 @@ public class WebhookDelivery
     public string Data { get; set; } = "{}";
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";
+}
+
+// ---- SPEC-111: virtual keys, per-user rate limit e credit ledger ----
+
+/// <summary>
+/// SPEC-111: usuário final do gateway (modelo OpenRouter/LiteLLM). role é
+/// informativo nesta fase (admin|operator|member|viewer) — enforce via
+/// OIDC/RBAC vem na fase multi-usuário completa.
+/// </summary>
+[Table("users")]
+public class User
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>Hash pbkdf2$iters$salt$hash — opcional (OIDC-only users não têm).</summary>
+    public string? PasswordHash { get; set; }
+    public string? OidcSubject { get; set; }
+    public string? OidcIssuer { get; set; }
+    /// <summary>admin | operator | member | viewer.</summary>
+    public string Role { get; set; } = "member";
+    public bool IsActive { get; set; } = true;
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// SPEC-111: virtual key de um usuário (prefixo vk-). Herda limites do
+/// usuário e restringe por cima: modelsAllow (JSON array de globs
+/// "provider/model"), budgetUsd por budgetPeriod (reset lazy via
+/// spendPeriodStart), rateLimitGroupId aponta p/ regras scope=keyGroup.
+/// </summary>
+[Table("userKeys")]
+public class UserKey
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string UserId { get; set; } = "";
+    /// <summary>Chave completa vk-… — só retornada na criação.</summary>
+    public string Key { get; set; } = "";
+    public string? Name { get; set; }
+    /// <summary>JSON array de globs "provider/model"; "[]" = tudo permitido.</summary>
+    public string ModelsAllow { get; set; } = "[]";
+    /// <summary>Teto de gasto USD por período; 0 = sem teto.</summary>
+    public double BudgetUsd { get; set; }
+    /// <summary>none | daily | weekly | monthly.</summary>
+    public string BudgetPeriod { get; set; } = "none";
+    /// <summary>Regras rateLimits com scope "keyGroup" casam este id.</summary>
+    public string? RateLimitGroupId { get; set; }
+    public bool IsActive { get; set; } = true;
+    /// <summary>Gasto acumulado no período corrente (reset lazy).</summary>
+    public double SpendUsd { get; set; }
+    /// <summary>Início do período do SpendUsd ("yyyy-MM-dd"); vazio = nunca.</summary>
+    public string SpendPeriodStart { get; set; } = "";
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>
+/// SPEC-111: ledger de crédito append-only por usuário. delta negativo =
+/// débito (usage), positivo = crédito (topup/refund/adjust). balanceAfter é
+/// gravado pelo escritor serial (UsageWriter) — nunca calcular em paralelo.
+/// </summary>
+[Table("creditLedger")]
+public class CreditLedgerRow
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string UserId { get; set; } = "";
+    /// <summary>delta USD (+crédito / −débito).</summary>
+    public double Delta { get; set; }
+    /// <summary>topup | usage | refund | adjust.</summary>
+    public string Reason { get; set; } = "";
+    /// <summary>usageHistory.Id que originou o débito, quando reason=usage.</summary>
+    public long? UsageId { get; set; }
+    /// <summary>Saldo do usuário após esta linha.</summary>
+    public double BalanceAfter { get; set; }
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string CreatedAt { get; set; } = "";
 }

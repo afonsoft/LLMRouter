@@ -18,7 +18,9 @@ namespace LLMRouter.Core.Gateway;
 public sealed record UsageWrite(
     string Timestamp, string? Provider, string? Model, string? ConnectionId,
     string? ApiKey, string? Endpoint, long PromptTokens, long CompletionTokens,
-    double Cost, long LatencyMs, string? Status, string? DetailJson);
+    double Cost, long LatencyMs, string? Status, string? DetailJson,
+    // SPEC-111: atribuição a usuário/virtual-key (null = chave admin/global).
+    string? UserId = null, string? UserKeyId = null);
 
 /// <summary>
 /// SPEC-074 + SPEC-108: serializes telemetry/config writes through a single
@@ -143,8 +145,13 @@ public sealed class UsageWriter : BackgroundService
         {
             await using var sc = _scopeFactory.CreateAsyncScope();
             var db = sc.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
-            await ApplyUsageAsync(db, u, ct);
+            var row = await ApplyUsageAsync(db, u, ct);
             await db.SaveChangesAsync(ct);
+            if (row.UserId is not null || row.UserKeyId is not null)
+            {
+                await UsageSideEffects.ApplyAsync(db, row, ct);
+                await db.SaveChangesAsync(ct);
+            }
             return;
         }
         if (BlockOnFull)
@@ -264,8 +271,15 @@ public sealed class UsageWriter : BackgroundService
     private async Task ApplyBatchAsync(LlmRouterDbContext db, List<UsageWrite> batch, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var rows = new List<UsageRecord>(batch.Count);
         foreach (var u in batch)
-            await ApplyUsageAsync(db, u, ct);
+            rows.Add(await ApplyUsageAsync(db, u, ct));
+        await db.SaveChangesAsync(ct);
+        // SPEC-111: pós-save (UsageId atribuído) — spend da vk + débito no
+        // creditLedger, ainda dentro da mesma transação do batch.
+        foreach (var r in rows)
+            if (r.UserId is not null || r.UserKeyId is not null)
+                await UsageSideEffects.ApplyAsync(db, r, ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         Interlocked.Add(ref _rowsApplied, batch.Count);
@@ -281,9 +295,9 @@ public sealed class UsageWriter : BackgroundService
     /// inline write produced (history + detail + rollup + quota + session).
     /// Caller saves/commits.
     /// </summary>
-    internal static async Task ApplyUsageAsync(LlmRouterDbContext db, UsageWrite u, CancellationToken ct)
+    internal static async Task<UsageRecord> ApplyUsageAsync(LlmRouterDbContext db, UsageWrite u, CancellationToken ct)
     {
-        db.UsageHistory.Add(new UsageRecord
+        var row = new UsageRecord
         {
             Timestamp = u.Timestamp,
             Provider = u.Provider,
@@ -298,7 +312,10 @@ public sealed class UsageWriter : BackgroundService
             Cost = u.Cost,
             LatencyMs = u.LatencyMs,
             Meta = u.DetailJson,
-        });
+            UserId = u.UserId,
+            UserKeyId = u.UserKeyId,
+        };
+        db.UsageHistory.Add(row);
         db.RequestDetails.Add(new RequestDetail
         {
             Id = Guid.NewGuid().ToString("N"),
@@ -326,5 +343,6 @@ public sealed class UsageWriter : BackgroundService
             });
         }
         else { sess.LastSeenAt = u.Timestamp; sess.MessageCount++; }
+        return row;
     }
 }

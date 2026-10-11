@@ -52,6 +52,12 @@ public class LlmRouterDbContext : DbContext
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     /// <summary>SPEC-057: eventos de auditoria estruturados.</summary>
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    /// <summary>SPEC-111: usuários finais (modelo OpenRouter/LiteLLM).</summary>
+    public DbSet<User> Users => Set<User>();
+    /// <summary>SPEC-111: virtual keys vk-… pertencentes a usuários.</summary>
+    public DbSet<UserKey> UserKeys => Set<UserKey>();
+    /// <summary>SPEC-111: ledger de crédito append-only por usuário.</summary>
+    public DbSet<CreditLedgerRow> CreditLedger => Set<CreditLedgerRow>();
     /// <summary>SPEC-057: trilha de chamadas MCP.</summary>
     public DbSet<McpToolCall> McpToolCalls => Set<McpToolCall>();
     /// <summary>SPEC-058: histórico de execuções de skills.</summary>
@@ -105,6 +111,7 @@ public class LlmRouterDbContext : DbContext
         typeof(ChatSession), typeof(A2aTask), typeof(ConductorTask),
         typeof(EvalRun), typeof(CacheEntry), typeof(FileEntry),
         typeof(MetaEntry), typeof(PoolSession), typeof(ModelCooldown),
+        typeof(CreditLedgerRow), // SPEC-111: gravado por request (usage debit)
     ];
     private static readonly HashSet<string> TelemetryKvScopes =
         new(StringComparer.OrdinalIgnoreCase)

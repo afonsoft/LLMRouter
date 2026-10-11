@@ -83,6 +83,12 @@ namespace LLMRouter.Core.Data.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TeamId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Key")
@@ -460,6 +466,38 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("credentialExpirations");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.CreditLedgerRow", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("BalanceAfter")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Delta")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("UsageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("creditLedger");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.DiscoveryResult", b =>
@@ -1584,6 +1622,12 @@ namespace LLMRouter.Core.Data.Migrations
                     b.Property<string>("Tokens")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserKeyId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ApiKey");
@@ -1597,6 +1641,93 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasIndex("Timestamp");
 
                     b.ToTable("usageHistory");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.User", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OidcIssuer")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OidcSubject")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("users");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.UserKey", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BudgetPeriod")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("BudgetUsd")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ModelsAllow")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RateLimitGroupId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SpendPeriodStart")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("SpendUsd")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("userKeys");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.VscodeToken", b =>

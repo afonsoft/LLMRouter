@@ -33,11 +33,12 @@ public sealed class RateLimiter
     /// provider not yet known). A rejected request consumes nothing.
     /// </summary>
     public Violation? CheckAndConsume(IReadOnlyList<RateLimit> rules, string apiKey,
-        string? providerId, string model, bool providerOnly = false)
+        string? providerId, string model, bool providerOnly = false,
+        string? userId = null, string? keyGroupId = null)
     {
         var matching = rules
             .Where(r => providerOnly ? r.Scope == "provider" : r.Scope != "provider")
-            .Where(r => Matches(r, apiKey, providerId, model))
+            .Where(r => Matches(r, apiKey, providerId, model, userId, keyGroupId))
             .ToList();
         foreach (var r in matching)
             if (Check(r) is { } v) return v;
@@ -48,11 +49,12 @@ public sealed class RateLimiter
     /// <summary>Dry-run of CheckAndConsume for quota preview: returns the first
     /// violation a request would hit without consuming anything.</summary>
     public Violation? Peek(IReadOnlyList<RateLimit> rules, string apiKey,
-        string? providerId, string model, bool providerOnly = false)
+        string? providerId, string model, bool providerOnly = false,
+        string? userId = null, string? keyGroupId = null)
     {
         var matching = rules
             .Where(r => providerOnly ? r.Scope == "provider" : r.Scope != "provider")
-            .Where(r => Matches(r, apiKey, providerId, model));
+            .Where(r => Matches(r, apiKey, providerId, model, userId, keyGroupId));
         foreach (var r in matching)
             if (Check(r) is { } v) return v;
         return null;
@@ -60,12 +62,13 @@ public sealed class RateLimiter
 
     /// <summary>Credit token usage to every fully-matching rule's window.</summary>
     public void RecordTokens(IReadOnlyList<RateLimit> rules, string apiKey,
-        string? providerId, string model, int tokens)
+        string? providerId, string model, int tokens,
+        string? userId = null, string? keyGroupId = null)
     {
         if (tokens <= 0) return;
         foreach (var r in rules)
         {
-            if (r.Tpm <= 0 || !Matches(r, apiKey, providerId, model)) continue;
+            if (r.Tpm <= 0 || !Matches(r, apiKey, providerId, model, userId, keyGroupId)) continue;
             var b = _buckets.GetOrAdd(r.Id, _ => new Bucket());
             lock (b)
             {
@@ -133,12 +136,17 @@ public sealed class RateLimiter
     private static int RetryAfterTokens(Queue<(long Tick, int Count)> ticks, long now) =>
         ticks.Count == 0 ? 1 : Math.Clamp((int)(ticks.Peek().Tick + WindowSec - now), 1, WindowSec);
 
-    private static bool Matches(RateLimit r, string apiKey, string? providerId, string model) =>
+    // SPEC-111: scopes "user" (casa users.Id) e "keyGroup" (casa
+    // userKeys.rateLimitGroupId) — rate limit por usuário/grupo de chaves.
+    private static bool Matches(RateLimit r, string apiKey, string? providerId,
+        string model, string? userId, string? keyGroupId) =>
         r.Scope switch
         {
             "apiKey" => MatchValue(r.ScopeValue, apiKey),
             "provider" => MatchValue(r.ScopeValue, providerId),
             "model" => MatchValue(r.ScopeValue, model),
+            "user" => MatchValue(r.ScopeValue, userId),
+            "keyGroup" => MatchValue(r.ScopeValue, keyGroupId),
             _ => false,
         };
 

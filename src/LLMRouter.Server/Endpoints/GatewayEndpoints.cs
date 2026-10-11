@@ -333,6 +333,8 @@ public static class GatewayEndpoints
                     continue;
                 ctx.Response.StatusCode = (int)resp.StatusCode;
                 PropagateRateLimitHeaders(ctx, resp);
+                await QuotaCapture.CaptureAsync(db, target.Provider.Id,
+                    target.Connection.Id, resp);
                 var scopeFactory = ctx.RequestServices.GetRequiredService<IServiceScopeFactory>();
                 var hookClient = httpFactory.CreateClient("webhook");
                 var st = (int)resp.StatusCode; var msDone = sw.ElapsedMilliseconds; var mdl = model;
@@ -916,6 +918,8 @@ public static class GatewayEndpoints
                     if (oneProxy is not null) oneProxy.Set(await Core.Routing.RoutingOps.OneProxyRotateAsync(db, sdata));
                     ctx.Response.StatusCode = (int)resp.StatusCode;
                     PropagateRateLimitHeaders(ctx, resp);
+                    await QuotaCapture.CaptureAsync(db, target.Provider.Id,
+                        target.Connection.Id, resp);
                     await WriteUpstreamError(ctx, inbound, errBody);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, 0, 0,
@@ -928,6 +932,8 @@ public static class GatewayEndpoints
                 {
                     ctx.Response.StatusCode = 200;
                     PropagateRateLimitHeaders(ctx, resp);
+                    await QuotaCapture.CaptureAsync(db, target.Provider.Id,
+                        target.Connection.Id, resp);
                     ctx.Response.ContentType = "text/event-stream";
                     ctx.Response.Headers.CacheControl = "no-cache";
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
@@ -963,6 +969,8 @@ public static class GatewayEndpoints
                             Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
                     ctx.Response.ContentType = "application/json";
                     PropagateRateLimitHeaders(ctx, resp);
+                    await QuotaCapture.CaptureAsync(db, target.Provider.Id,
+                        target.Connection.Id, resp);
                     if (pooled is not null)
                         await Core.Routing.SessionPoolOps.ReleaseAsync(db, pooled, success: true);
                     Core.Resilience.CooldownTracker.ReportSuccess(target.Connection.Id);

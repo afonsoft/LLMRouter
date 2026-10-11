@@ -1941,6 +1941,13 @@
   "noActivity": "No requests yet — send your first request to the gateway."
  },
  "analytics": {
+  "noData": "No data yet",
+  "score": "Score",
+  "state": "State",
+  "requests": "Requests",
+  "success": "Success",
+  "avgLatency": "Avg latency",
+  "lastError": "Last error",
   "title": "Analytics",
   "usageAnalyticsTitle": "Usage Analytics",
   "tokenDisplayCompact": "Compact",

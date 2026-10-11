@@ -2,110 +2,335 @@
 @inject Api Api
 @inject Loc Loc
 
+@* SPEC-117: port of upstream ProviderUtilizationTab.tsx — quota utilization
+   over time: aggregate toggle + time-range pills, multi-line % chart,
+   per-provider cards with remaining-quota bars. *@
+
 <div class="flex between">
     <div>
-        <h1 class="page-title">@Loc.T("analyticsUtilization", "Utilization")</h1>
-        <p class="page-desc">@Loc.T("analyticsUtilizationSubtitle", "Traffic and cost by provider, connection and API key")</p>
+        <h1 class="page-title">@Loc.T("analyticsUtilization", "Provider Utilization")</h1>
+        <p class="page-desc">@Loc.T($"analytics.utilizationRange.{_range}", RangeLabel(_range))</p>
     </div>
-    <select class="input" style="width:150px" @bind="_days" @bind:after="Load">
-        <option value="7">7d</option><option value="30">30d</option><option value="90">90d</option>
-    </select>
+    <div class="flex" style="gap:12px;align-items:center">
+        <div class="seg">
+            <button class='seg-btn @(_aggregateBy == "provider" ? "on" : "")' @onclick='() => SetAggregate("provider")'>
+                <span class="material-symbols-outlined" style="font-size:14px">dns</span>
+                @Loc.T("analytics.providerUtilizationGlobalView", "Global view")
+            </button>
+            <button class='seg-btn @(_aggregateBy == "connection" ? "on" : "")' @onclick='() => SetAggregate("connection")'>
+                <span class="material-symbols-outlined" style="font-size:14px">account_tree</span>
+                @Loc.T("analytics.providerUtilizationAccountSplit", "Account split")
+            </button>
+        </div>
+        <div class="seg" role="tablist" aria-label="Select time range">
+            @foreach (var r in new[] { "1h", "24h", "7d", "30d" })
+            {
+                <button role="tab" aria-selected='@(_range == r)'
+                    class='seg-btn @(_range == r ? "on" : "")'
+                    @onclick='() => SetRange(r)'>@r</button>
+            }
+        </div>
+    </div>
 </div>
 
 <div class="card card-p mt-6">
-    <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byProvider", "By provider")</h3>
-    @if (_providers.Count == 0) { <div class="empty"><span class="material-symbols-outlined">bar_chart</span>@Loc.T("analytics.noData", "No data yet")</div> }
+    @if (_loading && !HasData)
+    {
+        <div class="u-state">
+            <span class="material-symbols-outlined spin" style="font-size:18px">progress_activity</span>
+            @Loc.T("analytics.providerUtilizationLoading", "Loading utilization data…")
+        </div>
+    }
+    else if (_error is not null)
+    {
+        <div class="u-state col">
+            <span class="material-symbols-outlined" style="font-size:32px;color:var(--error)">error</span>
+            <div>
+                <p class="bold" style="margin:0">@Loc.T("analytics.providerUtilizationFailedToLoad", "Failed to load utilization data")</p>
+                <p class="dim" style="margin:4px 0 0">@_error</p>
+            </div>
+            <button class="btn btn-primary" @onclick="Load" disabled="@_retrying">
+                @if (_retrying)
+                {
+                    <span class="material-symbols-outlined spin" style="font-size:16px">progress_activity</span>
+                    @Loc.T("analytics.retrying", "Retrying…")
+                }
+                else
+                {
+                    <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
+                    @Loc.T("analytics.retry", "Retry")
+                }
+            </button>
+        </div>
+    }
+    else if (!HasData)
+    {
+        <div class="u-state col">
+            <span class="material-symbols-outlined" style="font-size:40px;color:var(--text-3)">timeline</span>
+            <div>
+                <p class="bold" style="margin:0">@Loc.T("analytics.providerUtilizationNoData", "No utilization data yet")</p>
+                <p class="dim" style="margin:6px 0 0;max-width:460px">@Loc.T("analytics.providerUtilizationNoDataDescription", "Utilization tracking starts automatically once providers report quota information on their responses.")</p>
+            </div>
+            <div class="u-start">
+                <p class="bold" style="margin:0;font-size:12px">@Loc.T("analytics.providerUtilizationGettingStarted", "Getting started")</p>
+                <ul class="u-start-list">
+                    <li><span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">check_circle</span>
+                        <span>@((MarkupString)Loc.T("analytics.providerUtilizationStepConnect", "Connect a provider account or API key on the <strong>Providers</strong> page"))</span></li>
+                    <li><span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">check_circle</span>
+                        <span>@Loc.T("analytics.providerUtilizationStepEnable", "Send a few requests through the gateway — quota headers are captured automatically")</span></li>
+                    <li><span class="material-symbols-outlined" style="font-size:14px;color:var(--primary)">check_circle</span>
+                        <span>@Loc.T("analytics.providerUtilizationStepAutomatic", "Snapshots appear here, bucketed by the selected time range")</span></li>
+                </ul>
+            </div>
+        </div>
+    }
     else
     {
-        var maxReq = _providers.Max(p => p.Requests);
-        <table class="table">
-            <thead><tr><th>Provider</th><th></th><th>Requests</th><th>Tokens</th><th>Cost</th><th>Error rate</th><th>Avg latency</th></tr></thead>
-            <tbody>
-            @foreach (var p in _providers)
-            {
-                var w = maxReq == 0 ? 0 : 100.0 * p.Requests / maxReq;
-                <tr>
-                    <td class="bold">@p.Name</td>
-                    <td style="width:30%"><div style="width:@(w.ToString("F0"))%;height:8px;background:var(--accent);border-radius:3px"></div></td>
-                    <td>@p.Requests.ToString("N0")</td>
-                    <td>@p.Tokens.ToString("N0")</td>
-                    <td>$@p.Cost.ToString("F4")</td>
-                    <td>@p.ErrorRate.ToString("F1")%</td>
-                    <td>@p.AvgLatencyMs ms</td>
-                </tr>
-            }
-            </tbody>
-        </table>
-    }
-</div>
+        <div class="u-chart">
+            <svg viewBox="0 0 @W @H" preserveAspectRatio="none" style="width:100%;height:100%">
+                @for (var g = 0; g <= 4; g++)
+                {
+                    var y = Pad + (PlotH * g / 4.0);
+                    <line x1="@PadL" y1="@y" x2="@(W - 8)" y2="@y" stroke="var(--border)" stroke-width="0.6" stroke-dasharray="3 3" />
+                }
+                @GridText
+                @foreach (var s in Series())
+                {
+                    <polyline fill="none" stroke="@s.Color" stroke-width="1.8"
+                        points="@string.Join(' ', s.Points.Select(p => $"{p.x:F1},{p.y:F1}"))" />
+                    @foreach (var p in s.Points)
+                    {
+                        <circle cx="@p.x.ToString("F1")" cy="@p.y.ToString("F1")" r="2.4" fill="@s.Color">
+                            <title>@s.Name — @p.label: @p.pct.ToString("F1")%</title>
+                        </circle>
+                    }
+                }
+            </svg>
+            <div class="u-legend">
+                @foreach (var s in Series())
+                {
+                    <span class="u-chip"><span class="u-dot" style="background:@s.Color"></span>@s.Name</span>
+                }
+            </div>
+        </div>
 
-<div class="grid grid-2 mt-6">
-    <div class="card card-p">
-        <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byConnection", "By connection")</h3>
-        @if (_conns.Count == 0) { <div class="dim">—</div> }
-        else
-        {
-            <table class="table">
-                <thead><tr><th>Connection</th><th>Providers</th><th>Requests</th><th>Cost</th><th>Errors</th></tr></thead>
-                <tbody>
-                @foreach (var c in _conns)
-                {
-                    <tr><td class="mono">@c.Id</td><td class="dim">@string.Join(", ", c.Providers)</td><td>@c.Requests.ToString("N0")</td><td>$@c.Cost.ToString("F4")</td><td>@c.ErrorRate.ToString("F1")%</td></tr>
-                }
-                </tbody>
-            </table>
-        }
-    </div>
-    <div class="card card-p">
-        <h3 class="bold" style="margin:0 0 12px">@Loc.T("analytics.byKey", "By API key")</h3>
-        @if (_keys.Count == 0) { <div class="dim">—</div> }
-        else
-        {
-            <table class="table">
-                <thead><tr><th>Key</th><th>Requests</th><th>Tokens</th><th>Cost</th></tr></thead>
-                <tbody>
-                @foreach (var k in _keys)
-                {
-                    <tr><td class="mono">@k.Key</td><td>@k.Requests.ToString("N0")</td><td>@k.Tokens.ToString("N0")</td><td>$@k.Cost.ToString("F4")</td></tr>
-                }
-                </tbody>
-            </table>
-        }
-    </div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-top:20px">
+            @foreach (var p in Latest())
+            {
+                var low = p.RemainingPct <= 20;
+                <div class="u-card">
+                    <div class="flex between" style="align-items:flex-start;gap:12px">
+                        <div class="flex" style="gap:12px;align-items:center;min-width:0">
+                            <div class="u-ptile">
+                                @if (IconOf(p.Provider) is { } ic)
+                                {
+                                    <span class="material-symbols-outlined" style="font-size:22px;color:@(ColorOf(p.Provider) ?? "var(--text)")">@ic</span>
+                                }
+                                else
+                                {
+                                    <span class="bold" style="font-size:13px;color:@(ColorOf(p.Provider) ?? "var(--text)")">@ShortName(p.Provider)</span>
+                                }
+                            </div>
+                            <div style="min-width:0">
+                                <p class="bold" style="margin:0;font-size:14px;overflow:hidden;text-overflow:ellipsis">@DisplayName(p.Provider)</p>
+                                <p class="dim" style="margin:2px 0 0;font-size:12px">@Subtitle(p)</p>
+                            </div>
+                        </div>
+                        <span class='chip @(p.IsExhausted ? "chip-red" : low ? "chip-amber" : "chip-green")'>
+                            @(p.IsExhausted ? Loc.T("analytics.statusExhausted", "Exhausted")
+                                : low ? Loc.T("analytics.statusLow", "Low")
+                                : Loc.T("analytics.statusHealthy", "Healthy"))
+                        </span>
+                    </div>
+                    <div class="flex between" style="align-items:flex-end;gap:12px;margin-top:14px">
+                        <div>
+                            <p class="bold" style="margin:0;font-size:30px">@p.RemainingPct.ToString(p.RemainingPct < 10 ? "F1" : "F0")%</p>
+                            <p class="dim" style="margin:4px 0 0;font-size:12px">@Loc.T("analytics.providerUtilizationRemainingCapacity", "Remaining capacity")</p>
+                        </div>
+                        <div class="dim" style="text-align:right;font-size:12px">
+                            <p style="margin:0">@TooltipTs(p.Timestamp)</p>
+                            <p style="margin:4px 0 0;text-transform:uppercase;letter-spacing:.14em;font-size:10px">@p.WindowKey</p>
+                        </div>
+                    </div>
+                    <div style="margin-top:14px">
+                        <div class="u-bar"><div class="u-fill" style="width:@(Math.Max(p.RemainingPct, 0).ToString("F0"))%;background:@(p.IsExhausted ? "var(--error)" : low ? "var(--warning)" : "var(--primary)")"></div></div>
+                        <div class="flex between dim" style="font-size:12px;margin-top:6px">
+                            <span>0%</span><span>@Loc.T("analytics.remainingQuota", "Remaining quota")</span><span>100%</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
 </div>
 
 @code {
-    private int _days = 7;
-    private List<P> _providers = new();
-    private List<C> _conns = new();
-    private List<K> _keys = new();
+    private const double W = 800, H = 300, Pad = 16, PadL = 44, PlotH = H - Pad - 30;
 
-    private sealed record P(string Name, long Requests, long Tokens, double Cost, double ErrorRate, long AvgLatencyMs);
-    private sealed record C(string Id, string[] Providers, long Requests, long Tokens, double Cost, double ErrorRate);
-    private sealed record K(string Key, long Requests, long Tokens, double Cost);
+    private string _range = "24h";
+    private string _aggregateBy = "provider";
+    private bool _loading = true, _retrying;
+    private string? _error;
+    private JsonElement _resp;
+    private Dictionary<string, (string? icon, string? color)> _icons = new();
 
-    protected override async Task OnInitializedAsync() => await Load();
+    private static readonly string[] Colors =
+        ["var(--primary)", "var(--accent)", "var(--success)", "var(--warning)", "var(--error)", "var(--text-3)"];
+
+    private sealed record Point(string Timestamp, string Provider, double RemainingPct, bool IsExhausted, string WindowKey);
+    private sealed record Line(string Name, string Color, List<(double x, double y, string label, double pct)> Points);
+
+    private MarkupString GridText => new(GridTextHtml());
+
+    private string GridTextHtml()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var g = 0; g <= 4; g++)
+        {
+            var y = Pad + PlotH * g / 4.0;
+            sb.Append($"<text x=\"{PadL - 6:F1}\" y=\"{y + 3.5:F1}\" text-anchor=\"end\" font-size=\"9\" fill=\"var(--text-3)\">{100 - g * 25}%</text>");
+        }
+        foreach (var (x, label) in XLabels())
+            sb.Append($"<text x=\"{x:F1}\" y=\"{H - 6:F1}\" text-anchor=\"middle\" font-size=\"9\" fill=\"var(--text-3)\">{System.Net.WebUtility.HtmlEncode(label)}</text>");
+        return sb.ToString();
+    }
+
+    private List<Point> _points = new();
+    private string[] _providers = Array.Empty<string>();
+    private JsonElement _connMeta;
+    private bool HasData => _points.Count > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        _ = LoadIcons();
+    }
+
+    private async Task LoadIcons()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/providers");
+            if (r.TryGetProperty("categories", out var cats))
+                foreach (var g in cats.EnumerateArray())
+                    foreach (var p in g.GetProperty("providers").EnumerateArray())
+                        _icons[p.GetProperty("id").GetString()!] = (
+                            p.TryGetProperty("icon", out var i) ? i.GetString() : null,
+                            p.TryGetProperty("color", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null);
+            StateHasChanged();
+        }
+        catch { /* icons are cosmetic */ }
+    }
+
+    private Task SetRange(string r) { _range = r; return Load(); }
+    private Task SetAggregate(string a) { _aggregateBy = a; return Load(); }
 
     private async Task Load()
     {
-        var r = await Api.GetAsync($"api/usage/utilization?days={_days}");
-        _providers = new(); _conns = new(); _keys = new();
-        if (r.TryGetProperty("byProvider", out var bp))
-            foreach (var x in bp.EnumerateArray())
-                _providers.Add(new P(x.GetProperty("provider").GetString() ?? "?",
-                    x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64(),
-                    x.GetProperty("cost").GetDouble(), x.GetProperty("errorRate").GetDouble(),
-                    x.GetProperty("avgLatencyMs").GetInt64()));
-        if (r.TryGetProperty("byConnection", out var bc))
-            foreach (var x in bc.EnumerateArray())
-                _conns.Add(new C(x.GetProperty("connectionId").GetString() ?? "?",
-                    x.TryGetProperty("providers", out var ps) ? ps.EnumerateArray().Select(p => p.GetString() ?? "?").ToArray() : Array.Empty<string>(),
-                    x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64(),
-                    x.GetProperty("cost").GetDouble(), x.GetProperty("errorRate").GetDouble()));
-        if (r.TryGetProperty("byApiKey", out var bk))
-            foreach (var x in bk.EnumerateArray())
-                _keys.Add(new K(x.GetProperty("apiKey").GetString() ?? "?",
-                    x.GetProperty("requests").GetInt64(), x.GetProperty("tokens").GetInt64(),
-                    x.GetProperty("cost").GetDouble()));
+        _loading = true; _error = null;
+        try
+        {
+            _resp = await Api.GetAsync($"api/usage/utilization?range={_range}&aggregateBy={_aggregateBy}");
+            _points = new(); _providers = Array.Empty<string>();
+            if (_resp.TryGetProperty("providers", out var ps))
+                _providers = ps.EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
+            if (_resp.TryGetProperty("data", out var arr))
+                foreach (var d in arr.EnumerateArray())
+                    _points.Add(new Point(
+                        d.GetProperty("timestamp").GetString() ?? "",
+                        d.GetProperty("provider").GetString() ?? "?",
+                        d.GetProperty("remainingPct").GetDouble(),
+                        d.GetProperty("isExhausted").GetBoolean(),
+                        d.GetProperty("windowKey").GetString() ?? ""));
+            if (_resp.TryGetProperty("connectionMeta", out var cm)) _connMeta = cm;
+            _error = null;
+        }
+        catch (Exception e) { _error = e.Message; _points = new(); }
+        finally { _loading = false; _retrying = false; }
     }
+
+    private List<Point> Latest()
+    {
+        var byKey = new Dictionary<string, Point>();
+        foreach (var p in _points)
+            if (!byKey.TryGetValue(p.Provider, out var cur)
+                || string.Compare(p.Timestamp, cur.Timestamp) > 0)
+                byKey[p.Provider] = p;
+        return byKey.Values.OrderByDescending(p => p.RemainingPct).ToList();
+    }
+
+    private List<Line> Series()
+    {
+        var timestamps = _points.Select(p => p.Timestamp).Distinct().OrderBy(t => t).ToList();
+        var colors = _providers.Select((p, i) => (p, Colors[i % Colors.Length]))
+            .ToDictionary(x => x.p, x => x.Item2);
+        var plotW = W - PadL - 8;
+        return _providers.Select(prov =>
+        {
+            var pts = _points.Where(p => p.Provider == prov).Select(p =>
+            {
+                var idx = timestamps.IndexOf(p.Timestamp);
+                var x = PadL + (timestamps.Count <= 1 ? plotW / 2 : plotW * idx / (timestamps.Count - 1));
+                var y = Pad + PlotH * (1 - Math.Clamp(p.RemainingPct, 0, 100) / 100.0);
+                return (x, y, label: FmtTs(p.Timestamp), pct: p.RemainingPct);
+            }).ToList();
+            return new Line(DisplayName(prov), colors[prov], pts);
+        }).ToList();
+    }
+
+    private IEnumerable<(double x, string label)> XLabels()
+    {
+        var timestamps = _points.Select(p => p.Timestamp).Distinct().OrderBy(t => t).ToList();
+        var n = timestamps.Count;
+        if (n == 0) yield break;
+        var step = Math.Max(1, (int)Math.Ceiling(n / 8.0));
+        var plotW = W - PadL - 8;
+        for (var i = 0; i < n; i += step)
+            yield return (PadL + (n <= 1 ? plotW / 2 : plotW * i / (n - 1)), FmtTs(timestamps[i]));
+    }
+
+    private string FmtTs(string ts) => !DateTime.TryParse(ts, out var d) ? ts
+        : _range is "1h" or "24h" ? d.ToString("HH:mm") : d.ToString("MMM d");
+    private string TooltipTs(string ts) => !DateTime.TryParse(ts, out var d) ? ts
+        : _range is "1h" or "24h" ? d.ToString("MMM d, HH:mm") : d.ToString("MMM d");
+
+    private string RangeLabel(string r) => r switch
+    {
+        "1h" => "Last hour", "24h" => "Last 24 hours",
+        "7d" => "Last 7 days", _ => "Last 30 days",
+    };
+
+    private string DisplayName(string key)
+    {
+        if (_aggregateBy == "connection" && key.Contains(':'))
+        {
+            var cid = key.Split(':', 2)[1];
+            if (_connMeta.ValueKind == JsonValueKind.Object
+                && _connMeta.TryGetProperty(cid, out var m))
+            {
+                var name = m.TryGetProperty("displayName", out var dn) ? dn.GetString() : null
+                    ?? (m.TryGetProperty("name", out var nn) ? nn.GetString() : null)
+                    ?? (m.TryGetProperty("email", out var em) ? em.GetString() : null);
+                if (name is { Length: > 0 }) return name;
+            }
+            return cid.Length > 8 ? cid[..8] + "…" : cid;
+        }
+        var id = key.Split(':', 2)[0];
+        return id;
+    }
+
+    private string Subtitle(Point p)
+    {
+        if (_aggregateBy == "connection" && p.Provider.Contains(':'))
+        {
+            var parts = p.Provider.Split(':', 2);
+            return $"{parts[0]} · account {(parts[1].Length > 8 ? parts[1][..8] : parts[1])}…";
+        }
+        return Loc.T("analytics.providerUtilizationLatestSnapshot", "Latest snapshot");
+    }
+
+    private string ProviderKey(string key) => key.Split(':', 2)[0];
+    private string? IconOf(string key) => _icons.TryGetValue(ProviderKey(key), out var i) ? i.icon : null;
+    private string? ColorOf(string key) => _icons.TryGetValue(ProviderKey(key), out var i) ? i.color : null;
+    private string ShortName(string key) => ProviderKey(key)[..Math.Min(3, ProviderKey(key).Length)].ToUpperInvariant();
 }

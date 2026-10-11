@@ -264,6 +264,8 @@ public static class ProviderOpsEndpoints
                 return Results.Json(new { message = $"Anthropic usage request returned {(int)resp.StatusCode}" });
 
             var quotas = AnthropicQuotaProbe.ReadWindows(resp);
+            if (quotas.Count > 0)
+                await QuotaCapture.SaveProbeAsync(db, c.Provider, c.Id, quotas);
             return quotas.Count == 0
                 ? Results.Json(new { message = "Anthropic response carried no rate-limit headers." })
                 : Results.Json(new { plan = "API key", quotas });

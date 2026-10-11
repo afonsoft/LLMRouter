@@ -1941,6 +1941,13 @@
   "step3": "Apunta tu cliente al gateway"
  },
  "analytics": {
+  "noData": "Sin datos aún",
+  "score": "Score",
+  "state": "Estado",
+  "requests": "Requests",
+  "success": "Éxito",
+  "avgLatency": "Latencia media",
+  "lastError": "Último error",
   "title": "Analítica",
   "usageAnalyticsTitle": "Análisis de uso",
   "tokenDisplayCompact": "Compacto",

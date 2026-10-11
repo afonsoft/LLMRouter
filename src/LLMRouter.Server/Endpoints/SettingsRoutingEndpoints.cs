@@ -43,6 +43,12 @@ public static class SettingsRoutingEndpoints
             ("reasoningRoutingRules", "reasoning-routing-rules"),
             ("taskRouting", "task-routing"), ("oneproxy", "oneproxy"),
             ("freeProxies", "free-proxies"),
+            // SPEC-096: remaining upstream sub-settings (same sdata-key shape)
+            ("featureFlags", "feature-flags"), ("systemPrompt", "system-prompt"),
+            ("thinkingBudget", "thinking-budget"), ("tierConfig", "tier-config"),
+            ("autoDisableAccounts", "auto-disable-accounts"),
+            ("backgroundDegradation", "background-degradation"),
+            ("cacheConfig", "cache-config"), ("database", "database"),
         })
         {
             g.MapGet($"/settings/{seg}", async (LlmRouterDbContext db) =>

@@ -1,0 +1,19 @@
+{
+  "format": "llmr-config",
+  "version": 1,
+  "exportedAt": "2026-10-11T00:00:00Z",
+  "scopes": {
+    "settings": { "comboDefaults": { "defaultCombo": "mix" } },
+    "combos": [
+      { "id": "c1", "name": "mix", "models": "[\"openai/m1\",\"anthropic/m2\"]", "stickyLimit": 1 }
+    ],
+    "mappings": [ { "key": "claude-*", "value": "mix" } ],
+    "rateLimits": [],
+    "keys": [],
+    "providers": [
+      { "id": "p1", "provider": "openai", "name": "main", "isActive": true,
+        "data": { "apiKey": { "$secret": true }, "baseUrl": "https://api.openai.com" } }
+    ],
+    "guardrails": []
+  }
+}

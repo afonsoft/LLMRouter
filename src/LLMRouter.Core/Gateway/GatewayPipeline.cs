@@ -282,10 +282,12 @@ public sealed class GatewayEngine(
     public async Task LogUsageAsync(
         string provider, string model, string? connectionId, string apiKey,
         string endpoint, int promptTokens, int completionTokens,
-        string status, string? error, long latencyMs, JsonElement? detail = null)
+        string status, string? error, long latencyMs, JsonElement? detail = null,
+        double? reportedCostUsd = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
-        var cost = Usage.PricingService.ComputeCost(
+        // SPEC-097: a trusted provider-reported cost wins over the computed price.
+        var cost = reportedCostUsd ?? Usage.PricingService.ComputeCost(
             await HotReads.SettingsDataAsync(db), registry,
             provider, model, promptTokens, completionTokens) ?? 0;
 

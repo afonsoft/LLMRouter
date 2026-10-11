@@ -230,6 +230,36 @@ public static class GatewayEndpoints
             return;
         }
 
+        // SPEC-097: API-key model policy is re-checked AFTER resolution — a
+        // restricted key must allow the concrete resolved model, not just the
+        // requested alias (upstream #13052).
+        if (apiKey != "dashboard")
+        {
+            var keyRow2 = await Core.Gateway.HotReads.ApiKeyAsync(db, apiKey);
+            if (keyRow2 is { AccessRestricted: true })
+            {
+                var allow2 = (keyRow2.AccessAllow ?? "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                bool Allows(string resolved)
+                {
+                    if (allow2.Length == 0) return false;
+                    return allow2.Any(a => a.EndsWith('*')
+                        ? resolved.StartsWith(a[..^1], StringComparison.OrdinalIgnoreCase)
+                        : string.Equals(a, resolved, StringComparison.OrdinalIgnoreCase)
+                        || resolved.EndsWith('/' + a, StringComparison.OrdinalIgnoreCase));
+                }
+                targets = targets.Where(t => Allows(t.UpstreamModel)
+                    || Allows($"{t.Provider.Id}/{t.UpstreamModel}")).ToList();
+                if (targets.Count == 0)
+                {
+                    ctx.Response.StatusCode = 403;
+                    await WriteError(ctx, "openai", "model_not_allowed",
+                        "API key is not allowed to use the resolved model.");
+                    return;
+                }
+            }
+        }
+
         var path = ctx.Request.Path.Value ?? "";
         // upstreamPath: provider-scoped mounts (e.g. /v1/providers/{p}/embeddings)
         // override the suffix sent upstream — the scoped prefix is routing, not path.
@@ -296,11 +326,41 @@ public static class GatewayEndpoints
                     catch { /* best-effort: failure is non-fatal */ }
                 });
                 ctx.Response.ContentType = resp.Content.Headers.ContentType?.ToString() ?? "application/json";
-                await resp.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+                // SPEC-097: for a trusted search endpoint the provider-reported
+                // cost wins over the computed price (upstream #16088). The body
+                // is buffered only when the connection opted in — callers can't
+                // set their own price because the flag is connection data.
+                double? reportedCost = null;
+                if (kind == "search" && resp.IsSuccessStatusCode
+                    && Core.Usage.ReportedSearchCost.IsTrusted(target.Connection))
+                {
+                    var raw = await resp.Content.ReadAsStringAsync(ctx.RequestAborted);
+                    reportedCost = Core.Usage.ReportedSearchCost.ReadReportedUsd(
+                        target.Provider.Id, raw);
+                    await ctx.Response.WriteAsync(raw, ctx.RequestAborted);
+                }
+                else
+                {
+                    try
+                    {
+                        await resp.Content.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+                    }
+                    catch (Exception) when (!ctx.RequestAborted.IsCancellationRequested)
+                    {
+                        // SPEC-097: a failure after response start must NOT cascade —
+                        // replaying an inference POST would duplicate the upstream
+                        // call (upstream #15787). The partial stream stands.
+                        await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
+                            target.Connection.Id, apiKey, kind ?? path, 0, 0,
+                            "499", "stream aborted mid-response", sw.ElapsedMilliseconds);
+                        return;
+                    }
+                }
                 // SPEC-063: usage rows carry the media kind as Endpoint
                 await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                     target.Connection.Id, apiKey, kind ?? path, 0, 0,
-                    ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds);
+                    ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds,
+                    reportedCostUsd: reportedCost);
                 return;
             }
             catch (Exception) when (target != targets[^1]) { /* best-effort: failure is non-fatal */ }

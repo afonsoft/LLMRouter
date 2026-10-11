@@ -66,9 +66,7 @@ public static class OmniCrypto
     {
         var saltBytes = Encoding.UTF8.GetBytes(salt);
         var passBytes = Encoding.UTF8.GetBytes(secret);
-        // NOSONAR S5344 — 1 iteração é o primitivo interno do scrypt (RFC 7914);
-        // o fator de trabalho fica em N=16384, não no PBKDF2.
-        var b = Rfc2898DeriveBytes.Pbkdf2(passBytes, saltBytes, 1, HashAlgorithmName.SHA256, p * 128 * r);
+        var b = Rfc2898DeriveBytes.Pbkdf2(passBytes, saltBytes, 1, HashAlgorithmName.SHA256, p * 128 * r); // NOSONAR S5344 — iter=1 é o primitivo interno do scrypt (RFC 7914); o fator é N
         var x = new byte[128 * r];
         var v = new byte[n * 128 * r];
         for (var i = 0; i < p; i++)

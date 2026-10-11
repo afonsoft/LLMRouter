@@ -13,6 +13,8 @@ namespace LLMRouter.Core.Gateway;
 public static class GatewayMetrics
 {
     public const string MeterName = "llmr";
+    private const string LblProvider = "provider";
+    private const string LblModel = "model";
     public static readonly ActivitySource ActivitySource = new(MeterName);
     private static readonly Meter M = new(MeterName, "1.0");
 
@@ -48,7 +50,7 @@ public static class GatewayMetrics
         _ = M.CreateObservableGauge<int>("llmr_breaker_state",
             () => Resilience.ProviderBreaker.Snapshot().Select(s =>
                 new Measurement<int>(BreakerValue(s.State),
-                    new KeyValuePair<string, object?>("provider", s.ProviderId))));
+                    new KeyValuePair<string, object?>(LblProvider, s.ProviderId))));
         _ = M.CreateObservableGauge<int>("llmr_cooldowns_active",
             () => Resilience.CooldownTracker.Snapshot().Count);
         _ = M.CreateObservableGauge<int>("llmr_lockouts_active",
@@ -74,15 +76,15 @@ public static class GatewayMetrics
     public sealed record RequestMetric(
         string Provider, string Model, string? ConnectionId, string ApiKey,
         string Inbound, int PromptTokens, int CompletionTokens,
-        double CostUsd, long LatencyMs, string Status);
+        double Cost, long LatencyMs, string Status);
 
     /// <summary>Record a completed (or failed) gateway request — called once per LogUsage.</summary>
     public static void RecordRequest(RequestMetric m)
     {
         var tags = new TagList
         {
-            { "provider", m.Provider },
-            { "model", m.Model },
+            { LblProvider, m.Provider },
+            { LblModel, m.Model },
             { "connection", m.ConnectionId ?? "" },
             { "keyhash", KeyHash(m.ApiKey) },
             { "status", m.Status },
@@ -91,10 +93,10 @@ public static class GatewayMetrics
         Requests.Add(1, tags);
         RequestDurationMs.Record(m.LatencyMs, tags);
         if (m.PromptTokens > 0)
-            Tokens.Add(m.PromptTokens, Tag("provider", m.Provider), Tag("model", m.Model), Tag("kind", "prompt"));
+            Tokens.Add(m.PromptTokens, Tag(LblProvider, m.Provider), Tag(LblModel, m.Model), Tag("kind", "prompt"));
         if (m.CompletionTokens > 0)
-            Tokens.Add(m.CompletionTokens, Tag("provider", m.Provider), Tag("model", m.Model), Tag("kind", "completion"));
-        if (m.CostUsd > 0) CostUsd.Add(m.CostUsd, Tag("provider", m.Provider), Tag("model", m.Model));
+            Tokens.Add(m.CompletionTokens, Tag(LblProvider, m.Provider), Tag(LblModel, m.Model), Tag("kind", "completion"));
+        if (m.Cost > 0) CostUsd.Add(m.Cost, Tag(LblProvider, m.Provider), Tag(LblModel, m.Model));
     }
 
     public static void RateLimitViolation(string scope) =>
@@ -104,10 +106,10 @@ public static class GatewayMetrics
         ComboSteps.Add(1, Tag("combo", combo));
 
     public static void UpstreamTtfb(string provider, string model, double ms) =>
-        UpstreamTtfbMs.Record(ms, Tag("provider", provider), Tag("model", model));
+        UpstreamTtfbMs.Record(ms, Tag(LblProvider, provider), Tag(LblModel, model));
 
     public static void StreamDuration(string provider, string model, double ms) =>
-        StreamDurationMs.Record(ms, Tag("provider", provider), Tag("model", model));
+        StreamDurationMs.Record(ms, Tag(LblProvider, provider), Tag(LblModel, model));
 
     private static KeyValuePair<string, object?> Tag(string k, string v) => new(k, v);
 }

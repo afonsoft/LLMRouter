@@ -4,9 +4,8 @@
 @inject NavigationManager Nav
 @inject Loc Loc
 
-<div class="auth-logo">L</div>
-<h1 style="font-size:20px;font-weight:700;margin:0 0 4px">LLMRouter</h1>
-<p class="muted sm" style="margin:0 0 24px">@Loc.T("login.subtitle", "Sign in to your router")</p>
+<h1 style="font-size:21px;font-weight:700;margin:0 0 4px">@Loc.T("login.title", "Sign in")</h1>
+<p class="muted sm" style="margin:0 0 24px">@Loc.T("login.subtitle", "Enter your password to continue")</p>
 
 @if (!Auth.SetupComplete)
 {

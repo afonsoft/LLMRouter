@@ -1,4 +1,35 @@
 @inherits LayoutComponentBase
+@inject Loc Loc
+
 <div class="auth-wrap">
-    <div class="card auth-card">@Body</div>
+    <div class="auth-left">
+        <div class="auth-brand">
+            <div class="auth-logo">L</div>
+            <span class="auth-brand-name">LLMRouter</span>
+        </div>
+        <div class="card auth-card">@Body</div>
+    </div>
+    <div class="auth-right">
+        <div class="auth-hero">
+            <h2>@Loc.T("login.heroTitle", "Unified AI API Proxy")</h2>
+            <p>@Loc.T("login.heroSubtitle", "Route requests to multiple AI providers through a single endpoint. Load balancing, failover, and usage tracking built in.")</p>
+            <div class="auth-features">
+                <div class="auth-feature">
+                    <span class="material-symbols-outlined">hub</span>
+                    <div><strong>@Loc.T("login.feature1", "Multi-Provider")</strong>
+                    <small>@Loc.T("login.feature1Sub", "OpenAI, Anthropic, Google, and more")</small></div>
+                </div>
+                <div class="auth-feature">
+                    <span class="material-symbols-outlined">speed</span>
+                    <div><strong>@Loc.T("login.feature2", "Load Balancing")</strong>
+                    <small>@Loc.T("login.feature2Sub", "Distribute requests intelligently")</small></div>
+                </div>
+                <div class="auth-feature">
+                    <span class="material-symbols-outlined">monitoring</span>
+                    <div><strong>@Loc.T("login.feature3", "Usage Tracking")</strong>
+                    <small>@Loc.T("login.feature3Sub", "Monitor costs and tokens")</small></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>

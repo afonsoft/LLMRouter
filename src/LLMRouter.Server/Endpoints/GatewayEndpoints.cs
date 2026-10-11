@@ -297,10 +297,12 @@ public static class GatewayEndpoints
             }
             try
             {
-                var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
-                    ?? httpFactory.CreateClient("upstream");
+                var (pcl, px, pool) = await Core.Routing.ProxyPoolService.ClientAndProxyAsync(db, target.Connection);
+                var client = pcl ?? httpFactory.CreateClient("upstream");
                 var baseUrl = GatewayEngine.ConnectionBaseUrl(target.Connection, target.Provider);
                 var url = baseUrl + suffix + (ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : "");
+                var plog = px is { } ? Core.Routing.ProxyPoolService.PlogFor(
+                    pool!, px, url, ctx.Connection.RemoteIpAddress?.ToString()) : null;
                 var req = new HttpRequestMessage(new HttpMethod(ctx.Request.Method), url);
                 var secret = GatewayEngine.ConnectionSecret(target.Connection);
                 if (secret is not null)
@@ -374,7 +376,7 @@ public static class GatewayEndpoints
                         await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                             target.Connection.Id, apiKey, kind ?? path, 0, 0,
                             "499", "stream aborted mid-response", sw.ElapsedMilliseconds,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
                         return;
                     }
                 }
@@ -383,7 +385,7 @@ public static class GatewayEndpoints
                     target.Connection.Id, apiKey, kind ?? path, 0, 0,
                     ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds,
                     reportedCostUsd: reportedCost,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
                 return;
             }
             catch (Exception) when (target != targets[^1]) { /* best-effort: failure is non-fatal */ }
@@ -860,9 +862,11 @@ public static class GatewayEndpoints
                 pooled = await Core.Routing.SessionPoolOps.AcquireAsync(db, sp);
             try
             {
-                var client = await Core.Routing.ProxyPoolService.ClientForAsync(db, target.Connection)
-                    ?? httpFactory.CreateClient("upstream");
+                var (pcl, px, pool) = await Core.Routing.ProxyPoolService.ClientAndProxyAsync(db, target.Connection);
+                var client = pcl ?? httpFactory.CreateClient("upstream");
                 var call = engine.BuildCall(target, inbound, body, stream);
+                var plog = px is { } ? Core.Routing.ProxyPoolService.PlogFor(
+                    pool!, px, call.Url, ctx.Connection.RemoteIpAddress?.ToString()) : null;
                 var req = new HttpRequestMessage(HttpMethod.Post, call.Url);
                 foreach (var (k, v) in call.Headers)
                     req.Headers.TryAddWithoutValidation(k, v);
@@ -916,7 +920,7 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, 0, 0,
                         ((int)resp.StatusCode).ToString(), errBody[..Math.Min(500, errBody.Length)], sw.ElapsedMilliseconds,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
                     return;
                 }
 
@@ -943,7 +947,7 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
                 }
                 else
                 {
@@ -975,7 +979,7 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
                 }
                 return;
             }

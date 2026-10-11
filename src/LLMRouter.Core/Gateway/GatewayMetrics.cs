@@ -37,28 +37,23 @@ public static class GatewayMetrics
 
     private static int _gaugesRegistered;
 
-    // Live gauges — kept as field references so the instruments are not GC'd.
-    private static ObservableGauge<int>? _breaker;
-    private static ObservableGauge<int>? _cooldowns;
-    private static ObservableGauge<int>? _lockouts;
-    private static ObservableGauge<double>? _cacheRatio;
-
     /// <summary>
     /// Observable gauges against live static sources (breaker, cooldowns,
     /// lockouts, prompt-cache ratio). Idempotent — call once at startup.
+    /// (o Meter estático mantém os instrumentos vivos)
     /// </summary>
     public static void RegisterRuntimeGauges()
     {
         if (Interlocked.Exchange(ref _gaugesRegistered, 1) == 1) return;
-        _breaker = M.CreateObservableGauge<int>("llmr_breaker_state",
+        _ = M.CreateObservableGauge<int>("llmr_breaker_state",
             () => Resilience.ProviderBreaker.Snapshot().Select(s =>
                 new Measurement<int>(BreakerValue(s.State),
                     new KeyValuePair<string, object?>("provider", s.ProviderId))));
-        _cooldowns = M.CreateObservableGauge<int>("llmr_cooldowns_active",
+        _ = M.CreateObservableGauge<int>("llmr_cooldowns_active",
             () => Resilience.CooldownTracker.Snapshot().Count);
-        _lockouts = M.CreateObservableGauge<int>("llmr_lockouts_active",
+        _ = M.CreateObservableGauge<int>("llmr_lockouts_active",
             () => Resilience.ModelLockout.Snapshot().Count);
-        _cacheRatio = M.CreateObservableGauge<double>("llmr_promptcache_hit_ratio",
+        _ = M.CreateObservableGauge<double>("llmr_promptcache_hit_ratio",
             () => Cache.PromptCache.HitRatio);
     }
 
@@ -75,28 +70,31 @@ public static class GatewayMetrics
     public static string KeyHash(string apiKey) =>
         apiKey.Length == 0 ? "" : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)))[..12];
 
+    /// <summary>One completed (or failed) gateway request for RecordRequest.</summary>
+    public sealed record RequestMetric(
+        string Provider, string Model, string? ConnectionId, string ApiKey,
+        string Inbound, int PromptTokens, int CompletionTokens,
+        double CostUsd, long LatencyMs, string Status);
+
     /// <summary>Record a completed (or failed) gateway request — called once per LogUsage.</summary>
-    public static void RecordRequest(
-        string provider, string model, string? connectionId, string apiKey,
-        string inbound, int promptTokens, int completionTokens,
-        double costUsd, long latencyMs, string status)
+    public static void RecordRequest(RequestMetric m)
     {
         var tags = new TagList
         {
-            { "provider", provider },
-            { "model", model },
-            { "connection", connectionId ?? "" },
-            { "keyhash", KeyHash(apiKey) },
-            { "status", status },
-            { "inbound", inbound },
+            { "provider", m.Provider },
+            { "model", m.Model },
+            { "connection", m.ConnectionId ?? "" },
+            { "keyhash", KeyHash(m.ApiKey) },
+            { "status", m.Status },
+            { "inbound", m.Inbound },
         };
         Requests.Add(1, tags);
-        RequestDurationMs.Record(latencyMs, tags);
-        if (promptTokens > 0)
-            Tokens.Add(promptTokens, Tag("provider", provider), Tag("model", model), Tag("kind", "prompt"));
-        if (completionTokens > 0)
-            Tokens.Add(completionTokens, Tag("provider", provider), Tag("model", model), Tag("kind", "completion"));
-        if (costUsd > 0) CostUsd.Add(costUsd, Tag("provider", provider), Tag("model", model));
+        RequestDurationMs.Record(m.LatencyMs, tags);
+        if (m.PromptTokens > 0)
+            Tokens.Add(m.PromptTokens, Tag("provider", m.Provider), Tag("model", m.Model), Tag("kind", "prompt"));
+        if (m.CompletionTokens > 0)
+            Tokens.Add(m.CompletionTokens, Tag("provider", m.Provider), Tag("model", m.Model), Tag("kind", "completion"));
+        if (m.CostUsd > 0) CostUsd.Add(m.CostUsd, Tag("provider", m.Provider), Tag("model", m.Model));
     }
 
     public static void RateLimitViolation(string scope) =>

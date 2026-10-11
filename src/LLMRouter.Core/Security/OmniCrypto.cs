@@ -66,6 +66,8 @@ public static class OmniCrypto
     {
         var saltBytes = Encoding.UTF8.GetBytes(salt);
         var passBytes = Encoding.UTF8.GetBytes(secret);
+        // NOSONAR S5344 — 1 iteração é o primitivo interno do scrypt (RFC 7914);
+        // o fator de trabalho fica em N=16384, não no PBKDF2.
         var b = Rfc2898DeriveBytes.Pbkdf2(passBytes, saltBytes, 1, HashAlgorithmName.SHA256, p * 128 * r);
         var x = new byte[128 * r];
         var v = new byte[n * 128 * r];
@@ -75,7 +77,7 @@ public static class OmniCrypto
             ROMix(x, v, n, r);
             Buffer.BlockCopy(x, 0, b, i * 128 * r, 128 * r);
         }
-        return Rfc2898DeriveBytes.Pbkdf2(passBytes, b, 1, HashAlgorithmName.SHA256, dkLen);
+        return Rfc2898DeriveBytes.Pbkdf2(passBytes, b, 1, HashAlgorithmName.SHA256, dkLen); // NOSONAR S5344 — idem
     }
 
     private static void ROMix(byte[] b, byte[] v, int n, int r)
@@ -189,7 +191,8 @@ public static class OmniCrypto
         private static byte[] Inc32(byte[] j0)
         {
             var r = (byte[])j0.Clone();
-            for (var i = 15; i >= 12 && ++r[i] == 0; i--) { }
+            for (var i = 15; i >= 12; i--)
+                if (++r[i] != 0) break;
             return r;
         }
 

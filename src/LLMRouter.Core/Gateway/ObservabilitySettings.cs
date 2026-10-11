@@ -27,21 +27,28 @@ public static class ObservabilitySettings
             || ob.ValueKind != JsonValueKind.Object)
             return Default;
         var metricsAuth = ob.TryGetProperty("metricsAuth", out var ma) && ma.ValueKind == JsonValueKind.True;
-        OtlpConfig? otlp = null;
-        if (ob.TryGetProperty("otlp", out var ot) && ot.ValueKind == JsonValueKind.Object
-            && ot.TryGetProperty("endpoint", out var ep) && ep.ValueKind == JsonValueKind.String
-            && ep.GetString() is { Length: > 0 } endpoint)
-        {
-            var protocol = ot.TryGetProperty("protocol", out var pr) && pr.ValueKind == JsonValueKind.String
-                ? pr.GetString()! : "grpc";
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (ot.TryGetProperty("headers", out var h) && h.ValueKind == JsonValueKind.Object)
-                foreach (var kv in h.EnumerateObject())
-                    if (kv.Value.ValueKind == JsonValueKind.String)
-                        headers[kv.Name] = kv.Value.GetString()!;
-            otlp = new OtlpConfig(endpoint, protocol, headers);
-        }
-        return new Config(metricsAuth, otlp);
+        return new Config(metricsAuth, ParseOtlp(ob));
+    }
+
+    private static OtlpConfig? ParseOtlp(JsonElement ob)
+    {
+        if (!ob.TryGetProperty("otlp", out var ot) || ot.ValueKind != JsonValueKind.Object
+            || !ot.TryGetProperty("endpoint", out var ep) || ep.ValueKind != JsonValueKind.String
+            || ep.GetString() is not { Length: > 0 } endpoint)
+            return null;
+        var protocol = ot.TryGetProperty("protocol", out var pr) && pr.ValueKind == JsonValueKind.String
+            ? pr.GetString()! : "grpc";
+        return new OtlpConfig(endpoint, protocol, ParseHeaders(ot));
+    }
+
+    private static Dictionary<string, string> ParseHeaders(JsonElement ot)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (ot.TryGetProperty("headers", out var h) && h.ValueKind == JsonValueKind.Object)
+            foreach (var kv in h.EnumerateObject())
+                if (kv.Value.ValueKind == JsonValueKind.String)
+                    headers[kv.Name] = kv.Value.GetString()!;
+        return headers;
     }
 
     /// <summary>

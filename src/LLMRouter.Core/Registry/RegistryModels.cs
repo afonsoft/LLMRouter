@@ -24,6 +24,10 @@ public class ProviderEntry
     public string? AuthHeader { get; set; }
     public string? AuthPrefix { get; set; }
     public string? AnonymousApiKey { get; set; }
+    /// <summary>SPEC-102: zero-data-retention provider flag (providers.json `zdr`).</summary>
+    public bool? Zdr { get; set; }
+    /// <summary>SPEC-102: provider trains on customer data (providers.json `trainsOnData`).</summary>
+    public bool? TrainsOnData { get; set; }
     public int? DefaultContextLength { get; set; }
     public bool ForceStream { get; set; }
     public bool PassthroughModels { get; set; }

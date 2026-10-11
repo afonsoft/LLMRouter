@@ -802,7 +802,18 @@ public static class GatewayEndpoints
         if (oneProxy is not null)
             oneProxy.Set(await Core.Gateway.HotReads.OneProxyCurrentAsync(db, sdata));
 
-        var targets = await engine.ResolveAsync(model, body, ctx.RequestAborted);
+        List<LLMRouter.Core.Gateway.ResolvedTarget> targets;
+        try
+        {
+            targets = await engine.ResolveAsync(model, body, ctx.RequestAborted);
+        }
+        catch (Core.Routing.RouteHintException rhe)
+        {
+            // SPEC-102: unknown provider slug in provider.order
+            ctx.Response.StatusCode = 400;
+            await WriteError(ctx, inbound, "invalid_provider", rhe.Message);
+            return;
+        }
         if (comboEntity?.Kind == "vision-adapter")
         {
             var models = JsonSerializer.Deserialize<List<string>>(comboEntity.Models) ?? [];
@@ -888,6 +899,9 @@ public static class GatewayEndpoints
                 var (pcl, px, pool) = await Core.Routing.ProxyPoolService.ClientAndProxyAsync(db, target.Connection);
                 var client = pcl ?? httpFactory.CreateClient("upstream");
                 var call = engine.BuildCall(target, inbound, body, stream);
+                // SPEC-102: chosen route rides a header for observability.
+                ctx.Response.Headers["x-llmr-route"] =
+                    $"{target.Provider.Id}/{target.UpstreamModel}/{target.Connection.Id}";
                 var plog = px is { } ? Core.Routing.ProxyPoolService.PlogFor(
                     pool!, px, call.Url, ctx.Connection.RemoteIpAddress?.ToString()) : null;
                 var req = new HttpRequestMessage(HttpMethod.Post, call.Url);

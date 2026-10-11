@@ -296,60 +296,14 @@ public sealed class GatewayEngine(
         HotCache.Default.Invalidate($"qwx:{provider}");
         HotCache.Default.InvalidateTag($"dcap:{apiKey}");
 
-        // SPEC-074: all DB writes funnel through the UsageWriter's dedicated
-        // context — no SaveChanges on the request-scoped context per request.
+        // SPEC-108: usage writes go through the typed channel — batched by the
+        // UsageWriter (200 rows / 500ms) in one transaction off the request path.
         if (writer is not null)
         {
             var detailText = detail?.GetRawText() ?? error;
-            await writer.PostAsync(async w =>
-            {
-                w.UsageHistory.Add(new UsageRecord
-                {
-                    Timestamp = now,
-                    Provider = provider,
-                    Model = model,
-                    ConnectionId = connectionId,
-                    ApiKey = apiKey,
-                    Endpoint = endpoint,
-                    PromptTokens = promptTokens,
-                    CompletionTokens = completionTokens,
-                    Tokens = (promptTokens + completionTokens).ToString(),
-                    Status = status,
-                    Cost = cost,
-                    LatencyMs = latencyMs,
-                    Meta = detail?.GetRawText() ?? error,
-                });
-                w.RequestDetails.Add(new RequestDetail
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    Timestamp = now,
-                    Provider = provider,
-                    Model = model,
-                    ConnectionId = connectionId,
-                    Status = status,
-                    Data = detailText ?? "{}",
-                });
-                await w.SaveChangesAsync();
-                await RollupDailyOnAsync(w, provider, model, promptTokens, completionTokens);
-                await Routing.KeyQuota.CreditDailyAsync(w, apiKey, promptTokens + completionTokens, model);
-
-                var sess = await w.ChatSessions
-                    .FirstOrDefaultAsync(s => s.KeyId == apiKey && s.Model == model);
-                if (sess is null)
-                {
-                    w.ChatSessions.Add(new ChatSession
-                    {
-                        Id = Guid.NewGuid().ToString("N"),
-                        KeyId = apiKey, Model = model,
-                        StartedAt = now, LastSeenAt = now, MessageCount = 1,
-                    });
-                }
-                else { sess.LastSeenAt = now; sess.MessageCount++; }
-                await w.SaveChangesAsync();
-                // verdict keys now reflect the row we just wrote
-                HotCache.Default.Invalidate($"qwx:{provider}");
-                HotCache.Default.InvalidateTag($"dcap:{apiKey}");
-            });
+            await writer.PostUsageAsync(new UsageWrite(
+                now, provider, model, connectionId, apiKey, endpoint,
+                promptTokens, completionTokens, cost, latencyMs, status, detailText));
 
             if (rateLimiter is not null)
             {
@@ -422,7 +376,8 @@ public sealed class GatewayEngine(
     private Task RollupDailyAsync(string provider, string model, int prompt, int completion) =>
         RollupDailyOnAsync(db, provider, model, prompt, completion);
 
-    private static async Task RollupDailyOnAsync(LlmRouterDbContext w, string provider, string model, int prompt, int completion)
+    /// <summary>SPEC-108: shared by the request path and the UsageWriter batch.</summary>
+    public static async Task RollupDailyOnAsync(LlmRouterDbContext w, string provider, string model, int prompt, int completion)
     {
         var key = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var row = await w.UsageDaily.FirstOrDefaultAsync(r => r.DateKey == key);

@@ -66,14 +66,22 @@ public static class ProxyPoolService
     /// shared "upstream" client.
     /// </summary>
     public static async Task<HttpClient?> ClientForAsync(LlmRouterDbContext db, ProviderConnection conn)
+        => (await ClientAndProxyAsync(db, conn)).Client;
+
+    /// <summary>
+    /// SPEC-116: same pick as <see cref="ClientForAsync"/>, but also returns the
+    /// chosen proxy + pool so callers can journal it into proxyLogs.
+    /// </summary>
+    public static async Task<(HttpClient? Client, PoolProxy? Proxy, ProxyPool? Pool)> ClientAndProxyAsync(
+        LlmRouterDbContext db, ProviderConnection conn)
     {
         var poolId = PoolIdOf(conn);
-        if (poolId is null) return null;
+        if (poolId is null) return (null, null, null);
         var pool = await db.ProxyPools.FindAsync(poolId);
-        if (pool is null || !pool.IsActive) return null;
+        if (pool is null || !pool.IsActive) return (null, null, null);
         var proxy = Pick(pool);
-        if (proxy is null) return null;
-        return Clients.GetOrAdd(proxy.Url, url =>
+        if (proxy is null) return (null, null, pool);
+        var client = Clients.GetOrAdd(proxy.Url, url =>
         {
             var handler = new SocketsHttpHandler
             {
@@ -83,6 +91,20 @@ public static class ProxyPoolService
             };
             return new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
         });
+        return (client, proxy, pool);
+    }
+
+    /// <summary>SPEC-116: ProxyLogInfo for a pool pick (level "provider").</summary>
+    public static Core.Gateway.ProxyLogInfo PlogFor(
+        ProxyPool pool, PoolProxy proxy, string? targetUrl, string? clientIp)
+    {
+        var (host, port) = Core.Gateway.ProxyJournal.HostPort(proxy.Url);
+        var type = proxy.Url.StartsWith("socks", StringComparison.OrdinalIgnoreCase) ? "socks5"
+            : proxy.Url.StartsWith("https", StringComparison.OrdinalIgnoreCase) ? "https" : "http";
+        return new Core.Gateway.ProxyLogInfo(
+            Level: "provider", LevelId: pool.Id,
+            ProxyId: proxy.Id, ProxyType: type, ProxyHost: host, ProxyPort: port,
+            ProxyName: proxy.Id, TargetUrl: targetUrl, ClientIp: clientIp);
     }
 
     /// <summary>Increment a proxy's failure count (>=3 disables it in the pool row).</summary>

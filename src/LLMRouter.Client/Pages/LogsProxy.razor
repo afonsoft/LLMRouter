@@ -1,64 +1,665 @@
 @page "/dashboard/logs/proxy"
+@using System.Text.Json
+@using System.Net
 @inject Api Api
 @inject Loc Loc
+@inject IJSRuntime Js
+@implements IDisposable
 
-<h1 class="page-title">@Loc.T("logsProxy", "Proxy log")</h1>
-<p class="page-desc">@Loc.T("logsProxySubtitle", "Upstream proxy pools and rotation state")</p>
+@* SPEC-116: verbatim port of upstream ProxyLogger.tsx + ProxyLogDetail.tsx *@
 
-<div class="grid grid-2 mt-4">
-    <div class="card card-p">
-        <div class="flex between mb-4">
-            <h3 class="bold" style="margin:0">@Loc.T("lp.pools", "Proxy pools")</h3>
-            <button class="btn btn-sm" @onclick="Load">@Loc.T("common.refresh", "Refresh")</button>
+<div class="plog">
+    @* Header bar *@
+    <div class="plog-bar">
+        <button class="plog-rec @(_recording ? "on" : "")" @onclick="() => _recording = !_recording">
+            <span class="dot"></span>
+            @(_recording ? Loc.T("proxyLogger.recording", "Recording") : Loc.T("proxyLogger.paused", "Paused"))
+        </button>
+
+        <div class="plog-search">
+            <span class="material-symbols-outlined">search</span>
+            <input type="text" placeholder="@Loc.T("proxyLogger.searchPlaceholder", "Search proxy, target, provider, IP...")"
+                   @bind="_search" @bind:event="oninput" @bind:after="() => Load(true)" />
         </div>
-        @foreach (var p in _pools)
+
+        <select class="plog-select" style="min-width:120px" @bind="_type" @bind:after="() => Load(true)">
+            <option value="">@Loc.T("proxyLogger.allTypes", "All types")</option>
+            @foreach (var t in UniqueTypes)
+            {
+                <option value="@t">@(TypeColors.TryGetValue(t, out var c) ? c.Label : t.ToUpperInvariant())</option>
+            }
+        </select>
+
+        <select class="plog-select" style="min-width:120px" @bind="_level" @bind:after="() => Load(true)">
+            <option value="">@Loc.T("proxyLogger.allLevels", "All levels")</option>
+            @foreach (var l in UniqueLevels)
+            {
+                <option value="@l">@(LevelColors.TryGetValue(l, out var c) ? c.Label : l)</option>
+            }
+        </select>
+
+        <select class="plog-select" style="min-width:140px" @bind="_provider" @bind:after="() => Load(true)">
+            <option value="">@Loc.T("proxyLogger.allProviders", "All providers")</option>
+            @foreach (var p in UniqueProviders)
+            {
+                <option value="@p">@(ProviderColors.TryGetValue(p, out var c) ? c.Label : p.ToUpperInvariant())</option>
+            }
+        </select>
+
+        <div class="plog-stats">
+            <span class="plog-stat">@_logs.Count @Loc.T("proxyLogger.total", "total")</span>
+            <span class="plog-stat ok">@OkCount @Loc.T("proxyLogger.ok", "ok")</span>
+            @if (ErrCount > 0)
+            {
+                <span class="plog-stat err">@ErrCount @Loc.T("proxyLogger.err", "err")</span>
+            }
+            @if (TmoCount > 0)
+            {
+                <span class="plog-stat tmo">@TmoCount @Loc.T("proxyLogger.timeoutShort", "tmo")</span>
+            }
+            @if (DirectCount > 0)
+            {
+                <span class="plog-stat dir">@DirectCount @Loc.T("proxyLogger.direct", "direct")</span>
+            }
+            @if (TlsCount > 0)
+            {
+                <span class="plog-stat tls">🔒 @TlsCount TLS</span>
+            }
+            @if (TestsCount > 0)
+            {
+                <span class="plog-stat tst">@TestsCount @Loc.T("proxyLogger.filterTests", "Tests")</span>
+            }
+        </div>
+
+        <select class="plog-select" style="min-width:140px" @bind="_sortBy">
+            <option value="newest">@Loc.T("proxyLogger.newest", "Newest")</option>
+            <option value="oldest">@Loc.T("proxyLogger.oldest", "Oldest")</option>
+            <option value="latency_desc">@Loc.T("proxyLogger.latencyDesc", "Latency ↓")</option>
+            <option value="latency_asc">@Loc.T("proxyLogger.latencyAsc", "Latency ↑")</option>
+        </select>
+
+        <button class="plog-refresh" title="@Loc.T("proxyLogger.refresh", "Refresh")" @onclick="() => Load(true)">
+            <span class="material-symbols-outlined">refresh</span>
+        </button>
+    </div>
+
+    @* Quick filters *@
+    <div class="plog-pills">
+        @foreach (var f in _statusFilters)
         {
-            <div class="mt-2 xs" style="border-bottom:1px solid var(--border);padding-bottom:6px">
-                <span class="bold">@(p.TryGetProperty("name", out var n) ? n.GetString() : "pool")</span>
-                <span class="muted">· @(p.TryGetProperty("id", out var i) ? i.GetString() : "")</span>
-                <div class="muted mono sm">@(p.TryGetProperty("data", out var d) ? Shorten(d.GetRawText()) : "")</div>
+            <button class="plog-pill @(_status == f.Key ? $"on p-{f.Key}" : "")"
+                    @onclick="() => SetStatus(f.Key)">
+                @if (f.Icon is not null)
+                {
+                    <span class="material-symbols-outlined">@f.Icon</span>
+                }
+                @Loc.T($"proxyLogger.{f.LocKey}", f.Label)
+            </button>
+        }
+
+        @if (UniqueProviders.Count > 0)
+        {
+            <span class="plog-sep"></span>
+        }
+
+        <span class="plog-tag">@Loc.T("proxyLogger.filterSource", "Source")</span>
+        @foreach (var f in _sourceFilters)
+        {
+            <button class="plog-pill @(_source == f.Key ? "on" : "")"
+                    @onclick='() => _source = _source == f.Key ? "all" : f.Key'>
+                @Loc.T($"proxyLogger.{f.LocKey}", f.Label)
+            </button>
+        }
+
+        @if (UniqueProviders.Count > 0)
+        {
+            <span class="plog-sep"></span>
+        }
+
+        @foreach (var p in UniqueProviders)
+        {
+            var pc = ProviderColors.TryGetValue(p, out var c0) ? c0 : new Chip("#374151", "#fff", p.ToUpperInvariant());
+            var on = _provider == p;
+            <button class="plog-pchip @(on ? "on" : "")"
+                    style='background-color:@(on ? pc.Bg : pc.Bg + "33");color:@(on ? pc.Text : pc.Bg)'
+                    @onclick='() => SelectProvider(on ? "" : p)'>
+                @pc.Label
+            </button>
+        }
+    </div>
+
+    @* Column visibility toggles *@
+    <div class="plog-cols">
+        <span class="plog-tag">@Loc.T("proxyLogger.columns", "Columns")</span>
+        @foreach (var col in _columns)
+        {
+            <button class="plog-col @(Visible(col.Key) ? "" : "off")" @onclick="() => ToggleColumn(col.Key)">
+                @Loc.T($"proxyLogger.{col.LocKey}", col.Label)
+            </button>
+        }
+    </div>
+
+    @* Table *@
+    <div class="plog-card">
+        <div class="plog-tablewrap">
+            @if (_loading && _logs.Count == 0)
+            {
+                <div class="plog-empty">@Loc.T("proxyLogger.loadingProxyLogs", "Loading proxy logs...")</div>
+            }
+            else if (_logs.Count == 0)
+            {
+                <div class="plog-empty">
+                    <span class="material-symbols-outlined">vpn_lock</span>
+                    @Loc.T("proxyLogger.noProxyLogs", "No proxy logs recorded yet")
+                </div>
+            }
+            else if (SortedLogs.Count == 0)
+            {
+                <div class="plog-empty">@Loc.T("proxyLogger.noMatchingLogs", "No logs match the current filters")</div>
+            }
+            else
+            {
+                <table class="plog-table">
+                    <thead>
+                        <tr>
+                            @if (Visible("status"))
+                            {
+                                <th>@Loc.T("proxyLogger.colStatus", "Status")</th>
+                            }
+                            @if (Visible("proxy"))
+                            {
+                                <th>@Loc.T("proxyLogger.colProxy", "Proxy")</th>
+                            }
+                            @if (Visible("tls"))
+                            {
+                                <th>@Loc.T("proxyLogger.colTls", "TLS")</th>
+                            }
+                            @if (Visible("type"))
+                            {
+                                <th>@Loc.T("proxyLogger.colType", "Type")</th>
+                            }
+                            @if (Visible("level"))
+                            {
+                                <th>@Loc.T("proxyLogger.colLevel", "Level")</th>
+                            }
+                            @if (Visible("provider"))
+                            {
+                                <th>@Loc.T("proxyLogger.colProvider", "Provider")</th>
+                            }
+                            @if (Visible("upstream"))
+                            {
+                                <th class="r">@Loc.T("proxyLogger.colUpstream", "Upstream")</th>
+                            }
+                            @if (Visible("egress"))
+                            {
+                                <th>@Loc.T("proxyLogger.colEgress", "Egress IP")</th>
+                            }
+                            @if (Visible("correlation"))
+                            {
+                                <th>@Loc.T("proxyLogger.colCorrelation", "Correlation")</th>
+                            }
+                            @if (Visible("servedBy"))
+                            {
+                                <th>@Loc.T("proxyLogger.colServedBy", "Served by")</th>
+                            }
+                            @if (Visible("target"))
+                            {
+                                <th>@Loc.T("proxyLogger.colTarget", "Target")</th>
+                            }
+                            @if (Visible("latency"))
+                            {
+                                <th class="r">@Loc.T("proxyLogger.colLatency", "Latency")</th>
+                            }
+                            @if (Visible("ip"))
+                            {
+                                <th>@Loc.T("proxyLogger.colClientIp", "Client IP")</th>
+                            }
+                            @if (Visible("time"))
+                            {
+                                <th class="r">@Loc.T("proxyLogger.colTime", "Time")</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var log in SortedLogs)
+                        {
+                            var st = StatusStyle(S(log, "status"));
+                            var ptype = ProxyProp(log, "type");
+                            var tc = ptype is { } pt && TypeColors.TryGetValue(pt, out var tcv)
+                                ? tcv : new Chip("#6B7280", "#fff", ptype ?? "-");
+                            var lv = S(log, "level") ?? "direct";
+                            var lc = LevelColors.TryGetValue(lv, out var lcv) ? lcv : LevelColors["direct"];
+                            var prov = S(log, "provider");
+                            var pc = prov is { } && ProviderColors.TryGetValue(prov, out var pcv)
+                                ? pcv : new Chip("#374151", "#fff", (prov ?? "-").ToUpperInvariant());
+                            var isErr = S(log, "status") is "error" or "timeout";
+                            <tr class="@(isErr ? "is-err" : "")" @onclick='() => _sel = _sel is { } cur && S(cur, "id") == S(log, "id") ? null : log'>
+                                @if (Visible("status"))
+                                {
+                                    <td><span class="plog-cell-badge" style="background:@st.Bg;color:@st.Text">@S(log, "status")</span></td>
+                                }
+                                @if (Visible("proxy"))
+                                {
+                                    <td class="plog-mono" style="color:var(--primary)">@(ProxyName(log) ?? "—")</td>
+                                }
+                                @if (Visible("tls"))
+                                {
+                                    <td>
+                                        @if (log.TryGetProperty("tlsFingerprint", out var tf) && tf.ValueKind == JsonValueKind.True)
+                                        {
+                                            <span class="plog-cell-badge sm" title="@Loc.T("proxyLogger.tlsFingerprint", "TLS fingerprint")"
+                                                  style="background:rgba(6,182,212,.15);color:#22d3ee">🔒 TLS</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="plog-dim">—</span>
+                                        }
+                                    </td>
+                                }
+                                @if (Visible("type"))
+                                {
+                                    <td><span class="plog-cell-badge sm" style="background:@tc.Bg;color:@tc.Text">@tc.Label</span></td>
+                                }
+                                @if (Visible("level"))
+                                {
+                                    <td><span class="plog-cell-badge sm" style="background:@lc.Bg;color:@lc.Text">@lc.Label</span></td>
+                                }
+                                @if (Visible("provider"))
+                                {
+                                    <td>
+                                        @if (prov is not null)
+                                        {
+                                            <span class="plog-cell-badge sm" style="background:@pc.Bg;color:@pc.Text">@pc.Label</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="plog-dim">—</span>
+                                        }
+                                    </td>
+                                }
+                                @if (Visible("upstream"))
+                                {
+                                    <td class="r plog-mono plog-muted">@(I(log, "upstreamStatus")?.ToString() ?? "—")</td>
+                                }
+                                @if (Visible("egress"))
+                                {
+                                    <td class="plog-mono plog-emerald">@(S(log, "egressIp") ?? "—")</td>
+                                }
+                                @if (Visible("correlation"))
+                                {
+                                    <td class="plog-mono">
+                                        @if (S(log, "correlationId") is { } corr)
+                                        {
+                                            <a class="plog-link" title="@corr" @onclick:stopPropagation
+                                               href="/dashboard/logs?correlationId=@Uri.EscapeDataString(corr)">@corr[..Math.Min(12, corr.Length)]…</a>
+                                        }
+                                        else
+                                        {
+                                            <span class="plog-dim">—</span>
+                                        }
+                                    </td>
+                                }
+                                @if (Visible("servedBy"))
+                                {
+                                    <td class="plog-mono plog-muted">@(S(log, "rotationAccount") ?? S(log, "account") ?? "—")</td>
+                                }
+                                @if (Visible("target"))
+                                {
+                                    <td class="plog-target" title="@S(log, "targetUrl")">@TruncateUrl(S(log, "targetUrl"))</td>
+                                }
+                                @if (Visible("latency"))
+                                {
+                                    <td class="r plog-mono plog-muted">@FmtLatency(I(log, "latencyMs"))</td>
+                                }
+                                @if (Visible("ip"))
+                                {
+                                    <td class="plog-mono plog-emerald">@(S(log, "clientIp") ?? "—")</td>
+                                }
+                                @if (Visible("time"))
+                                {
+                                    <td class="r plog-muted">@FmtTime(S(log, "timestamp"))</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    @* Detail panel (upstream ProxyLogDetail) *@
+    @if (_sel is { } sel)
+    {
+        <div class="plog-modal" role="dialog" aria-label="@Loc.T("proxyLogger.detailAriaLabel", "Proxy log detail")" @onclick="() => _sel = null">
+            <div class="plog-modal-bg"></div>
+            <div class="plog-modal-card" @onclick:stopPropagation>
+                <div class="plog-modal-head">
+                    <div style="display:flex;align-items:center;gap:12px">
+                        @{
+                            var sst = StatusStyle(S(sel, "status"));
+                        }
+                        <span class="plog-cell-badge" style="background:@sst.Bg;color:@sst.Text">@S(sel, "status")</span>
+                        <span style="font-weight:700;font-size:18px">@Loc.T("proxyLogger.event", "Proxy event")</span>
+                    </div>
+                    <button class="plog-refresh" aria-label="@Loc.T("proxyLogger.close", "Close")" @onclick="() => _sel = null">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="plog-modal-body">
+                    <div class="plog-badges">
+                        <div>
+                            <div class="plog-flabel">@Loc.T("proxyLogger.type", "Type")</div>
+                            @{
+                                var dt = ProxyProp(sel, "type");
+                                var dtc = dt is { } d0 && TypeColors.TryGetValue(d0, out var d1) ? d1 : new Chip("#6B7280", "#fff", dt ?? "-");
+                            }
+                            <span class="plog-cell-badge sm" style="background:@dtc.Bg;color:@dtc.Text">@dtc.Label</span>
+                        </div>
+                        <div>
+                            <div class="plog-flabel">@Loc.T("proxyLogger.level", "Level")</div>
+                            @{
+                                var dl = S(sel, "level") ?? "direct";
+                                var dlc = LevelColors.TryGetValue(dl, out var d2) ? d2 : LevelColors["direct"];
+                            }
+                            <span class="plog-cell-badge sm" style="background:@dlc.Bg;color:@dlc.Text">@dlc.Label</span>
+                        </div>
+                        <div>
+                            <div class="plog-flabel">@Loc.T("proxyLogger.provider", "Provider")</div>
+                            @if (S(sel, "provider") is { } dprov)
+                            {
+                                var dpc = ProviderColors.TryGetValue(dprov, out var d3) ? d3 : new Chip("#374151", "#fff", dprov.ToUpperInvariant());
+                                <span class="plog-cell-badge sm" style="background:@dpc.Bg;color:@dpc.Text">@dpc.Label</span>
+                            }
+                            else
+                            {
+                                <span class="plog-dim" style="font-size:14px">—</span>
+                            }
+                        </div>
+                        <div>
+                            <div class="plog-flabel">@Loc.T("proxyLogger.tlsFingerprint", "TLS fingerprint")</div>
+                            @if (sel.TryGetProperty("tlsFingerprint", out var dtf) && dtf.ValueKind == JsonValueKind.True)
+                            {
+                                <span class="plog-cell-badge sm" style="background:rgba(6,182,212,.15);color:#22d3ee">🔒 TLS</span>
+                            }
+                            else
+                            {
+                                <span class="plog-dim" style="font-size:14px">@Loc.T("proxyLogger.directNative", "Direct / native")</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="plog-grid">
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.time", "Time")</label>
+                            <div class="val" style="font-family:inherit">@S(sel, "timestamp")</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.latency", "Latency")</label>
+                            <div class="val" style="font-family:inherit">@FmtLatency(I(sel, "latencyMs"))</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.clientIp", "Client IP")</label>
+                            <div class="val plog-emerald">@(S(sel, "clientIp") ?? "—")</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.proxy", "Proxy")</label>
+                            <div class="val" style="color:var(--primary)">@(ProxyName(sel) ?? "—")</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.upstreamStatus", "Upstream status")</label>
+                            <div class="val">@(I(sel, "upstreamStatus")?.ToString() ?? "—")</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.headersAfter", "Headers after")</label>
+                            <div class="val">@FmtLatency(I(sel, "headersMs"))</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.firstChunkAfter", "First chunk after")</label>
+                            <div class="val">@FmtLatency(I(sel, "firstChunkMs"))</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.egressIp", "Egress IP")</label>
+                            <div class="val plog-emerald">@(S(sel, "egressIp") ?? "—")</div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.correlationId", "Correlation ID")</label>
+                            <div class="val">
+                                @if (S(sel, "correlationId") is { } sc)
+                                {
+                                    <a class="plog-link" href="/dashboard/logs?correlationId=@Uri.EscapeDataString(sc)">@sc[..Math.Min(12, sc.Length)]…</a>
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="plog-field">
+                            <label>@Loc.T("proxyLogger.servedBy", "Served by")</label>
+                            <div class="val">@(S(sel, "rotationAccount") ?? S(sel, "account") ?? "—")</div>
+                        </div>
+                        <div class="plog-field span2">
+                            <label>@Loc.T("proxyLogger.targetUrl", "Target URL")</label>
+                            <div class="val plog-muted" style="word-break:break-all">@(S(sel, "targetUrl") ?? "—")</div>
+                        </div>
+                    </div>
+
+                    @if (S(sel, "error") is { } derr)
+                    {
+                        <div class="plog-err">@derr</div>
+                    }
+                </div>
             </div>
-        }
-        @if (_pools.Count == 0 && _loaded)
-        {
-            <div class="empty"><span class="material-symbols-outlined">lan</span>@Loc.T("lp.noPools", "No proxy pools configured")</div>
-        }
-    </div>
-    <div class="card card-p">
-        <h3 class="bold mb-4">@Loc.T("lp.oneproxy", "OneProxy (current)")</h3>
-        @if (_oneproxy.ValueKind == JsonValueKind.Object && _oneproxy.TryGetProperty("current", out var cur) && cur.ValueKind != JsonValueKind.Null)
-        {
-            <pre class="mono xs" style="white-space:pre-wrap">@cur.GetRawText()</pre>
-        }
-        else
-        {
-            <div class="empty"><span class="material-symbols-outlined">swap_horiz</span>@Loc.T("lp.noProxy", "No active upstream proxy — requests go direct")</div>
-        }
-        <button class="btn btn-sm mt-4" @onclick="Rotate" disabled="@(_pools.Count == 0)">@Loc.T("lp.rotate", "Rotate now")</button>
-    </div>
+        </div>
+    }
 </div>
 
 @code {
-    private List<JsonElement> _pools = new();
-    private JsonElement _oneproxy;
-    private bool _loaded;
+    private sealed record Chip(string Bg, string Text, string Label);
+    private sealed record Filter(string Key, string LocKey, string Label, string? Icon = null);
 
-    protected override async Task OnInitializedAsync() => await Load();
-
-    private async Task Load()
+    private static readonly Dictionary<string, Chip> ProviderColors = new()
     {
-        var r = await Api.GetAsync("api/proxy-pools");
-        _pools = r.ValueKind == JsonValueKind.Object && r.TryGetProperty("pools", out var pp)
-            ? pp.EnumerateArray().Select(x => x.Clone()).ToList() : [];
-        _oneproxy = await Api.GetAsync("api/proxy/oneproxy");
-        _loaded = true;
+        ["github"] = new("#6e40c9", "#fff", "GitHub"),
+        ["kiro"] = new("#FF9900", "#000", "Kiro"),
+        ["antigravity"] = new("#4285F4", "#fff", "AG"),
+        ["claude"] = new("#D97757", "#fff", "Claude"),
+        ["codex"] = new("#10A37F", "#fff", "Codex"),
+        ["gemini"] = new("#34A853", "#fff", "Gemini"),
+        ["qwen"] = new("#6366F1", "#fff", "Qwen"),
+        ["qoder"] = new("#EC4899", "#fff", "Qoder"),
+        ["fireworks"] = new("#F97316", "#fff", "Fireworks"),
+        ["kimi"] = new("#06B6D4", "#fff", "Kimi"),
+        ["cheaperinference"] = new("#31f889", "#04170d", "Cheaper Inference"),
+    };
+    private static readonly Dictionary<string, Chip> TypeColors = new()
+    {
+        ["http"] = new("#3B82F6", "#fff", "HTTP"),
+        ["https"] = new("#10B981", "#fff", "HTTPS"),
+        ["socks5"] = new("#8B5CF6", "#fff", "SOCKS5"),
+    };
+    private static readonly Dictionary<string, Chip> LevelColors = new()
+    {
+        ["key"] = new("#F59E0B", "#000", "Key"),
+        ["combo"] = new("#8B5CF6", "#fff", "Combo"),
+        ["provider"] = new("#3B82F6", "#fff", "Provider"),
+        ["provider-test"] = new("#EC4899", "#fff", "Test"),
+        ["global"] = new("#6B7280", "#fff", "Global"),
+        ["direct"] = new("#374151", "#9CA3AF", "Direct"),
+    };
+    private static Chip StatusStyle(string? s) => s switch
+    {
+        "success" => new("#059669", "#fff", ""),
+        "error" => new("#DC2626", "#fff", ""),
+        "timeout" => new("#D97706", "#fff", ""),
+        _ => new("#6B7280", "#fff", ""),
+    };
+
+    private static readonly string[] ColumnKeys =
+        ["status", "proxy", "tls", "type", "level", "provider", "upstream",
+         "egress", "correlation", "servedBy", "target", "latency", "ip", "time"];
+
+    private readonly List<Filter> _statusFilters =
+        [new("all", "filterAll", "All"), new("error", "filterErrors", "Errors", "error"),
+         new("ok", "filterSuccess", "Success", "check_circle"), new("timeout", "filterTimeout", "Timeout", "timer_off")];
+    private readonly List<Filter> _sourceFilters =
+        [new("all", "filterAll", "All"), new("traffic", "filterTraffic", "Traffic"), new("tests", "filterTests", "Tests")];
+    private readonly List<Filter> _columns =
+        [.. ColumnKeys.Select(k => new Filter(k, "col" + char.ToUpperInvariant(k[0]) + k[1..], k))];
+
+    private readonly List<JsonElement> _logs = [];
+    private readonly HashSet<string> _hidden = [];
+    private bool _loading = true, _recording = true;
+    private string _search = "", _type = "", _level = "", _provider = "";
+    private string _status = "all", _source = "all", _sortBy = "newest";
+    private JsonElement? _sel;
+    private Timer? _timer;
+    private string _sig = "";
+
+    private List<string> UniqueProviders => _logs.Select(l => S(l, "provider")).Where(p => p is not null)
+        .Select(p => p!).Distinct().OrderBy(p => p).ToList();
+    private List<string> UniqueTypes => _logs.Select(ProxyPropType).Where(t => t is not null)
+        .Select(t => t!).Distinct().OrderBy(t => t).ToList();
+    private List<string> UniqueLevels => _logs.Select(l => S(l, "level")).Where(l => l is not null)
+        .Select(l => l!).Distinct().OrderBy(l => l).ToList();
+
+    private int OkCount => _logs.Count(l => S(l, "status") == "success");
+    private int ErrCount => _logs.Count(l => S(l, "status") == "error");
+    private int TmoCount => _logs.Count(l => S(l, "status") == "timeout");
+    private int DirectCount => _logs.Count(l => S(l, "level") == "direct");
+    private int TlsCount => _logs.Count(l => l.TryGetProperty("tlsFingerprint", out var t) && t.ValueKind == JsonValueKind.True);
+    private int TestsCount => _logs.Count(IsTest);
+
+    private List<JsonElement> SortedLogs
+    {
+        get
+        {
+            IEnumerable<JsonElement> q = _source switch
+            {
+                "tests" => _logs.Where(IsTest),
+                "traffic" => _logs.Where(l => !IsTest(l)),
+                _ => _logs,
+            };
+            return (_sortBy switch
+            {
+                "oldest" => q.OrderBy(l => S(l, "timestamp")),
+                "latency_desc" => q.OrderByDescending(l => I(l, "latencyMs")),
+                "latency_asc" => q.OrderBy(l => I(l, "latencyMs")),
+                _ => q.OrderByDescending(l => S(l, "timestamp")).ThenByDescending(l => S(l, "id")),
+            }).ToList();
+        }
     }
 
-    private async Task Rotate()
+    private static bool IsTest(JsonElement l) =>
+        (l.TryGetProperty("isProviderTestLog", out var t) && t.ValueKind == JsonValueKind.True)
+        || S(l, "level") == "provider-test"
+        || (S(l, "targetUrl")?.EndsWith("/connection-test") ?? false);
+
+    protected override async Task OnInitializedAsync()
     {
-        await Api.PostAsync("api/proxy/oneproxy/rotate", new { });
-        await Load();
+        try
+        {
+            var saved = await Js.InvokeAsync<string?>("localStorage.getItem", "proxyLoggerVisibleColumns");
+            if (saved is { Length: > 0 })
+            {
+                var vis = JsonSerializer.Deserialize<Dictionary<string, bool>>(saved) ?? [];
+                foreach (var kv in vis.Where(kv => !kv.Value && ColumnKeys.Contains(kv.Key)))
+                    _hidden.Add(kv.Key);
+            }
+        }
+        catch { /* first render prerenders without JS */ }
+        await Load(true);
+        _timer = new Timer(async _ =>
+        {
+            if (!_recording) return;
+            try { await InvokeAsync(async () => { await Load(); StateHasChanged(); }); }
+            catch { /* disposed */ }
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
     }
 
-    private static string Shorten(string s) => s.Length <= 140 ? s : s[..140] + "…";
+    private async Task Load(bool show = false)
+    {
+        if (show) _loading = true;
+        try
+        {
+            var url = $"api/usage/proxy-logs?limit=300"
+                + (string.IsNullOrEmpty(_search) ? "" : $"&search={Uri.EscapeDataString(_search)}")
+                + (_status is "error" or "ok" or "timeout" ? $"&status={_status}" : "")
+                + (string.IsNullOrEmpty(_type) ? "" : $"&type={_type}")
+                + (string.IsNullOrEmpty(_provider) ? "" : $"&provider={Uri.EscapeDataString(_provider)}")
+                + (string.IsNullOrEmpty(_level) ? "" : $"&level={_level}");
+            var el = await Api.GetAsync(url);
+            if (el.ValueKind == JsonValueKind.Array)
+            {
+                var sig = string.Join(",", el.EnumerateArray().Select(l => S(l, "id")));
+                if (sig != _sig)
+                {
+                    _sig = sig;
+                    _logs.Clear();
+                    _logs.AddRange(el.EnumerateArray().Select(l => l.Clone()));
+                }
+            }
+        }
+        catch { /* best effort */ }
+        _loading = false;
+    }
+
+    private void SetStatus(string k) { _status = _status == k ? "all" : k; _ = Load(true); }
+    private void SelectProvider(string p) { _provider = p; _ = Load(true); }
+
+    private void ToggleColumn(string key)
+    {
+        if (!_hidden.Remove(key)) _hidden.Add(key);
+        try
+        {
+            var vis = ColumnKeys.ToDictionary(k => k, k => !_hidden.Contains(k));
+            _ = Js.InvokeVoidAsync("localStorage.setItem", "proxyLoggerVisibleColumns",
+                JsonSerializer.Serialize(vis));
+        }
+        catch { }
+    }
+
+    private bool Visible(string key) => !_hidden.Contains(key);
+
+    private static string? S(JsonElement l, string prop)
+        => l.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() : null;
+
+    private static long? I(JsonElement l, string prop)
+        => l.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number
+           && v.TryGetInt64(out var n) ? n : null;
+
+    private static string? ProxyProp(JsonElement l, string prop)
+        => l.TryGetProperty("proxy", out var px) && px.ValueKind == JsonValueKind.Object
+           && px.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() : null;
+
+    private static string? ProxyPropType(JsonElement l) => ProxyProp(l, "type");
+
+    private static string? ProxyName(JsonElement l)
+    {
+        if (l.TryGetProperty("proxy", out var px) && px.ValueKind == JsonValueKind.Object)
+        {
+            var name = px.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
+                ? n.GetString() : null;
+            if (name is not null) return name;
+            var host = px.TryGetProperty("host", out var h) && h.ValueKind == JsonValueKind.String
+                ? h.GetString() : null;
+            var port = px.TryGetProperty("port", out var p) && p.ValueKind == JsonValueKind.Number
+                ? p.GetInt32().ToString() : null;
+            if (host is not null) return port is not null ? $"{host}:{port}" : host;
+        }
+        return null;
+    }
+
+    private static string TruncateUrl(string? u)
+        => u is null ? "—" : u.Length <= 60 ? u : u[..57] + "...";
+
+    private static string FmtLatency(long? ms)
+        => ms is null ? "—" : ms < 1000 ? $"{ms}ms" : $"{ms / 1000.0:0.0}s";
+
+    private static string FmtTime(string? ts)
+        => DateTime.TryParse(ts, out var d) ? d.ToString("HH:mm:ss") : ts ?? "—";
+
+    public void Dispose() => _timer?.Dispose();
 }

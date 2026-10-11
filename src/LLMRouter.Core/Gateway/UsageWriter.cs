@@ -20,7 +20,118 @@ public sealed record UsageWrite(
     string? ApiKey, string? Endpoint, long PromptTokens, long CompletionTokens,
     double Cost, long LatencyMs, string? Status, string? DetailJson,
     // SPEC-111: atribuição a usuário/virtual-key (null = chave admin/global).
-    string? UserId = null, string? UserKeyId = null);
+    string? UserId = null, string? UserKeyId = null,
+    // SPEC-116: proxy-journal fields captured at the send site (null = auto direct/global).
+    ProxyLogInfo? Proxy = null, string? CorrelationId = null);
+
+/// <summary>
+/// SPEC-116: resolved egress-proxy info captured where the upstream send
+/// happens — carried on LogUsageAsync/UsageWrite so the proxy_logs journal
+/// row can tag which proxy layer (provider pool | global oneproxy | direct)
+/// served the request.
+/// </summary>
+public sealed record ProxyLogInfo(
+    string Level, string? LevelId = null,
+    string? ProxyId = null, string? ProxyType = null,
+    string? ProxyHost = null, int? ProxyPort = null, string? ProxyName = null,
+    string? TargetUrl = null, string? ClientIp = null, string? ComboId = null);
+
+/// <summary>
+/// SPEC-116: builds proxyLogs rows — mirrors upstream proxyLogger.
+/// Every logged request produces one journal row; the level says which proxy
+/// layer carried it (provider pool, global oneproxy, or direct).
+/// </summary>
+public static class ProxyJournal
+{
+    /// <summary>usage status → journal status (success|error|timeout).</summary>
+    public static string StatusOf(string? status, string? error) =>
+        (status?.StartsWith('2') ?? false) ? "success"
+        : (status is "408" or "499" or "timeout" or "err-timeout"
+            || (error?.Contains("timeout", StringComparison.OrdinalIgnoreCase) ?? false)) ? "timeout"
+        : "error";
+
+    /// <summary>Injects correlationId into the usage Meta json (object merge).</summary>
+    public static string MergeCorrelation(string? meta, string correlationId)
+    {
+        try
+        {
+            if (meta is not null)
+            {
+                using var doc = JsonDocument.Parse(meta);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    var d = doc.RootElement.EnumerateObject()
+                        .ToDictionary(p => p.Name, p => p.Value.Clone());
+                    d["correlationId"] = JsonSerializer.SerializeToElement(correlationId);
+                    return JsonSerializer.Serialize(d);
+                }
+            }
+        }
+        catch { /* non-object meta wraps below */ }
+        return meta is null
+            ? JsonSerializer.Serialize(new { correlationId })
+            : JsonSerializer.Serialize(new { correlationId, error = meta });
+    }
+
+    /// <summary>Builds the journal row; proxy object resolved from plog or oneproxy.</summary>
+    public static ProxyLog Row(
+        string id, string now, string? provider, string? connectionId,
+        string? status, string? error, long latencyMs, string? endpoint,
+        string? correlationId, string? oneProxyUrl, ProxyLogInfo? plog)
+    {
+        var level = plog?.Level ?? (oneProxyUrl is not null ? "global" : "direct");
+        string? proxyJson = null;
+        if (plog?.ProxyId is not null)
+        {
+            proxyJson = JsonSerializer.Serialize(new
+            {
+                id = plog.ProxyId,
+                type = plog.ProxyType ?? "http",
+                host = plog.ProxyHost,
+                port = plog.ProxyPort,
+                name = plog.ProxyName ?? plog.ProxyId,
+            });
+        }
+        else if (level == "global" && oneProxyUrl is not null)
+        {
+            var (h, p) = HostPort(oneProxyUrl);
+            proxyJson = JsonSerializer.Serialize(new
+            {
+                id = "oneproxy", type = "http", host = h, port = p, name = "oneproxy",
+            });
+        }
+        return new ProxyLog
+        {
+            Id = id,
+            Timestamp = now,
+            Status = StatusOf(status, error),
+            Proxy = proxyJson,
+            Level = level,
+            LevelId = plog?.LevelId,
+            Provider = provider,
+            TargetUrl = plog?.TargetUrl ?? endpoint,
+            ClientIp = plog?.ClientIp,
+            LatencyMs = latencyMs,
+            Error = error is { Length: > 500 } ? error[..500] : error,
+            ConnectionId = connectionId,
+            ComboId = plog?.ComboId,
+            Account = connectionId,
+            CorrelationId = correlationId,
+            UpstreamStatus = int.TryParse(status, out var us) ? us : null,
+        };
+    }
+
+    /// <summary>(host,port) de uma url de proxy; porta null quando ausente.</summary>
+    public static (string? host, int? port) HostPort(string url)
+    {
+        try
+        {
+            var u = new Uri(url.Contains("://") ? url : $"http://{url}");
+            return (u.Host, u.IsDefaultPort ? (int?)null : u.Port);
+        }
+        catch { return (url, null); }
+    }
+}
 
 /// <summary>
 /// SPEC-074 + SPEC-108: serializes telemetry/config writes through a single
@@ -319,6 +430,11 @@ public sealed class UsageWriter : BackgroundService
         // SPEC-116: settings.requestLogging=false pauses request-payload capture
         // (usage accounting still writes).
         var sdata = await HotReads.SettingsDataAsync(db);
+        // SPEC-116: proxy journal row for every logged request (metadata, ungated).
+        db.ProxyLogs.Add(ProxyJournal.Row(
+            Guid.NewGuid().ToString("N"), u.Timestamp, u.Provider, u.ConnectionId,
+            u.Status, null, u.LatencyMs, u.Endpoint, u.CorrelationId,
+            await HotReads.OneProxyCurrentAsync(db, sdata), u.Proxy));
         var recording = !sdata.TryGetProperty("requestLogging", out var rl)
             || rl.ValueKind is not JsonValueKind.False;
         if (recording)

@@ -287,10 +287,13 @@ public sealed class GatewayEngine(
         string provider, string model, string? connectionId, string apiKey,
         string endpoint, int promptTokens, int completionTokens,
         string status, string? error, long latencyMs, JsonElement? detail = null,
-        double? reportedCostUsd = null, string? userId = null, string? userKeyId = null)
+        double? reportedCostUsd = null, string? userId = null, string? userKeyId = null,
+        ProxyLogInfo? plog = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
         var sdata = await HotReads.SettingsDataAsync(db);
+        // SPEC-116: correlation id links the proxy_logs journal row to this usage row's Meta.
+        var corr = Guid.NewGuid().ToString("N")[..16];
         // SPEC-097: a trusted provider-reported cost wins over the computed price.
         var cost = reportedCostUsd ?? Usage.PricingService.ComputeCost(
             sdata, registry,
@@ -310,11 +313,11 @@ public sealed class GatewayEngine(
         // UsageWriter (200 rows / 500ms) in one transaction off the request path.
         if (writer is not null)
         {
-            var detailText = detail?.GetRawText() ?? error;
+            var detailText = ProxyJournal.MergeCorrelation(detail?.GetRawText() ?? error, corr);
             await writer.PostUsageAsync(new UsageWrite(
                 now, provider, model, connectionId, apiKey, endpoint,
                 promptTokens, completionTokens, cost, latencyMs, status, detailText,
-                userId, userKeyId));
+                userId, userKeyId, plog, corr));
 
             if (rateLimiter is not null)
             {
@@ -340,11 +343,16 @@ public sealed class GatewayEngine(
             Status = status,
             Cost = cost,
             LatencyMs = latencyMs,
-            Meta = detail?.GetRawText() ?? error,
+            Meta = ProxyJournal.MergeCorrelation(detail?.GetRawText() ?? error, corr),
             UserId = userId,
             UserKeyId = userKeyId,
         };
         db.UsageHistory.Add(usageRow);
+        // SPEC-116: every logged request gets a proxy journal row (direct when no proxy).
+        db.ProxyLogs.Add(ProxyJournal.Row(
+            Guid.NewGuid().ToString("N"), now, provider, connectionId,
+            status, error, latencyMs, endpoint, corr,
+            await HotReads.OneProxyCurrentAsync(db, sdata), plog));
         // SPEC-116: settings.requestLogging=false pauses request-payload capture.
         var recording = !sdata.TryGetProperty("requestLogging", out var rl)
             || rl.ValueKind is not JsonValueKind.False;

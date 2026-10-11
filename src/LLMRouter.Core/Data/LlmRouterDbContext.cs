@@ -18,6 +18,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<UsageRecord> UsageHistory => Set<UsageRecord>();
     public DbSet<UsageDaily> UsageDaily => Set<UsageDaily>();
     public DbSet<RequestDetail> RequestDetails => Set<RequestDetail>();
+    /// <summary>SPEC-116: per-request proxy journal (upstream proxy_logs parity).</summary>
+    public DbSet<ProxyLog> ProxyLogs => Set<ProxyLog>();
     public DbSet<CompressionCombo> CompressionCombos => Set<CompressionCombo>();
     public DbSet<CompressionComboAssignment> CompressionComboAssignments => Set<CompressionComboAssignment>();
     public DbSet<CompressionRun> CompressionRuns => Set<CompressionRun>();

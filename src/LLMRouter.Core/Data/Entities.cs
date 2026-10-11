@@ -874,3 +874,51 @@ public class CreditLedgerRow
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string CreatedAt { get; set; } = "";
 }
+
+/// <summary>
+/// SPEC-116 (slice 3): per-request proxy journal — mirrors upstream proxy_logs.
+/// One row per upstream send (or provider test), tagged by the proxy layer that
+/// carried it (direct | global oneproxy | provider pool | provider-test).
+/// Proxy carries the serialized {"id","type","host","port","name"} object.
+/// </summary>
+[Table("proxyLogs")]
+public class ProxyLog
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Timestamp { get; set; } = "";
+    /// <summary>success | error | timeout.</summary>
+    public string Status { get; set; } = "";
+    /// <summary>JSON {"id","type","host","port","name"} or null for direct.</summary>
+    public string? Proxy { get; set; }
+    /// <summary>direct | global | provider | combo | key | provider-test.</summary>
+    public string Level { get; set; } = "direct";
+    public string? LevelId { get; set; }
+    public string? Provider { get; set; }
+    public string? TargetUrl { get; set; }
+    /// <summary>Inbound client IP (x-forwarded-for).</summary>
+    public string? ClientIp { get; set; }
+    /// <summary>Outbound egress IP seen by upstream (null until probed).</summary>
+    public string? EgressIp { get; set; }
+    public long LatencyMs { get; set; }
+    public string? Error { get; set; }
+    public string? ConnectionId { get; set; }
+    public string? ComboId { get; set; }
+    /// <summary>Configured connection id prefix (masked in UI).</summary>
+    public string? Account { get; set; }
+    /// <summary>Masked serving-account id of the rotation executor.</summary>
+    public string? RotationAccount { get; set; }
+    /// <summary>Correlation id shared with usageHistory.Meta.</summary>
+    public string? CorrelationId { get; set; }
+    public bool TlsFingerprint { get; set; }
+    /// <summary>HTTP status the provider returned; null = no response.</summary>
+    public int? UpstreamStatus { get; set; }
+    /// <summary>1-based position inside the request journal.</summary>
+    public int? AttemptNumber { get; set; }
+    /// <summary>served | abandoned.</summary>
+    public string? AttemptIssue { get; set; }
+    /// <summary>Send start → response headers received.</summary>
+    public long? HeadersMs { get; set; }
+    /// <summary>Send start → first useful body byte.</summary>
+    public long? FirstChunkMs { get; set; }
+}

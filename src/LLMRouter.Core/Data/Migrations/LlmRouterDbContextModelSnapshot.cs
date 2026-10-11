@@ -1155,6 +1155,85 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("providerNodes");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.ProxyLog", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Account")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AttemptIssue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("AttemptNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ClientIp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ComboId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConnectionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EgressIp")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("FirstChunkMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("HeadersMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("LatencyMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LevelId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Proxy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RotationAccount")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Timestamp")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("TlsFingerprint")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("UpstreamStatus")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("proxyLogs");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.ProxyPool", b =>
                 {
                     b.Property<string>("Id")

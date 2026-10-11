@@ -253,10 +253,12 @@ public static class ManagementEndpoints
             Core.Gateway.CustomHeaders.Apply(authHeaders, c.Data);
             foreach (var kv in authHeaders) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            // SPEC-116: probe goes through the connection's proxy pool when set.
+            var (tpClient, tpx, tpool) = await Core.Routing.ProxyPoolService.ClientAndProxyAsync(db, c);
             string status; string? errBody = null; int httpStatus = 0;
             try
             {
-                var resp = await hf.CreateClient("upstream").SendAsync(req);
+                var resp = await (tpClient ?? hf.CreateClient("upstream")).SendAsync(req);
                 httpStatus = (int)resp.StatusCode;
                 status = resp.IsSuccessStatusCode ? "ok"
                     : httpStatus is 401 or 403 ? "auth-fail" : "error";
@@ -277,6 +279,19 @@ public static class ManagementEndpoints
             if (errBody is not null) dataEl["lastError"] = JsonSerializer.SerializeToElement(errBody[..Math.Min(500, errBody.Length)]);
             c.Data = JsonSerializer.Serialize(dataEl);
             c.UpdatedAt = Now();
+            // SPEC-116: provider-connection test rides through a proxy when the
+            // connection has a pool — journal it at level "provider-test".
+            db.ProxyLogs.Add(Core.Gateway.ProxyJournal.Row(
+                Guid.NewGuid().ToString("N"), Now(), c.Provider, c.Id,
+                status == "ok" ? "200" : httpStatus.ToString(),
+                status == "ok" ? null : errBody, sw.ElapsedMilliseconds,
+                $"{modelsUrl}/connection-test",
+                Guid.NewGuid().ToString("N")[..16],
+                null,
+                tpx is { } ? Core.Routing.ProxyPoolService.PlogFor(tpool!, tpx,
+                    $"{modelsUrl}/connection-test", null) with { Level = "provider-test" }
+                : new Core.Gateway.ProxyLogInfo(
+                    "provider-test", c.Id, TargetUrl: $"{modelsUrl}/connection-test")));
             await db.SaveChangesAsync();
             return Results.Json(new { ok = status == "ok", status, httpStatus, latencyMs = sw.ElapsedMilliseconds, error = errBody }, JsonOpts);
         });

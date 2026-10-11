@@ -22,6 +22,7 @@ public static class UsageDepthEndpoints
         g.MapGet("/usage/call-logs/{id:long}", CallLogItem);
         g.MapGet("/usage/request-logs", RequestLogs);
         g.MapGet("/usage/proxy-logs", ProxyLogs);
+        g.MapDelete("/usage/proxy-logs", ProxyLogsClear);
         g.MapGet("/usage/by-run", ByRun);
         g.MapGet("/usage/om-usage", OmUsage);
         g.MapGet("/usage/codex-reset-credit", (HttpContext c, LlmRouterDbContext d) => ResetCard(c, d, "codex"));
@@ -147,29 +148,82 @@ public static class UsageDepthEndpoints
         await ctx.Response.WriteAsJsonAsync(new { items, total = items.Count() }, JsonOpts, ct);
     }
 
-    /// <summary>Egress proxy attribution: Meta.proxyId groups.</summary>
+    /// <summary>
+    /// SPEC-116: per-request proxy journal — upstream proxyLogger shape.
+    /// RAW ARRAY (not {items,total}); filters: status (ok→success), type
+    /// (proxy protocol), provider, level, search, limit (default 300).
+    /// DELETE clears the table.
+    /// </summary>
     private static async Task ProxyLogs(HttpContext ctx, LlmRouterDbContext db)
     {
         var ct = ctx.RequestAborted;
-        var rows = await db.UsageHistory
-            .Where(u => u.Meta != null)
-            .OrderByDescending(u => u.Timestamp).Take(5000).ToListAsync(ct);
-        var items = rows
-            .Select(u => new { u, proxyId = MetaProp(u.Meta, "proxyId") })
-            .Where(x => x.proxyId is not null)
-            .Select(x => new
-            {
-                x.u.Id, x.proxyId, x.u.Provider, x.u.Model, x.u.Status, x.u.LatencyMs, at = x.u.Timestamp,
-            })
-            .ToList();
-        var byProxy = items.GroupBy(i => i.proxyId).Select(gx => new
+        var q = ctx.Request.Query;
+        var take = Math.Clamp(int.TryParse(q["limit"], out var l) ? l : 300, 1, 2000);
+        string? F(string key, string? map = null)
+            => q[key] is { Count: > 0 } v && !string.IsNullOrEmpty(v[0])
+               && !v[0]!.Equals("all", StringComparison.OrdinalIgnoreCase)
+                ? v[0] : null;
+        var st = F("status") is { } s ? (s == "ok" ? "success" : s) : null;
+        var lv = F("level");
+        var pv = F("provider");
+        var ty = F("type");
+        var se = F("search")?.ToLowerInvariant();
+        var filtered = st is not null || lv is not null || pv is not null
+            || ty is not null || se is not null;
+
+        var rows = await db.ProxyLogs
+            .OrderByDescending(p => p.Timestamp).ThenByDescending(p => p.Id)
+            .Take(filtered ? take * 8 : take).ToListAsync(ct);
+        IEnumerable<ProxyLog> list = rows;
+        if (st is not null) list = list.Where(p => p.Status == st);
+        if (lv is not null) list = list.Where(p => p.Level == lv);
+        if (pv is not null) list = list.Where(p =>
+            string.Equals(p.Provider, pv, StringComparison.OrdinalIgnoreCase));
+        if (ty is not null) list = list.Where(p =>
+            p.Proxy is { } pj && pj.Contains($"\"type\":\"{ty}\"", StringComparison.OrdinalIgnoreCase));
+        if (se is not null) list = list.Where(p =>
+            (p.Provider?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (p.TargetUrl?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (p.ClientIp?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (p.EgressIp?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (p.Account?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false)
+            || p.Level.Contains(se, StringComparison.OrdinalIgnoreCase)
+            || (p.Error?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (p.Proxy?.Contains(se, StringComparison.OrdinalIgnoreCase) ?? false));
+        var data = list.Take(take).Select(p => new
         {
-            proxyId = gx.Key,
-            calls = gx.Count(),
-            avgLatencyMs = gx.Average(x => x.LatencyMs),
-            failures = gx.Count(x => x.Status != "ok" && x.Status != "success"),
-        });
-        await ctx.Response.WriteAsJsonAsync(new { items, byProxy, total = items.Count }, JsonOpts, ct);
+            id = p.Id,
+            timestamp = p.Timestamp,
+            status = p.Status,
+            proxy = p.Proxy is { } pj ? JsonSerializer.Deserialize<JsonElement>(pj) : (JsonElement?)null,
+            level = p.Level,
+            levelId = p.LevelId,
+            provider = p.Provider,
+            targetUrl = p.TargetUrl,
+            clientIp = p.ClientIp,
+            egressIp = p.EgressIp,
+            latencyMs = p.LatencyMs,
+            error = p.Error,
+            connectionId = p.ConnectionId,
+            comboId = p.ComboId,
+            account = p.Account is { Length: > 12 } a ? a[..12] + "..." : p.Account,
+            rotationAccount = p.RotationAccount,
+            correlationId = p.CorrelationId,
+            tlsFingerprint = p.TlsFingerprint,
+            upstreamStatus = p.UpstreamStatus,
+            attemptNumber = p.AttemptNumber,
+            attemptIssue = p.AttemptIssue,
+            headersMs = p.HeadersMs,
+            firstChunkMs = p.FirstChunkMs,
+            isProviderTestLog = p.Level == "provider-test"
+                || (p.TargetUrl?.EndsWith("/connection-test") ?? false),
+        }).ToList();
+        await ctx.Response.WriteAsJsonAsync(data, JsonOpts, ct);
+    }
+
+    private static async Task ProxyLogsClear(LlmRouterDbContext db)
+    {
+        await db.ProxyLogs.ExecuteDeleteAsync();
     }
 
     /// <summary>Usage rollup per run/session id (Meta.runId).</summary>

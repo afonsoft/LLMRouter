@@ -147,6 +147,14 @@ public static class BuiltinJobs
                 var cutoff = DateTime.UtcNow.AddDays(-days).ToString(format);
                 var n2 = await PurgeChunkedAsync(db, table, column, cutoff, ct);
                 parts.Add($"{table}={n2}");
+                // SPEC-110: deleting middle rows breaks the audit hash chain —
+                // leave a tombstone recording the cutoff + anchor (first
+                // retained row's hash), so verification of the retained
+                // suffix still works. Pre-purge history isn't verifiable
+                // (export before TTL).
+                if (table == "auditEvents" && n2 > 0)
+                    await Extras.AuditLog.RecordAsync(db, "system", "retention.purge",
+                        "auditEvents", new { cutoff, removed = n2 });
             }
             return parts.Count == 0 ? "nothing to purge" : string.Join(" ", parts);
         }

@@ -114,10 +114,16 @@ namespace LLMRouter.Core.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Hash")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Ip")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Meta")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PrevHash")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Target")

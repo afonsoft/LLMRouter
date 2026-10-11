@@ -689,6 +689,10 @@ public class AuditEvent
     public string? Ip { get; set; }
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";
+    /// <summary>SPEC-110: hash SHA256 da linha anterior da cadeia (null = gênese/legado pré-chain).</summary>
+    public string? PrevHash { get; set; }
+    /// <summary>SPEC-110: SHA256 de "prevHash|actor|action|target|meta|ip|at" — tamper-evident chain.</summary>
+    public string? Hash { get; set; }
 }
 
 /// <summary>SPEC-057: trilha de chamadas de ferramentas MCP (proxy /mcp).</summary>

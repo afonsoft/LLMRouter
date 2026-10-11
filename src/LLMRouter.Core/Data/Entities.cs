@@ -759,3 +759,29 @@ public class IssueAgentRun
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string At { get; set; } = "";
 }
+
+/// <summary>SPEC-098: webhook registration (was kv("webhooks","list") blob). Data keeps the full item JSON ({id,url,events,...}) for contract fidelity.</summary>
+[Table("webhooks")]
+public class Webhook
+{
+    [Key]
+    public string Id { get; set; } = "";
+    /// <summary>Full webhook JSON ({id,url,events,secret?,enabled?,headers?,...}).</summary>
+    public string Data { get; set; } = "{}";
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-098: one webhook delivery (was kv("webhookDeliveries",webhookId) array blob).</summary>
+[Table("webhookDeliveries")]
+public class WebhookDelivery
+{
+    [Key]
+    public long Id { get; set; }
+    /// <summary>Owning webhook id.</summary>
+    public string WebhookId { get; set; } = "";
+    /// <summary>Full delivery JSON ({id,webhookId,eventType,status,at,latencyMs?,request?,response?}).</summary>
+    public string Data { get; set; } = "{}";
+    /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
+    public string At { get; set; } = "";
+}

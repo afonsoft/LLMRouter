@@ -220,18 +220,15 @@ public static class ExtrasEndpoints
         // ---- webhooks ----
         g.MapGet("/webhooks", async (LlmRouterDbContext db) =>
         {
-            var raw = (await db.Kv.FindAsync("webhooks", "list"))?.Value;
-            return Results.Json(new { webhooks = raw is null ? (object)Array.Empty<object>() : JsonDocument.Parse(raw).RootElement.Clone() }, JsonOpts);
+            var list = await Core.Extras.WebhookStore.ListAsync(db);
+            return Results.Json(new { webhooks = list }, JsonOpts);
         });
         g.MapPost("/webhooks", async (LlmRouterDbContext db, HttpContext ctx) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var row = await db.Kv.FindAsync("webhooks", "list")
-                ?? db.Kv.Add(new KvEntry { Scope = "webhooks", Key = "list", Value = "[]" }).Entity;
-            var list = JsonDocument.Parse(row.Value).RootElement.EnumerateArray().Select(x => x.Clone()).ToList();
             if (b.TryGetProperty("id", out var id))
             {
-                list.RemoveAll(x => x.TryGetProperty("id", out var i) && i.GetString() == id.GetString());
+                await Core.Extras.WebhookStore.RemoveAsync(db, id.GetString()!);
                 await Core.Extras.KvIndex.RemoveAsync(db, "webhooks", id.GetString()!);
             }
             else
@@ -243,10 +240,9 @@ public static class ExtrasEndpoints
                     events = b.TryGetProperty("events", out var e)
                         ? e.EnumerateArray().Select(x => x.GetString()).ToArray() : new[] { "*" },
                 })).RootElement.Clone();
-                list.Add(wh);
+                await Core.Extras.WebhookStore.UpsertAsync(db, wh);
                 await Core.Extras.KvIndex.UpsertAsync(db, "webhooks", wh.GetProperty("id").GetString()!, wh);
             }
-            row.Value = JsonSerializer.Serialize(list);
             await db.SaveChangesAsync();
             await Extras.AuditAsync(db, "webhooks.update", "");
             return Results.Json(new { ok = true }, JsonOpts);

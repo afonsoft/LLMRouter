@@ -62,6 +62,10 @@ public class LlmRouterDbContext : DbContext
     public DbSet<GamiItem> GamiItems => Set<GamiItem>();
     /// <summary>SPEC-065: execuções do issue-agent.</summary>
     public DbSet<IssueAgentRun> IssueAgentRuns => Set<IssueAgentRun>();
+    /// <summary>SPEC-098: webhooks (kv-blob partition).</summary>
+    public DbSet<Webhook> Webhooks => Set<Webhook>();
+    /// <summary>SPEC-098: entregas de webhook (kv-blob partition).</summary>
+    public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -196,6 +200,8 @@ public class LlmRouterDbContext : DbContext
                 """CREATE TABLE IF NOT EXISTS fallbackChains (Id TEXT NOT NULL PRIMARY KEY, Name TEXT NOT NULL, Steps TEXT NOT NULL DEFAULT '[]', Active INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS capabilityOverrides (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Model TEXT NOT NULL, Capabilities TEXT NOT NULL DEFAULT '{}', UpdatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS syncedModels (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Model TEXT NOT NULL, Available INTEGER NOT NULL DEFAULT 1, LastSyncAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS webhooks (Id TEXT NOT NULL PRIMARY KEY, Data TEXT NOT NULL DEFAULT '{}', CreatedAt TEXT NOT NULL)""",
+                """CREATE TABLE IF NOT EXISTS webhookDeliveries (Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, WebhookId TEXT NOT NULL, Data TEXT NOT NULL DEFAULT '{}', At TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS quotaWindows (Id TEXT NOT NULL PRIMARY KEY, Provider TEXT NOT NULL, Name TEXT NOT NULL, WindowMinutes INTEGER NOT NULL, MaxTokens INTEGER NOT NULL, MaxRequests INTEGER NOT NULL, CreatedAt TEXT NOT NULL)""",
                 """CREATE TABLE IF NOT EXISTS credentialExpirations (Id TEXT NOT NULL PRIMARY KEY, ConnectionId TEXT NOT NULL, ExpiresAt TEXT NOT NULL, WarnDays INTEGER NOT NULL DEFAULT 7)""",
                 """CREATE TABLE IF NOT EXISTS tags (Id TEXT NOT NULL PRIMARY KEY, TargetType TEXT NOT NULL, TargetId TEXT NOT NULL, Value TEXT NOT NULL)""",

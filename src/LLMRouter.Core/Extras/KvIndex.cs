@@ -26,9 +26,21 @@ public static class KvIndex
         if (row is not null) db.Kv.Remove(row);
     }
 
-    /// <summary>Rebuild every index row from the blob (migration/backfill).</summary>
+    /// <summary>Rebuild every index row from the blob (migration/backfill).
+    /// SPEC-098: scope `webhooks` reindexes from the table, not the blob.</summary>
     public static async Task<int> ReindexAsync(LlmRouterDbContext db, string scope)
     {
+        if (scope == "webhooks")
+        {
+            var indexed = 0;
+            foreach (var item in await WebhookStore.ListAsync(db))
+            {
+                var id = item.GetProperty("id").GetString()!;
+                await UpsertAsync(db, scope, id, item);
+                indexed++;
+            }
+            return indexed;
+        }
         var raw = (await db.Kv.FindAsync(scope, "items"))?.Value
             ?? (await db.Kv.FindAsync(scope, "list"))?.Value;
         if (raw is null) return 0;

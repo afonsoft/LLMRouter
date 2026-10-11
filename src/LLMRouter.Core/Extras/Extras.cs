@@ -71,11 +71,9 @@ public static class Extras
     /// <summary>Fire-and-forget POST to every webhook subscribed to <paramref name="evt"/>.</summary>
     public static async Task WebhooksDispatchAsync(LlmRouterDbContext db, HttpClient http, string evt, object payload)
     {
-        var raw = await KvGet(db, "webhooks", "list");
-        if (raw is null) return;
         try
         {
-            foreach (var w in JsonDocument.Parse(raw).RootElement.EnumerateArray())
+            foreach (var w in await WebhookStore.ListAsync(db))
             {
                 var url = w.GetProperty("url").GetString()!;
                 var events = w.TryGetProperty("events", out var e)

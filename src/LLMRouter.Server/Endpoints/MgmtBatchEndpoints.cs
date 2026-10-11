@@ -143,7 +143,17 @@ public static partial class MgmtBatchEndpoints
     private static void Guardrails(RouteGroupBuilder g)
     {
         g.MapGet("/guardrails", async (LlmRouterDbContext db) =>
-            Results.Json(new { items = await LoadGuardrails(db) }, JsonOpts));
+        {
+            var sdata = await Core.Gateway.HotReads.SettingsDataAsync(db);
+            var rg = Core.Guardrails.ResponseGuard.Read(sdata);
+            // SPEC-107: response section alongside input rules
+            var response = new
+            {
+                rg.Enabled, rg.Mode, rg.Threshold, rg.ExtraPatterns,
+                builtins = new[] { "api_key", "private_key", "jwt", "email", "phone", "credit_card" },
+            };
+            return Results.Json(new { items = await LoadGuardrails(db), response }, JsonOpts);
+        });
 
         g.MapPost("/guardrails", async (HttpContext ctx, LlmRouterDbContext db) =>
         {

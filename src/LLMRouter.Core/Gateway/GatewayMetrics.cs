@@ -36,6 +36,8 @@ public static class GatewayMetrics
         "llmr_combo_steps_selected_total", description: "Combo step dispatches.");
     public static readonly Counter<long> UsageDropped = M.CreateCounter<long>(
         "llmr_usage_dropped_total", description: "Usage writes dropped on a full sink channel.");
+    public static readonly Counter<long> GuardrailHits = M.CreateCounter<long>(
+        "llmr_guardrail_hits_total", description: "Guardrail detections by stage/name/action.");
 
     private static int _gaugesRegistered;
 
@@ -104,6 +106,9 @@ public static class GatewayMetrics
 
     public static void ComboStepSelected(string combo) =>
         ComboSteps.Add(1, Tag("combo", combo));
+
+    public static void GuardrailHit(string stage, string name, string action) =>
+        GuardrailHits.Add(1, Tag("stage", stage), Tag("name", name), Tag("action", action));
 
     public static void UpstreamTtfb(string provider, string model, double ms) =>
         UpstreamTtfbMs.Record(ms, Tag(LblProvider, provider), Tag(LblModel, model));

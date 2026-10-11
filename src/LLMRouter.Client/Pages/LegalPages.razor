@@ -1,0 +1,118 @@
+@page "/privacy"
+@page "/terms"
+@page "/offline"
+@page "/forbidden"
+@page "/maintenance"
+@page "/forgot-password"
+@page "/authorize"
+@page "/auth/callback"
+@page "/miniapp"
+@inject Api Api
+@inject NavigationManager Nav
+
+<HeadContent><meta name="robots" content="noindex" /></HeadContent>
+
+@{
+    var u = Nav.Uri;
+    if (u.EndsWith("/privacy"))
+    {
+        <h1 class="page-title">Privacy Policy</h1>
+        <div class="card card-p mt-4 prose">
+            <p>LLMRouter is a self-hosted LLM gateway. Request and usage data stays inside your deployment — nothing is sent to third parties except the upstream providers you explicitly configure.</p>
+            <ul>
+                <li>Usage records (tokens, latency, cost) are stored locally in the router database.</li>
+                <li>API keys you register are stored locally and used only to call the matching upstream.</li>
+                <li>No telemetry, no analytics, no phone-home.</li>
+            </ul>
+        </div>
+    }
+    else if (u.EndsWith("/terms"))
+    {
+        <h1 class="page-title">Terms of Service</h1>
+        <div class="card card-p mt-4 prose">
+            <p>LLMRouter is provided as-is under its project license. You are responsible for complying with the terms of each upstream provider you route traffic to, and for the access control of this deployment.</p>
+            <ul>
+                <li>Keep your admin credentials and API keys secret.</li>
+                <li>Rate limits and quotas are your responsibility to configure.</li>
+            </ul>
+        </div>
+    }
+    else if (u.EndsWith("/offline"))
+    {
+        <h1 class="page-title">Offline</h1>
+        <div class="card card-p mt-4">
+            <p>You're offline. This page is the PWA fallback — reconnect and retry.</p>
+            <a class="btn btn-sm" href="/">Back to dashboard</a>
+        </div>
+    }
+    else if (u.EndsWith("/forbidden"))
+    {
+        <h1 class="page-title">403 — Forbidden</h1>
+        <div class="card card-p mt-4">
+            <p>You don't have permission to access this resource.</p>
+            <a class="btn btn-sm" href="/">Back to dashboard</a>
+        </div>
+    }
+    else if (u.EndsWith("/maintenance"))
+    {
+        <h1 class="page-title">Maintenance</h1>
+        <div class="card card-p mt-4">
+            <p>The router is in maintenance mode. API traffic is unaffected.</p>
+        </div>
+    }
+    else if (u.EndsWith("/forgot-password"))
+    {
+        <h1 class="page-title">Reset password</h1>
+        <div class="card card-p mt-4" style="max-width:420px">
+            @if (_sent)
+            {
+                <p>If the account exists, a reset token was issued. Check the server logs for the token, then call <code>/api/auth/reset-password</code>.</p>
+            }
+            else
+            {
+                <p>Enter the admin e-mail to request a reset token.</p>
+                <form @onsubmit="RequestReset" @onsubmit:preventDefault>
+                    <input class="input" type="email" @bind="_email" placeholder="admin@example.com" required />
+                    <button class="btn btn-sm mt-2" type="submit">Request reset</button>
+                </form>
+            }
+        </div>
+    }
+    else if (u.Contains("/auth/callback"))
+    {
+        <h1 class="page-title">Auth callback</h1>
+        <div class="card card-p mt-4">
+            <p>OAuth callback landing page — OIDC support is pending; the authorization endpoint returns 501 until it lands.</p>
+        </div>
+    }
+    else if (u.EndsWith("/authorize"))
+    {
+        <h1 class="page-title">Authorize</h1>
+        <div class="card card-p mt-4" style="max-width:420px">
+            <p>An application requests access to this router (OIDC flow — not yet enabled).</p>
+            <div class="flex gap-2 mt-4">
+                <button class="btn btn-sm" disabled>Allow</button>
+                <button class="btn btn-sm" disabled>Deny</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <h1 class="page-title">Miniapp</h1>
+        <div class="card card-p mt-4">
+            <p>Embedded miniapp shell — dashboard chrome without the sidebar, for webview/telegram embedding.</p>
+            <a class="btn btn-sm" href="/">Open full dashboard</a>
+        </div>
+    }
+}
+
+@code {
+    private string _email = "";
+    private bool _sent;
+
+    private async Task RequestReset()
+    {
+        await Api.PostAsync("/api/auth/forgot-password", new { email = _email });
+        _sent = true;
+    }
+}

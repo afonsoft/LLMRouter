@@ -147,6 +147,32 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// SPEC-096: maintenance mode — settings.maintenanceMode redirects non-API
+// GET traffic to /maintenance; /api, static assets and the page itself pass through.
+app.Use(async (ctx, next) =>
+{
+    var p = ctx.Request.Path.Value ?? "";
+    if (ctx.Request.Method == "GET" && !p.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+        && !p.StartsWith("/_", StringComparison.Ordinal)
+        && !p.StartsWith("/maintenance", StringComparison.OrdinalIgnoreCase)
+        && !p.Contains('.'))
+    {
+        await using var scope = ctx.RequestServices
+            .GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+        var db = scope.ServiceProvider.GetService<LLMRouter.Core.Data.LlmRouterDbContext>();
+        var sdata = db is null ? default
+            : await LLMRouter.Core.Usage.PricingService.SettingsDataAsync(db);
+        if (sdata.ValueKind == JsonValueKind.Object
+            && sdata.TryGetProperty("maintenanceMode", out var mm)
+            && mm.ValueKind == JsonValueKind.True)
+        {
+            ctx.Response.Redirect("/maintenance");
+            return;
+        }
+    }
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 // .NET 10 static-asset fingerprinting: index.html references assets as
@@ -195,6 +221,7 @@ UsageDepthEndpoints.Map(app);
 ComboAnalyticsEndpoints.Map(app);
 MgmtBatchEndpoints.Map(app);
 MediumFeaturesEndpoints.Map(app);
+SettingsExtrasEndpoints.Map(app);
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
 CompressionEndpoints.Map(app);

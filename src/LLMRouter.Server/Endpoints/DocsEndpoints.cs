@@ -123,6 +123,84 @@ public static class DocsEndpoints
         return sb.ToString();
     }
 
+    /// <summary>SPEC-122: category order matching upstream docs sidebar.</summary>
+    private static readonly string[] CategoryOrder =
+    [
+        "home", "getting-started", "guides", "configuration", "architecture",
+        "management", "reference", "routing", "monitoring", "security",
+        "providers", "comparison", "operations",
+    ];
+
+    /// <summary>Maps a repo-relative docs path to a sidebar category.</summary>
+    private static string CategoryFor(string rel)
+    {
+        var dir = rel.Contains('/') ? rel[..rel.IndexOf('/')] : "";
+        var name = Path.GetFileNameWithoutExtension(rel).ToLowerInvariant();
+        if (dir is "analysis") return "operations";
+        return name switch
+        {
+            "readme" => "home",
+            "quick-start" or "getting-started" => "getting-started",
+            "configuration" => "configuration",
+            "architecture" => "architecture",
+            "deployment" or "virtual-keys" => "management",
+            "api-reference" => "reference",
+            "routing-strategies" or "routing" => "routing",
+            "observability" or "monitoring" => "monitoring",
+            "security" => "security",
+            "providers" => "providers",
+            "feature-comparison" or "comparison" => "comparison",
+            _ => dir is "en" or "pt-BR" ? "guides" : "operations",
+        };
+    }
+
+    /// <summary>First `# ` heading or the file basename as the page title.</summary>
+    private static string ExtractTitle(string path)
+    {
+        try
+        {
+            foreach (var line in File.ReadLines(path).Take(40))
+            {
+                var t = line.Trim();
+                if (t.StartsWith("# ")) return t[2..].Trim();
+            }
+        }
+        catch { /* fall through to filename */ }
+        return Path.GetFileNameWithoutExtension(path);
+    }
+
+    /// <summary>
+    /// SPEC-122: sidebar tree — docs grouped by category, pages carry slug+title.
+    /// lang selects the locale folder (en default; pt-BR mirrors same basenames).
+    /// </summary>
+    private static object[] BuildTree(string root, string? lang)
+    {
+        var loc = string.IsNullOrWhiteSpace(lang) ? "en" : lang;
+        var files = Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
+            .Where(rel =>
+            {
+                var dir = rel.Contains('/') ? rel[..rel.IndexOf('/')] : "";
+                // only the requested locale folder + locale-agnostic files
+                return dir is not ("en" or "pt-BR") || dir == loc;
+            })
+            .ToList();
+        var pages = files.Select(rel => new
+        {
+            slug = rel[..^3],
+            title = ExtractTitle(Path.Combine(root, rel)),
+            category = CategoryFor(rel),
+        });
+        return pages.GroupBy(p => p.category)
+            .OrderBy(g => Array.IndexOf(CategoryOrder, g.Key))
+            .Select(g => (object)new
+            {
+                category = g.Key,
+                pages = g.OrderBy(p => p.title, StringComparer.OrdinalIgnoreCase)
+                    .Select(p => new { p.slug, p.title }).ToArray(),
+            }).ToArray();
+    }
+
     public static void MapDocsEndpoints(this WebApplication app)
     {
         var g = app.MapGroup("/api");
@@ -145,12 +223,22 @@ public static class DocsEndpoints
             return Results.Json(new { files }, JsonOpts);
         });
 
+        g.MapGet("/docs/tree", (string? lang, IWebHostEnvironment env) =>
+        {
+            var root = DocsRoot(env);
+            if (root is null) return Results.Json(new { tree = Array.Empty<object>() }, JsonOpts);
+            return Results.Json(new { tree = BuildTree(root, lang) }, JsonOpts);
+        });
+
         g.MapGet("/docs/{*path}", (string path, IWebHostEnvironment env) =>
         {
             var root = DocsRoot(env);
             if (root is null) return Results.NotFound();
             var full = Path.GetFullPath(Path.Combine(root, path));
-            if (!full.StartsWith(root) || !File.Exists(full)) return Results.NotFound();
+            if (!full.StartsWith(root)) return Results.NotFound();
+            if (!File.Exists(full) && !path.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                full += ".md";
+            if (!File.Exists(full)) return Results.NotFound();
             var md = File.ReadAllText(full);
             return Results.Json(new { path, markdown = md, html = MdToHtml(md) }, JsonOpts);
         });

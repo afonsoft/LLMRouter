@@ -65,11 +65,23 @@ public static class InspectorEndpoints
         });
 
         // Self-signed CA for HTTPS interception (install to trust)
-        g.MapGet("/mitm/status", () => Results.Json(new
+        // SPEC-100: reporta port, tlsIntercept, interceptMode, captureMode, activeConnections.
+        g.MapGet("/mitm/status", async (IServiceScopeFactory sf, CancellationToken ct) =>
         {
-            enabled = Environment.GetEnvironmentVariable("LLMROUTER_MITM") == "1",
-            ca = "/api/mitm/ca",
-        }, JsonOpts));
+            var cfg = await MitmPolicy.ReadAsync(sf, ct);
+            var port = int.TryParse(Environment.GetEnvironmentVariable("LLMROUTER_PROXY_PORT"), out var p) ? p : 8889;
+            return Results.Json(new
+            {
+                enabled = Environment.GetEnvironmentVariable("LLMROUTER_MITM") == "1",
+                port,
+                tlsIntercept = cfg.TlsIntercept,
+                interceptMode = cfg.InterceptMode,
+                interceptHosts = cfg.Hosts,
+                captureMode = cfg.CaptureMode,
+                activeConnections = ConnectProxy.ActiveConnections,
+                ca = "/api/mitm/ca",
+            }, JsonOpts);
+        });
 
         g.MapGet("/mitm/ca", () =>
         {

@@ -52,6 +52,23 @@ public static class CacheEndpoints
             return Results.Json(new { success = true }, JsonOpts);
         });
 
+        // SPEC-106: semantic layer stats + flush
+        g.MapGet("/cache/semantic/stats", async (LlmRouterDbContext db) =>
+        {
+            var entries = await db.SemanticCache.CountAsync();
+            var hitTotal = await db.SemanticCache.SumAsync(e => e.HitCount);
+            return Results.Json(Core.Cache.SemanticCache.Stats(entries, hitTotal), JsonOpts);
+        });
+
+        g.MapDelete("/cache/semantic", async (LlmRouterDbContext db) =>
+        {
+            var n = await db.SemanticCache.CountAsync();
+            db.SemanticCache.RemoveRange(await db.SemanticCache.ToListAsync());
+            Core.Cache.SemanticCache.ResetStats();
+            await db.SaveChangesAsync();
+            return Results.Json(new { purged = n }, JsonOpts);
+        });
+
         g.MapPost("/cache/purge", async (LlmRouterDbContext db) =>
         {
             var n = await db.CacheEntries.CountAsync();

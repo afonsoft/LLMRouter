@@ -1529,6 +1529,39 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("requestDetails");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.SemanticCacheEntry", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<byte[]>("Embedding")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<int>("HitCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PromptHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("semanticCache");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.SessionPoolRow", b =>
                 {
                     b.Property<string>("Id")

@@ -540,6 +540,23 @@ public class CacheEntry
     public string ExpiresAt { get; set; } = "";
 }
 
+// ---- SPEC-106: semantic prompt cache (opt-in similarity layer) ----
+
+[Table("semanticCache")]
+public class SemanticCacheEntry
+{
+    [Key]
+    public string Id { get; set; } = "";
+    /// <summary>float32 embedding of the normalized prompt text.</summary>
+    public byte[] Embedding { get; set; } = [];
+    /// <summary>Exact-layer hash of the originating request (join key).</summary>
+    public string PromptHash { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string ResponseJson { get; set; } = "{}";
+    public string CreatedAt { get; set; } = "";
+    public int HitCount { get; set; }
+}
+
 // ---- SPEC-068: core gateway gaps (scaffold — impls in parallel specs) ----
 
 [Table("modelCooldowns")]

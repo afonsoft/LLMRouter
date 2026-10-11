@@ -16,6 +16,18 @@
     <div class="card card-p"><div class="xs muted">@Loc.T("cache.tokensSaved", "Tokens saved")</div><div class="xl bold">@_tokens</div></div>
 </div>
 
+@if (_semEntries > 0 || _semHits > 0)
+{
+    <div class="card card-p mt-4">
+        <div class="flex" style="gap:8px;align-items:center">
+            <span class="bold">@Loc.T("cache.semantic", "Semantic cache")</span>
+            <span class="xs muted">@_semEntries @Loc.T("cache.semEntries", "entries") · @_semHits @Loc.T("cache.hits", "hits") · @_semHitRate% @Loc.T("cache.hitRate", "hit rate") · avg sim @_semAvgSim</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-danger btn-sm" @onclick="FlushSemantic">@Loc.T("cache.semFlush", "Flush semantic")</button>
+        </div>
+    </div>
+}
+
 <div class="card card-p mt-4">
     <div class="flex mb-3" style="gap:8px;align-items:center">
         <input class="input" style="max-width:220px" placeholder="@Loc.T("cache.model", "model filter")" @bind="_model" />
@@ -49,6 +61,7 @@
     private record E(string Id, string Provider, string Model, int Hits, long TokensSaved, string ExpiresAt);
     private List<E> _entries = [];
     private int _size, _hits; private long _tokens; private double _hitRate;
+    private int _semEntries, _semHits; private double _semHitRate, _semAvgSim;
     private string _model = "";
     private bool _media => Nav.Uri.EndsWith("/media");
 
@@ -70,9 +83,16 @@
             _hits = st.GetProperty("hits").GetInt32();
             _tokens = st.GetProperty("tokensSaved").GetInt64();
             _hitRate = st.GetProperty("hitRate").GetDouble() * 100;
+            var ss = await Api.GetAsync("api/cache/semantic/stats");
+            _semEntries = ss.GetProperty("entries").GetInt32();
+            _semHits = ss.GetProperty("hits").GetInt32();
+            _semHitRate = ss.GetProperty("hitRate").GetDouble() * 100;
+            _semAvgSim = ss.GetProperty("avgSimilarity").GetDouble();
         }
         catch { /* best-effort: failure is non-fatal */ }
     }
+
+    private async Task FlushSemantic() { await Api.DeleteAsync("api/cache/semantic"); await Refresh(); }
 
     private async Task Delete(string id) { await Api.DeleteAsync($"api/cache/entries/{id}"); await Refresh(); }
     private async Task Purge() { await Api.PostAsync("api/cache/purge", new { }); await Refresh(); }

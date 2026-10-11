@@ -35,6 +35,7 @@ public class LlmRouterDbContext : DbContext
     public DbSet<LogExportDestination> LogExportDestinations => Set<LogExportDestination>();
     public DbSet<PlaygroundPreset> PlaygroundPresets => Set<PlaygroundPreset>();
     public DbSet<CacheEntry> CacheEntries => Set<CacheEntry>();
+    public DbSet<SemanticCacheEntry> SemanticCache => Set<SemanticCacheEntry>();
     public DbSet<RelayToken> RelayTokens => Set<RelayToken>();
     public DbSet<SessionPoolRow> SessionPools => Set<SessionPoolRow>();
     public DbSet<PoolSession> PoolSessions => Set<PoolSession>();

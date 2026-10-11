@@ -1089,6 +1089,39 @@ public static class ManagementEndpoints
             return Results.Json(new { success = true });
         });
 
+        // SPEC-103: per-surface retention TTLs — GET merges defaults; PUT merges
+        // the patch into settings.retention, clamping negatives to 0 (= keep forever).
+        g.MapGet("/settings/retention", async (LlmRouterDbContext db) =>
+        {
+            var s = await db.Settings.FirstOrDefaultAsync();
+            var ret = AuthEndpoints.Parse(s?.Data).TryGetProperty("retention", out var r)
+                && r.ValueKind == JsonValueKind.Object ? r : (JsonElement?)null;
+            return Results.Json(new { retention = RetentionDefaults(ret) }, JsonOpts);
+        });
+
+        g.MapPut("/settings/retention", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
+            var patch = b.TryGetProperty("retention", out var rp) && rp.ValueKind == JsonValueKind.Object ? rp : b;
+            var s = await db.Settings.FirstOrDefaultAsync()
+                ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var d = AuthEndpoints.Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
+            var cur = d.TryGetValue("retention", out var cr) && cr.ValueKind == JsonValueKind.Object
+                ? cr.Deserialize<Dictionary<string, JsonElement>>() ?? [] : [];
+            foreach (var kv in patch.EnumerateObject())
+            {
+                // clamp negatives → 0 (keep forever); non-numbers stored as-is
+                cur[kv.Name] = kv.Value.ValueKind == JsonValueKind.Number
+                    && kv.Value.TryGetInt32(out var dv) && dv < 0
+                    ? JsonSerializer.SerializeToElement(0) : kv.Value.Clone();
+            }
+            d["retention"] = JsonSerializer.SerializeToElement(cur);
+            s.Data = JsonSerializer.Serialize(d);
+            await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "settings.update", "retention");
+            return Results.Json(new { success = true, retention = RetentionDefaults(d["retention"]) }, JsonOpts);
+        });
+
         // SPEC-007: dangerous zone — wipe all settings.data
         g.MapPost("/settings/reset", async (LlmRouterDbContext db) =>
         {
@@ -1357,6 +1390,21 @@ public static class ManagementEndpoints
         el.ValueKind == JsonValueKind.Object && el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Array
             ? v.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!).ToArray()
             : [];
+
+    /// <summary>SPEC-103: retention days per surface — value overrides, else default; 0 = keep forever.</summary>
+    private static Dictionary<string, int> RetentionDefaults(JsonElement? ret)
+    {
+        var merged = new Dictionary<string, int>
+        {
+            ["auditEventsDays"] = 90, ["mcpToolCallsDays"] = 30, ["requestDetailsDays"] = 14,
+            ["usageHistoryDays"] = 365, ["usageDailyDays"] = 0, ["webhookDeliveriesDays"] = 30,
+        };
+        if (ret is { ValueKind: JsonValueKind.Object } r)
+            foreach (var kv in r.EnumerateObject())
+                if (kv.Value.ValueKind == JsonValueKind.Number && kv.Value.TryGetInt32(out var v))
+                    merged[kv.Name] = Math.Max(v, 0);
+        return merged;
+    }
 
     private static string? Get(JsonElement el, string name) =>
         el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

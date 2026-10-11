@@ -36,6 +36,7 @@ builder.Services.AddSingleton<LLMRouter.Core.Jobs.JobScheduler>(sp =>
     var sched = new LLMRouter.Core.Jobs.JobScheduler(sp, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<LLMRouter.Core.Jobs.JobScheduler>>());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.ProxyPoolHealthJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.UsagePruneJob());
+    sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.RetentionPurgeJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.DbBackupJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.QuotaSchedulesJob());
     sched.Register(new LLMRouter.Core.Jobs.BuiltinJobs.LogExportJob());

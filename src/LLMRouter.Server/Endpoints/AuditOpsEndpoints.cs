@@ -20,16 +20,33 @@ public static class AuditOpsEndpoints
 
         // ---- eventos estruturados com filtros ----
         g.MapGet("/audit/events", async (LlmRouterDbContext db,
-            string? actor, string? action, string? target, string? before, string? after, int? limit) =>
+            string? actor, string? action, string? target, string? category,
+            string? before, string? after, int? limit) =>
         {
             var q = db.AuditEvents.AsQueryable();
             if (!string.IsNullOrEmpty(actor)) q = q.Where(e => e.Actor == actor);
             if (!string.IsNullOrEmpty(action)) q = q.Where(e => e.Action == action);
             if (!string.IsNullOrEmpty(target)) q = q.Where(e => e.Target != null && e.Target.Contains(target));
+            if (!string.IsNullOrEmpty(category) && category != "all")
+            {
+                if (category == "system")
+                    q = q.Where(e => !AllPrefixes.Any(p => e.Action.StartsWith(p)));
+                else if (PrefixesOf(category) is { Length: > 0 } prefixes)
+                    q = q.Where(e => prefixes.Any(p => e.Action.StartsWith(p)));
+                else
+                    return Results.Json(new { events = Array.Empty<object>() }, JsonOpts);
+            }
             if (!string.IsNullOrEmpty(before)) q = q.Where(e => e.At.CompareTo(before) < 0);
             if (!string.IsNullOrEmpty(after)) q = q.Where(e => e.At.CompareTo(after) > 0);
             var rows = await q.OrderByDescending(e => e.At).Take(Math.Clamp(limit ?? 200, 1, 1000)).ToListAsync();
-            return Results.Json(new { events = rows }, JsonOpts);
+            return Results.Json(new
+            {
+                events = rows.Select(e => new
+                {
+                    e.Id, e.Actor, e.Action, e.Target, e.Meta, e.Ip, e.At,
+                    category = CategoryOf(e.Action),
+                }),
+            }, JsonOpts);
         });
 
         // ---- MCP tool calls ----
@@ -80,6 +97,31 @@ public static class AuditOpsEndpoints
             }
             return Results.Json(new { count = rows.Count, events = rows }, JsonOpts);
         });
+    }
+
+    /// <summary>SPEC-113: categoria de um evento a partir do prefixo da ação (domínio.verbo).</summary>
+    private static readonly (string Name, string[] Prefixes)[] Categories =
+    [
+        ("providers", ["provider.", "providers."]),
+        ("combos", ["combo.", "combos.", "fusion.", "pipeline."]),
+        ("apikeys", ["apikey.", "apikeys.", "key.", "userkey.", "keyquota."]),
+        ("settings", ["settings.", "config.", "featureflag.", "sidebar.", "webhooks."]),
+        ("quota", ["quota.", "rate.", "limit.", "usage."]),
+        ("auth", ["auth.", "user.", "users.", "oauth.", "login.", "token."]),
+    ];
+
+    private static readonly string[] AllPrefixes = Categories.SelectMany(c => c.Prefixes).ToArray();
+
+    private static string[] PrefixesOf(string category) =>
+        Categories.FirstOrDefault(c => c.Name == category).Prefixes ?? [];
+
+    internal static string CategoryOf(string action)
+    {
+        foreach (var c in Categories)
+            foreach (var p in c.Prefixes)
+                if (action.StartsWith(p, StringComparison.Ordinal))
+                    return c.Name;
+        return "system";
     }
 
     private static string Csv(string? v)

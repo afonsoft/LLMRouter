@@ -154,6 +154,7 @@ public sealed class UsageWriter : BackgroundService
         }
         if (_usageCh.Writer.TryWrite(u)) return;
         Interlocked.Increment(ref _usageDropped);
+        GatewayMetrics.UsageDropped.Add(1); // SPEC-101: llmr_usage_dropped_total
         if (_usageDropped % 100 == 1)
             _log.LogWarning("UsageSink channel full; dropped usage row (total={dropped})", _usageDropped);
     }

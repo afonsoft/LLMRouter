@@ -291,6 +291,10 @@ public sealed class GatewayEngine(
             await HotReads.SettingsDataAsync(db), registry,
             provider, model, promptTokens, completionTokens) ?? 0;
 
+        // SPEC-101: every logged request feeds the scrapeable meter source.
+        GatewayMetrics.RecordRequest(provider, model, connectionId, apiKey,
+            endpoint, promptTokens, completionTokens, cost, latencyMs, status);
+
         // SPEC-074: usage lands via the writer — cached quota/daily-cap
         // verdicts for this provider+key are now stale.
         HotCache.Default.Invalidate($"qwx:{provider}");

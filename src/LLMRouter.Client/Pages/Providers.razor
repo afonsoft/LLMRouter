@@ -24,44 +24,60 @@
     <input class="input" placeholder="@Loc.T("providers.search", "Search providers…")" @bind="_q" @bind:event="oninput" />
 </div>
 
-<div class="tabs mt-4">
-    <button class="tab @(_cat is null ? "on" : "")" @onclick="() => _cat = null">
+<div class="tabs mt-4" style="flex-wrap:wrap">
+    <button class="tab @(_conn is null ? "on" : "")" @onclick="() => _conn = null">
         @Loc.T("providers.all", "All") <span class="muted">@All().Count()</span>
+    </button>
+    <button class="tab @(_conn == true ? "on" : "")" @onclick="() => _conn = true">
+        @Loc.T("providers.connected", "Connected") <span class="muted">@All().Count(p => p.Connected)</span>
+    </button>
+    <button class="tab @(_conn == false ? "on" : "")" @onclick="() => _conn = false">
+        @Loc.T("providers.notConnected", "Not connected") <span class="muted">@All().Count(p => !p.Connected)</span>
+    </button>
+</div>
+
+<div class="tabs mt-4" style="flex-wrap:wrap">
+    <button class="tab @(_cat is null ? "on" : "")" @onclick="() => _cat = null">
+        @Loc.T("providers.allCats", "All categories") <span class="muted">@All().Count()</span>
     </button>
     @foreach (var c in Categories())
     {
         <button class="tab @(_cat == c ? "on" : "")" @onclick="() => _cat = c">
-            @c <span class="muted">@All().Count(p => p.Category == c)</span>
+            @CatLabel(c) <span class="muted">@All().Count(p => p.Category == c)</span>
         </button>
     }
 </div>
 
-<div class="pgrid mt-4">
-    @foreach (var p in Filtered())
+@if (_cat is null && _conn is null)
+{
+    @foreach (var s in Sections())
     {
-        <button class="pcard" @onclick='() => Nav.NavigateTo($"/dashboard/providers/{p.Id}")'>
-            <span class="pcard-icon" style="@(p.Color is not null ? $"color:{p.Color}" : "")">
-                <span class="material-symbols-outlined" style="font-size:22px">@(p.Icon ?? "cloud")</span>
-            </span>
-            <span class="pcard-body">
-                <span class="pcard-name">@(p.Name ?? p.Id)</span>
-                <span class="pcard-id mono xs muted">@p.Id</span>
-            </span>
-            @if (p.Connected)
+        <h2 class="page-title mt-6" style="font-size:15px">@s.Title <span class="muted sm">@s.Providers.Length</span></h2>
+        <div class="pgrid mt-2">
+            @foreach (var p in s.Providers)
             {
-                <span class="badge ok">@p.ConnectionCount</span>
+                @Tile(p)
             }
-            else if (p.Backend)
+            @if (s.Providers.Length == 0)
             {
-                <span class="badge">API</span>
+                <div class="empty"><span class="material-symbols-outlined">cloud_off</span>@Loc.T("providers.none", "No providers match")</div>
             }
-        </button>
+        </div>
     }
-    @if (!Filtered().Any())
-    {
-        <div class="empty"><span class="material-symbols-outlined">cloud_off</span>@Loc.T("providers.none", "No providers match")</div>
-    }
-</div>
+}
+else
+{
+    <div class="pgrid mt-4">
+        @foreach (var p in Filtered())
+        {
+            @Tile(p)
+        }
+        @if (!Filtered().Any())
+        {
+            <div class="empty"><span class="material-symbols-outlined">cloud_off</span>@Loc.T("providers.none", "No providers match")</div>
+        }
+    </div>
+}
 
 @if (_nodes.Count > 0)
 {
@@ -166,13 +182,18 @@
 }
 
 @code {
-    private record P(string Id, string? Name, string? Icon, string? Color, string Category, bool Backend, bool Connected, int ConnectionCount);
+    private record P(string Id, string? Name, string? Icon, string? TextIcon, string? Color, string Category, bool Backend, bool Connected, int ConnectionCount);
+    private record Conn(string Id, string? Name, bool IsActive);
+    private record Section(string Title, P[] Providers);
     private record Node(string Id, string? Name, string? Type, string? BaseUrl);
     private record BulkResult(int Index, bool Ok, string Masked, string? Name, string? Error);
     private List<P> _providers = [];
     private List<Node> _nodes = [];
     private string _q = "";
     private string? _cat;
+    private bool? _conn;
+    private string? _expanded;
+    private List<Conn> _expandedConns = [];
     private bool _nodeModal;
     private string _nodeKind = "openai-compatible-chat", _nodeName = "", _nodeBaseUrl = "", _nodeModels = "";
     private bool _bulkModal, _bulkBusy;
@@ -193,6 +214,7 @@
                     p.GetProperty("id").GetString()!,
                     p.TryGetProperty("name", out var n) ? n.GetString() : null,
                     p.TryGetProperty("icon", out var i) ? i.GetString() : null,
+                    p.TryGetProperty("textIcon", out var ti) ? ti.GetString() : null,
                     p.TryGetProperty("color", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null,
                     kind,
                     p.GetProperty("backend").GetBoolean(),
@@ -266,8 +288,98 @@
     private IEnumerable<string> Categories() => _providers.Select(p => p.Category).Distinct().OrderBy(c => c);
     private IEnumerable<P> Filtered() => _providers
         .Where(p => _cat is null || p.Category == _cat)
+        .Where(p => _conn is null || p.Connected == _conn)
         .Where(p => string.IsNullOrWhiteSpace(_q)
             || p.Id.Contains(_q, StringComparison.OrdinalIgnoreCase)
             || (p.Name ?? "").Contains(_q, StringComparison.OrdinalIgnoreCase))
         .OrderByDescending(p => p.Connected).ThenBy(p => p.Name ?? p.Id, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, string> CatLabels = new(StringComparer.Ordinal)
+    {
+        ["APIKEY_PROVIDERS"] = "API Key", ["OAUTH_PROVIDERS"] = "OAuth",
+        ["NOAUTH_PROVIDERS"] = "No-Auth", ["LOCAL_PROVIDERS"] = "Local",
+        ["UPSTREAM_PROXY_PROVIDERS"] = "Upstream Proxy", ["WEB_COOKIE_PROVIDERS"] = "Web Cookie",
+        ["AUDIO_ONLY_PROVIDERS"] = "Audio", ["SEARCH_PROVIDERS"] = "Search",
+        ["SYSTEM_PROVIDERS"] = "System", ["CLOUD_AGENT_PROVIDERS"] = "Cloud Agent",
+    };
+    private static string CatLabel(string c) => CatLabels.TryGetValue(c, out var l) ? l : c;
+
+    private Section[] Sections()
+    {
+        var f = Filtered().ToArray();
+        P[] Pick(string cat) => f.Where(p => p.Category == cat).ToArray();
+        return
+        [
+            new(Loc.T("providers.secApi", "API Key Compatible Providers"), Pick("APIKEY_PROVIDERS")),
+            new(Loc.T("providers.secOauth", "OAuth Providers"), Pick("OAUTH_PROVIDERS")),
+            new(Loc.T("providers.secOther", "Other Providers"),
+                f.Where(p => p.Category is not "APIKEY_PROVIDERS" and not "OAUTH_PROVIDERS").ToArray()),
+        ];
+    }
+
+    private async Task ToggleExpand(P p)
+    {
+        if (_expanded == p.Id) { _expanded = null; _expandedConns = []; return; }
+        _expanded = p.Id;
+        _expandedConns = [];
+        try
+        {
+            var r = await Api.GetAsync("api/provider-connections");
+            _expandedConns = r.GetProperty("connections").EnumerateArray()
+                .Where(c => c.GetProperty("provider").GetString() == p.Id)
+                .Select(c => new Conn(c.GetProperty("id").GetString()!,
+                    c.TryGetProperty("name", out var n) ? n.GetString() : null,
+                    c.TryGetProperty("isActive", out var a) && a.GetBoolean())).ToList();
+        }
+        catch { }
+    }
+
+    private RenderFragment Tile(P p) => __builder =>
+    {
+        <div>
+            <button class="pcard" @onclick='() => Nav.NavigateTo($"/dashboard/providers/{p.Id}")'>
+                <span class="pcard-icon" style="@(p.Color is not null ? $"color:{p.Color}" : "")">
+                    @if (p.Icon is not null)
+                    {
+                        <span class="material-symbols-outlined" style="font-size:22px">@p.Icon</span>
+                    }
+                    else
+                    {
+                        <span class="pcard-txt">@(p.TextIcon ?? (p.Name ?? p.Id)[..Math.Min(3, (p.Name ?? p.Id).Length)].ToUpperInvariant())</span>
+                    }
+                </span>
+                <span class="pcard-body">
+                    <span class="pcard-name">@(p.Name ?? p.Id)</span>
+                    <span class="pcard-id mono xs muted">@p.Id</span>
+                </span>
+                @if (p.Connected)
+                {
+                    <span class="badge ok">@p.ConnectionCount</span>
+                    <button class="icon-btn" style="width:26px;height:26px" @onclick="() => ToggleExpand(p)" @onclick:stopPropagation>
+                        <span class="material-symbols-outlined" style="font-size:16px">@(_expanded == p.Id ? "expand_less" : "expand_more")</span>
+                    </button>
+                }
+                else if (p.Backend)
+                {
+                    <span class="badge">API</span>
+                }
+            </button>
+            @if (_expanded == p.Id)
+            {
+                <div class="card card-p" style="margin-top:4px">
+                    @foreach (var c in _expandedConns)
+                    {
+                        <div class="flex between sm" style="padding:4px 0">
+                            <span>@(c.Name ?? c.Id) <span class="badge @(c.IsActive ? "ok" : "err")">@(c.IsActive ? "active" : "off")</span></span>
+                            <a class="link sm" href="/dashboard/providers/@p.Id">manage</a>
+                        </div>
+                    }
+                    @if (_expandedConns.Count == 0)
+                    {
+                        <p class="muted sm" style="margin:0">…</p>
+                    }
+                </div>
+            }
+        </div>
+    };
 }

@@ -461,7 +461,10 @@ pre.code {
   width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: var(--surface-2); color: var(--text);
+  overflow: hidden;
 }
+.pcard-icon img { max-width: 24px; max-height: 24px; object-fit: contain; }
+.pcard-txt { font-weight: 700; font-size: 11px; letter-spacing: .5px; }
 .pcard-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .pcard-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcard-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

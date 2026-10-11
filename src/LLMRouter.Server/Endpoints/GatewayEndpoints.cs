@@ -18,6 +18,18 @@ namespace LLMRouter.Server.Endpoints;
 /// </summary>
 public static class GatewayEndpoints
 {
+    /// <summary>
+    /// SPEC-111: resultado da resolução de chave — apiKeys (admin/global,
+    /// UserId opcional) ou userKeys vk- (UserKey preenchido). Deconstruct
+    /// mantém os call sites (key, authed) compilando.
+    /// </summary>
+    internal sealed record AuthKey(string Key, bool Authed,
+        string? UserId = null, UserKey? UserKey = null, ApiKey? ApiKeyRow = null)
+    {
+        public void Deconstruct(out string key, out bool authed) =>
+            (key, authed) = (Key, Authed);
+    }
+
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     public static void MapGatewayEndpoints(this WebApplication app)
@@ -140,7 +152,10 @@ public static class GatewayEndpoints
         var httpFactory = ctx.RequestServices.GetRequiredService<IHttpClientFactory>();
         var sw = Stopwatch.StartNew();
 
-        var (apiKey, authed) = await AuthenticatedKey(ctx, db);
+        var auth = await AuthenticatedKey(ctx, db);
+        var (apiKey, authed) = (auth.Key, auth.Authed);
+        ctx.Items["authUserId"] = auth.UserId;
+        ctx.Items["authUserKeyId"] = auth.UserKey?.Id;
         if (!authed)
         {
             ctx.Response.StatusCode = 401;
@@ -166,15 +181,19 @@ public static class GatewayEndpoints
         }
         model = string.IsNullOrEmpty(model) ? ctx.Request.Query["model"].FirstOrDefault() ?? "" : model;
 
+        // SPEC-111: gates da virtual key (modelsAllow + budget) antes do rate-limit.
+        if (!await VirtualKeyGatesAsync(ctx, db, auth, model, "openai")) return;
+
         // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
         // scope is enforced per-target inside the dispatch loop below.
         var rateLimiter = ctx.RequestServices.GetRequiredService<RateLimiter>();
         var rlRules = await Core.Gateway.HotReads.EnabledRateLimitsAsync(db);
-        if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } ptVio)
+        if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model,
+                userId: auth.UserId, keyGroupId: auth.UserKey?.RateLimitGroupId) is { } ptVio)
         {
             Core.Gateway.GatewayMetrics.RateLimitViolation(ptVio.Scope);
             ctx.Response.StatusCode = 429;
-            ctx.Response.Headers.RetryAfter = ptVio.RetryAfterSec.ToString();
+            RateLimitHeaders(ctx, ptVio);
             await WriteError(ctx, "openai", "rate_limit",
                 $"Rate limit exceeded ({ptVio.Kind} {ptVio.Limit}/min on {ptVio.Scope} '{ptVio.ScopeValue}').");
             return;
@@ -354,7 +373,8 @@ public static class GatewayEndpoints
                         // call (upstream #15787). The partial stream stands.
                         await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                             target.Connection.Id, apiKey, kind ?? path, 0, 0,
-                            "499", "stream aborted mid-response", sw.ElapsedMilliseconds);
+                            "499", "stream aborted mid-response", sw.ElapsedMilliseconds,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                         return;
                     }
                 }
@@ -362,7 +382,8 @@ public static class GatewayEndpoints
                 await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                     target.Connection.Id, apiKey, kind ?? path, 0, 0,
                     ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds,
-                    reportedCostUsd: reportedCost);
+                    reportedCostUsd: reportedCost,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                 return;
             }
             catch (Exception) when (target != targets[^1]) { /* best-effort: failure is non-fatal */ }
@@ -422,9 +443,12 @@ public static class GatewayEndpoints
 
         // forcedKey: relay endpoint already validated its own token — attribute
         // usage to "relay:{id}" and skip apiKeys lookup
-        var (apiKey, authed) = forcedKey is not null
-            ? (forcedKey, true)
+        var auth = forcedKey is not null
+            ? new AuthKey(forcedKey, true)
             : await AuthenticatedKey(ctx, db);
+        var (apiKey, authed) = (auth.Key, auth.Authed);
+        ctx.Items["authUserId"] = auth.UserId;
+        ctx.Items["authUserKeyId"] = auth.UserKey?.Id;
         if (!authed)
         {
             ctx.Response.StatusCode = 401;
@@ -606,15 +630,19 @@ public static class GatewayEndpoints
         if (inbound == "gemini" && ctx.Request.Path.Value?.Contains("streamGenerateContent") == true)
             stream = true;
 
+        // SPEC-111: gates da virtual key (modelsAllow + budget) antes do rate-limit.
+        if (!await VirtualKeyGatesAsync(ctx, db, auth, model, inbound)) return;
+
         // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
         // scope is enforced per-target inside the dispatch loop below.
         var rateLimiter = ctx.RequestServices.GetRequiredService<RateLimiter>();
         var rlRules = await Core.Gateway.HotReads.EnabledRateLimitsAsync(db);
-        if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model) is { } rlVio)
+        if (rlRules.Count > 0 && rateLimiter.CheckAndConsume(rlRules, apiKey, null, model,
+                userId: auth.UserId, keyGroupId: auth.UserKey?.RateLimitGroupId) is { } rlVio)
         {
             Core.Gateway.GatewayMetrics.RateLimitViolation(rlVio.Scope);
             ctx.Response.StatusCode = 429;
-            ctx.Response.Headers.RetryAfter = rlVio.RetryAfterSec.ToString();
+            RateLimitHeaders(ctx, rlVio);
             await WriteError(ctx, inbound, "rate_limit",
                 $"Rate limit exceeded ({rlVio.Kind} {rlVio.Limit}/min on {rlVio.Scope} '{rlVio.ScopeValue}').");
             return;
@@ -782,7 +810,8 @@ public static class GatewayEndpoints
                 ctx.Response.Headers["x-cache"] = "hit";
                 await ctx.Response.WriteAsync(cached, ctx.RequestAborted);
                 await engine.LogUsageAsync("cache", model, null, apiKey, inbound, 0, 0, "200", null, sw.ElapsedMilliseconds,
-                    JsonSerializer.SerializeToElement(new { cached = true }));
+                    JsonSerializer.SerializeToElement(new { cached = true }),
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                 return;
             }
         }
@@ -886,7 +915,8 @@ public static class GatewayEndpoints
                     await WriteUpstreamError(ctx, inbound, errBody);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, 0, 0,
-                        ((int)resp.StatusCode).ToString(), errBody[..Math.Min(500, errBody.Length)], sw.ElapsedMilliseconds);
+                        ((int)resp.StatusCode).ToString(), errBody[..Math.Min(500, errBody.Length)], sw.ElapsedMilliseconds,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                     return;
                 }
 
@@ -912,7 +942,8 @@ public static class GatewayEndpoints
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
-                        savedDetail);
+                        savedDetail,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                 }
                 else
                 {
@@ -943,7 +974,8 @@ public static class GatewayEndpoints
                         ctx.RequestAborted);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
-                        savedDetail);
+                        savedDetail,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                 }
                 return;
             }
@@ -970,7 +1002,8 @@ public static class GatewayEndpoints
         await WriteError(ctx, inbound, "upstream_unavailable",
             Core.Gateway.ErrorSanitizer.SanitizeMessage(lastError?.Message ?? "All upstream targets failed."));
         await engine.LogUsageAsync(model, model, null, apiKey, inbound, 0, 0, "502",
-            lastError?.Message, sw.ElapsedMilliseconds);
+            lastError?.Message, sw.ElapsedMilliseconds,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
     }
 
     /// <summary>SPEC-020: remember the serving model for lkgp / cache-optimized.</summary>
@@ -1023,7 +1056,8 @@ public static class GatewayEndpoints
         var final = Translators.TranslateResponse(ChatResponseJson(model, content), "openai", inbound, model);
         ctx.Response.ContentType = "application/json";
         await ctx.Response.WriteAsync(final.ToJsonString(JsonOpts), ctx.RequestAborted);
-        await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "200", null, ms);
+        await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "200", null, ms,
+            userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
     }
 
     /// <summary>
@@ -1051,7 +1085,8 @@ public static class GatewayEndpoints
         {
             ctx.Response.StatusCode = 502;
             await WriteError(ctx, inbound, "upstream_unavailable", "Fusion panel: all members failed.");
-            await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds);
+            await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds,
+                userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
             return;
         }
         var joined = string.Join("\n\n---\n\n",
@@ -1118,7 +1153,8 @@ public static class GatewayEndpoints
                 ctx.Response.StatusCode = 502;
                 await WriteError(ctx, inbound, "upstream_unavailable",
                     $"Pipeline stage '{member}' failed.");
-                await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds);
+                await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds,
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
                 return;
             }
             currentText = r.Text;
@@ -1394,17 +1430,72 @@ public static class GatewayEndpoints
     private static async Task<bool> Authorized(HttpContext ctx, LlmRouterDbContext db) =>
         (await AuthenticatedKey(ctx, db)).Authed;
 
-    internal static async Task<(string Key, bool Authed)> AuthenticatedKey(HttpContext ctx, LlmRouterDbContext db)
+    internal static async Task<AuthKey> AuthenticatedKey(HttpContext ctx, LlmRouterDbContext db)
     {
         // dashboard session → allow
-        if (ctx.User.Identity?.IsAuthenticated == true) return ("dashboard", true);
+        if (ctx.User.Identity?.IsAuthenticated == true) return new AuthKey("dashboard", true);
         var key = ctx.Request.Headers.Authorization.FirstOrDefault() is { } a && a.StartsWith("Bearer ")
             ? a[7..].Trim()
             : ctx.Request.Headers["x-api-key"].FirstOrDefault()
               ?? ctx.Request.Query["key"].FirstOrDefault();
-        if (string.IsNullOrEmpty(key)) return ("", false);
+        if (string.IsNullOrEmpty(key)) return new AuthKey("", false);
         var found = await Core.Gateway.HotReads.ApiKeyAsync(db, key);
-        return (key, found is { IsActive: true });
+        if (found is { IsActive: true })
+            return new AuthKey(key, true, found.UserId, ApiKeyRow: found);
+        // SPEC-111: virtual keys vk-… — exige o usuário ativo também.
+        if (key.StartsWith("vk-", StringComparison.OrdinalIgnoreCase)
+            && await Core.Gateway.HotReads.UserKeyAsync(db, key) is { IsActive: true } uk
+            && await db.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == uk.UserId, ctx.RequestAborted) is { IsActive: true })
+            return new AuthKey(key, true, uk.UserId, uk);
+        return new AuthKey(key, false);
+    }
+
+    /// <summary>SPEC-111: ids de atribuição propagados via ctx.Items.</summary>
+    private static (string? Uid, string? Ukid) AuthIds(HttpContext ctx) =>
+        (ctx.Items["authUserId"] as string, ctx.Items["authUserKeyId"] as string);
+
+    /// <summary>
+    /// SPEC-111: contrato OpenRouter — headers x-ratelimit-* + Retry-After num 429.
+    /// </summary>
+    private static void RateLimitHeaders(HttpContext ctx, RateLimiter.Violation v)
+    {
+        ctx.Response.Headers.RetryAfter = v.RetryAfterSec.ToString();
+        ctx.Response.Headers["x-ratelimit-limit-requests"] = v.Limit.ToString();
+        ctx.Response.Headers["x-ratelimit-remaining-requests"] = "0";
+        ctx.Response.Headers["x-ratelimit-reset"] = v.RetryAfterSec.ToString();
+    }
+
+    /// <summary>
+    /// SPEC-111: gates da virtual key — modelsAllow (403 model_not_allowed) e
+    /// budgetUsd por período (402 budget_exceeded). Lê spend fresco (sem cache)
+    /// porque o UsageWriter atualiza SpendUsd continuamente. Retorna false
+    /// quando a resposta já foi escrita.
+    /// </summary>
+    private static async Task<bool> VirtualKeyGatesAsync(
+        HttpContext ctx, LlmRouterDbContext db, AuthKey auth, string model, string inbound)
+    {
+        if (auth.UserKey is not { } vk) return true;
+        if (!Core.Gateway.VirtualKeyGate.ModelAllowed(vk, model))
+        {
+            ctx.Response.StatusCode = 403;
+            await WriteError(ctx, inbound, "model_not_allowed",
+                $"Virtual key is not allowed to use '{model}'.");
+            return false;
+        }
+        if (vk.BudgetUsd > 0)
+        {
+            var fresh = await db.UserKeys.AsNoTracking()
+                .FirstOrDefaultAsync(k => k.Id == vk.Id, ctx.RequestAborted);
+            if (fresh is not null && Core.Gateway.VirtualKeyGate.BudgetExceeded(fresh, DateTime.UtcNow))
+            {
+                ctx.Response.StatusCode = 402;
+                await WriteError(ctx, inbound, "budget_exceeded",
+                    $"Insufficient credits: virtual key budget {fresh.BudgetUsd:0.####} USD/{fresh.BudgetPeriod} exhausted.");
+                return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>SPEC-031: merge plugin addHeaders into the upstream request.</summary>

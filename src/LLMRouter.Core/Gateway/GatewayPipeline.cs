@@ -287,7 +287,7 @@ public sealed class GatewayEngine(
         string provider, string model, string? connectionId, string apiKey,
         string endpoint, int promptTokens, int completionTokens,
         string status, string? error, long latencyMs, JsonElement? detail = null,
-        double? reportedCostUsd = null)
+        double? reportedCostUsd = null, string? userId = null, string? userKeyId = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
         // SPEC-097: a trusted provider-reported cost wins over the computed price.
@@ -312,7 +312,8 @@ public sealed class GatewayEngine(
             var detailText = detail?.GetRawText() ?? error;
             await writer.PostUsageAsync(new UsageWrite(
                 now, provider, model, connectionId, apiKey, endpoint,
-                promptTokens, completionTokens, cost, latencyMs, status, detailText));
+                promptTokens, completionTokens, cost, latencyMs, status, detailText,
+                userId, userKeyId));
 
             if (rateLimiter is not null)
             {
@@ -324,7 +325,7 @@ public sealed class GatewayEngine(
             return;
         }
 
-        db.UsageHistory.Add(new UsageRecord
+        var usageRow = new UsageRecord
         {
             Timestamp = now,
             Provider = provider,
@@ -339,7 +340,10 @@ public sealed class GatewayEngine(
             Cost = cost,
             LatencyMs = latencyMs,
             Meta = detail?.GetRawText() ?? error,
-        });
+            UserId = userId,
+            UserKeyId = userKeyId,
+        };
+        db.UsageHistory.Add(usageRow);
         db.RequestDetails.Add(new RequestDetail
         {
             Id = Guid.NewGuid().ToString("N"),
@@ -351,6 +355,12 @@ public sealed class GatewayEngine(
             Data = detail?.GetRawText() ?? error ?? "{}",
         });
         await db.SaveChangesAsync();
+        // SPEC-111: spend da vk + débito no ledger — caminho sync (sem writer).
+        if (userId is not null || userKeyId is not null)
+        {
+            await UsageSideEffects.ApplyAsync(db, usageRow);
+            await db.SaveChangesAsync();
+        }
         await RollupDailyAsync(provider, model, promptTokens, completionTokens);
 
         // SPEC-039: credit tokens to matching rate-limit windows (tpm accounting)

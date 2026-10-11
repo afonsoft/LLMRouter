@@ -24,6 +24,9 @@ public sealed class ConnectProxy : BackgroundService
 {
     private readonly IServiceScopeFactory _sf;
     private readonly int _port;
+    private static int _active;
+    /// <summary>Conexões CONNECT ativas agora (SPEC-100, mitm/status).</summary>
+    public static int ActiveConnections => _active;
     public ConnectProxy(IServiceScopeFactory sf)
     {
         _sf = sf;
@@ -67,21 +70,23 @@ public sealed class ConnectProxy : BackgroundService
         var host = hp[0];
         var port = hp.Length > 1 && int.TryParse(hp[1], out var pp) ? pp : 443;
 
-        var intercept = await TlsInterceptEnabledAsync(ct);
+        // SPEC-100: tlsIntercept + per-host intercept policy + capture mode.
+        var cfg = await MitmPolicy.ReadAsync(_sf, ct);
         await stream.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray(), ct);
 
-        if (!intercept)
+        if (!cfg.TlsIntercept || !cfg.ShouldIntercept(host))
         {
             await TunnelAsync(stream, host, port, ct);
             return;
         }
-        await InterceptAsync(stream, host, port, head.Value.headers, ct);
+        await InterceptAsync(stream, host, port, head.Value.headers, cfg.CaptureMode, ct);
     }
 
     private static async Task TunnelAsync(NetworkStream client, string host, int port, CancellationToken ct)
     {
         try
         {
+            Interlocked.Increment(ref _active);
             using var remote = new TcpClient();
             await remote.ConnectAsync(host, port, ct);
             var rs = remote.GetStream();
@@ -90,6 +95,7 @@ public sealed class ConnectProxy : BackgroundService
             await Task.WhenAny(c2r, r2c);
         }
         catch { /* best-effort: failure is non-fatal */ }
+        finally { Interlocked.Decrement(ref _active); }
     }
 
     private static async Task PumpAsync(Stream from, Stream to, CancellationToken ct)
@@ -106,7 +112,15 @@ public sealed class ConnectProxy : BackgroundService
     }
 
     private async Task InterceptAsync(NetworkStream clientRaw, string host, int port,
-        string headers, CancellationToken ct)
+        string headers, string captureMode, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _active);
+        try { await InterceptCoreAsync(clientRaw, host, port, headers, captureMode, ct); }
+        finally { Interlocked.Decrement(ref _active); }
+    }
+
+    private async Task InterceptCoreAsync(NetworkStream clientRaw, string host, int port,
+        string headers, string captureMode, CancellationToken ct)
     {
         // server-side TLS to the client, cert minted for `host` by our CA
         using var server = new SslStream(clientRaw, false);
@@ -133,6 +147,14 @@ public sealed class ConnectProxy : BackgroundService
                 if (req is null) break;
                 var (method, path, reqHeaders, body, keepAlive) = req.Value;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                // SPEC-100: WebSocket upgrade — captura o handshake e vira relay cego
+                // TLS↔TLS pelo resto da conexão (frames WS não são HTTP).
+                if (reqHeaders.Contains("Upgrade: websocket", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WsRelayAsync(server, host, port, method, path, reqHeaders, body,
+                        headers, captureMode, ct);
+                    break;
+                }
                 HttpResponseMessage resp;
                 try
                 {
@@ -162,16 +184,20 @@ public sealed class ConnectProxy : BackgroundService
                     var headBytes = Encoding.ASCII.GetBytes(sb.ToString());
                     await server.WriteAsync(headBytes, ct);
                     await server.WriteAsync(respBody, ct);
-                    if (TrafficCapture.Enabled)
+                    if (TrafficCapture.Enabled && captureMode != "none")
                         TrafficCapture.Add(new(Guid.NewGuid().ToString("N")[..10], DateTime.UtcNow,
                             method, host, path, (int)resp.StatusCode, (int)sw.ElapsedMilliseconds,
                             body.Length, respBody.Length,
                             headers + reqHeaders,
-                            body.Length is > 0 and < 65_536 ? Encoding.UTF8.GetString(body) : null,
+                            captureMode == "headers"
+                                ? null
+                                : body.Length is > 0 and < 65_536 ? Encoding.UTF8.GetString(body) : null,
                             string.Join("\n", resp.Headers.Concat(resp.Content.Headers)
                                 .Select(h => $"{h.Key}: {string.Join(",", h.Value)}")),
-                            respBody.Length is > 0 and < 65_536
-                                ? Encoding.UTF8.GetString(respBody) : $"<{respBody.Length} bytes>"));
+                            captureMode == "headers"
+                                ? null
+                                : respBody.Length is > 0 and < 65_536
+                                    ? Encoding.UTF8.GetString(respBody) : $"<{respBody.Length} bytes>"));
                     if (!keepAlive) break;
                 }
                 catch (Exception ex)
@@ -248,20 +274,46 @@ public sealed class ConnectProxy : BackgroundService
         return null;
     }
 
-    private async Task<bool> TlsInterceptEnabledAsync(CancellationToken ct)
+    /// <summary>
+    /// SPEC-100: WebSocket upgrade no meio do loop intercept — conecta TLS ao
+    /// remote como cliente, reenvia o upgrade request cru, captura a linha do
+    /// handshake no TrafficCapture e depois pumppa bytes nos dois sentidos
+    /// (frames WS não são parseáveis como HTTP).
+    /// </summary>
+    private static async Task WsRelayAsync(SslStream clientTls, string host, int port,
+        string method, string path, string reqHeaders, byte[] body,
+        string connHeaders, string captureMode, CancellationToken ct)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            using var scope = _sf.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
-            var row = await db.Settings.FindAsync([1], ct);
-            if (row?.Data is null) return false;
-            var d = JsonDocument.Parse(row.Data).RootElement;
-            return d.TryGetProperty("mitm", out var m)
-                && m.TryGetProperty("tlsIntercept", out var t)
-                && t.ValueKind == JsonValueKind.True;
+            using var remote = new TcpClient();
+            await remote.ConnectAsync(host, port, ct);
+            var remoteTls = new SslStream(remote.GetStream(), false);
+            await remoteTls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+            { TargetHost = host }, ct);
+
+            // reenvia o request de upgrade exatamente como veio
+            var fwd = new StringBuilder();
+            fwd.Append($"{method} {path} HTTP/1.1\r\nHost: {host}\r\n");
+            fwd.Append(reqHeaders.Replace("\n", "\r\n"));
+            fwd.Append("\r\n\r\n");
+            var head = Encoding.Latin1.GetBytes(fwd.ToString());
+            await remoteTls.WriteAsync(head, ct);
+            if (body.Length > 0) await remoteTls.WriteAsync(body, ct);
+
+            if (TrafficCapture.Enabled && captureMode != "none")
+                TrafficCapture.Add(new(Guid.NewGuid().ToString("N")[..10], DateTime.UtcNow,
+                    method, host, path, 101, (int)sw.ElapsedMilliseconds,
+                    body.Length, 0,
+                    connHeaders + reqHeaders, null,
+                    "upgrade: websocket", null));
+
+            var c2r = PumpAsync(clientTls, remoteTls, ct);
+            var r2c = PumpAsync(remoteTls, clientTls, ct);
+            await Task.WhenAny(c2r, r2c);
         }
-        catch { return false; }
+        catch { /* best-effort: relay falhou → fecha a conexão */ }
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, X509Certificate2> Certs = new();

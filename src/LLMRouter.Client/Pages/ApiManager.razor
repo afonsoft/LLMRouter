@@ -14,6 +14,34 @@
     </button>
 </div>
 
+<div class="card card-p mt-4">
+    <div class="flex between">
+        <div>
+            <h3 class="bold" style="margin:0 0 4px">@Loc.T("keys.routing", "API key routing")</h3>
+            <p class="muted sm" style="margin:0">@Loc.T("keys.routingDesc", "Bind models/reasoning levels to specific keys — open a key's routing editor")</p>
+        </div>
+        @if (_keys.Count > 0)
+        {
+            <a class="btn" href="/dashboard/api-manager/@_keys[0].Id/routing">@Loc.T("keys.configureRouting", "Configure routing")</a>
+        }
+    </div>
+</div>
+
+<div class="card card-p mt-4">
+    <div class="flex" style="gap:10px;flex-wrap:wrap;align-items:center">
+        <div class="tabs" style="margin:0">
+            @foreach (var f in _filters)
+            {
+                <a class="tab @(_filter == f.Id ? "on" : "")" href="/dashboard/api-manager" @onclick="() => _filter = f.Id" @onclick:preventDefault>@f.Label (@CountFor(f.Id))</a>
+            }
+        </div>
+        <input class="input" style="max-width:240px" placeholder="@Loc.T("common.search", "Search…")" @bind="_q" @bind:event="oninput" />
+        <label class="flex muted sm" style="gap:6px;align-items:center">
+            <input type="checkbox" @bind="_activeOnly" /> @Loc.T("keys.activeOnly", "Active only")
+        </label>
+    </div>
+</div>
+
 @if (_expiring.Count > 0)
 {
     <div class="card card-p mt-4" style="border-left:3px solid var(--warn,#e6a23c)">
@@ -29,53 +57,54 @@
     </div>
 }
 
-<div class="card mt-6 scroll-x">
-    <table class="table">
-        <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>@Loc.T("keys.key", "Key")</th><th>@Loc.T("keys.status", "Status")</th><th>@Loc.T("keys.limits", "Limits")</th><th>@Loc.T("keys.created", "Created")</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var k in _keys)
+<div class="grid mt-4" style="grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px">
+    @foreach (var k in Visible())
+    {
+        <div class="card card-p">
+            <div class="flex between" style="margin-bottom:8px">
+                <div class="flex" style="gap:8px;align-items:center;min-width:0">
+                    <span class="material-symbols-outlined" style="font-size:18px;color:var(--muted)">vpn_key</span>
+                    <h3 class="bold" style="margin:0;overflow:hidden;text-overflow:ellipsis">@k.Name</h3>
+                </div>
+                <span class="badge @(k.IsActive ? "ok" : "err")">@(k.IsActive ? "active" : "disabled")</span>
+            </div>
+            <div class="mono sm" style="display:flex;align-items:center;gap:4px">
+                @( _reveal == k.Id ? k.Key : k.Key[..Math.Min(10, k.Key.Length)] + "…" )
+                <button class="icon-btn" style="width:26px;height:26px" @onclick="() => Reveal(k)">
+                    <span class="material-symbols-outlined" style="font-size:14px">@(_reveal == k.Id ? "visibility_off" : "visibility")</span>
+                </button>
+                <button class="icon-btn" style="width:26px;height:26px" @onclick="() => Copy(k.Key)">
+                    <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
+                </button>
+            </div>
+            <div class="flex muted sm mt-1" style="gap:10px;flex-wrap:wrap">
+                <span class="badge info">@LimitSummary(k)</span>
+                <span>created @k.CreatedAt</span>
+            </div>
+            <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
+                <a class="btn btn-sm" href="/dashboard/api-manager/@k.Id/routing">Routing</a>
+                <button class="btn btn-sm" @onclick="() => OpenLimits(k)">@Loc.T("keys.limitsBtn", "Limits")</button>
+                <button class="btn btn-sm" @onclick="() => Regenerate(k)">@Loc.T("keys.regenerate", "Regenerate")</button>
+                <button class="btn btn-sm" @onclick="() => Toggle(k)">@(k.IsActive ? "Disable" : "Enable")</button>
+                <button class="btn btn-sm btn-danger" @onclick="() => Delete(k.Id)">Delete</button>
+            </div>
+            @if (_limitsFor == k.Id)
             {
-                <tr>
-                    <td>@k.Name</td>
-                    <td class="mono sm">
-                        @( _reveal == k.Id ? k.Key : k.Key[..Math.Min(10, k.Key.Length)] + "…" )
-                        <button class="icon-btn" style="width:26px;height:26px;margin-left:6px" @onclick="() => Reveal(k)">
-                            <span class="material-symbols-outlined" style="font-size:14px">@(_reveal == k.Id ? "visibility_off" : "visibility")</span>
-                        </button>
-                        <button class="icon-btn" style="width:26px;height:26px" @onclick="() => Copy(k.Key)">
-                            <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
-                        </button>
-                    </td>
-                    <td><span class="badge @(k.IsActive ? "ok" : "err")">@(k.IsActive ? "active" : "off")</span></td>
-                    <td class="sm muted">@LimitSummary(k)</td>
-                    <td class="muted sm">@k.CreatedAt</td>
-                    <td class="flex gap-2" style="flex-wrap:wrap">
-                        <button class="btn btn-sm" @onclick="() => OpenLimits(k)">@Loc.T("keys.limitsBtn", "Limits")</button>
-                        <button class="btn btn-sm" @onclick="() => Regenerate(k)">@Loc.T("keys.regenerate", "Regenerate")</button>
-                        <button class="btn btn-sm" @onclick="() => Toggle(k)">@(k.IsActive ? "Disable" : "Enable")</button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(k.Id)">Delete</button>
-                    </td>
-                </tr>
-                @if (_limitsFor == k.Id)
-                {
-                    <tr><td colspan="6">
-                        <div class="flex gap-2" style="flex-wrap:wrap;align-items:end;padding:8px 0">
-                            <div><label class="muted sm">rpm</label><input class="input" style="width:100px" type="number" @bind="_lim.Rpm" /></div>
-                            <div><label class="muted sm">tpm</label><input class="input" style="width:110px" type="number" @bind="_lim.Tpm" /></div>
-                            <div><label class="muted sm">dailyTokens</label><input class="input" style="width:120px" type="number" @bind="_lim.DailyTokens" /></div>
-                            <button class="btn btn-sm btn-primary" @onclick="() => SaveLimits(k)">@Loc.T("common.save", "Save")</button>
-                            <span class="muted sm">@Loc.T("keys.dailyUsed", "used today"): @_dailyUsed</span>
-                        </div>
-                    </td></tr>
-                }
+                <div class="flex gap-2 mt-2" style="flex-wrap:wrap;align-items:end;border-top:1px solid var(--border);padding-top:10px">
+                    <div><label class="muted sm">rpm</label><input class="input" style="width:100px" type="number" @bind="_lim.Rpm" /></div>
+                    <div><label class="muted sm">tpm</label><input class="input" style="width:110px" type="number" @bind="_lim.Tpm" /></div>
+                    <div><label class="muted sm">dailyTokens</label><input class="input" style="width:120px" type="number" @bind="_lim.DailyTokens" /></div>
+                    <button class="btn btn-sm btn-primary" @onclick="() => SaveLimits(k)">@Loc.T("common.save", "Save")</button>
+                    <span class="muted sm">@Loc.T("keys.dailyUsed", "used today"): @_dailyUsed</span>
+                </div>
             }
-            @if (_keys.Count == 0)
-            {
-                <tr><td colspan="6"><div class="empty"><span class="material-symbols-outlined">vpn_key</span>@Loc.T("keys.empty", "No API keys — create one to start using the gateway")</div></td></tr>
-            }
-        </tbody>
-    </table>
+        </div>
+    }
 </div>
+@if (Visible().Length == 0)
+{
+    <div class="card mt-4"><div class="empty"><span class="material-symbols-outlined">vpn_key</span>@Loc.T("keys.empty", "No API keys — create one to start using the gateway")</div></div>
+}
 
 <div class="card card-p mt-4">
     <div class="flex between">
@@ -120,6 +149,17 @@
     private record K(string Id, string Key, string Name, bool IsActive, string CreatedAt);
     private sealed record Lim { public int Rpm { get; set; } public int Tpm { get; set; } public int DailyTokens { get; set; } }
     private sealed class G { public string Id = ""; public string Name = ""; public List<string> KeyIds = []; }
+
+    private record Filter(string Id, string Label);
+    private static readonly Filter[] Filters =
+    [
+        new("all", "All"), new("active", "Active"), new("disabled", "Disabled"),
+        new("limited", "With limits"),
+    ];
+    private readonly Filter[] _filters = Filters;
+    private string _filter = "all";
+    private string _q = "";
+    private bool _activeOnly;
 
     private List<K> _keys = [];
     private List<G> _groups = [];
@@ -178,6 +218,25 @@
             if (ul.TryGetProperty("limits", out var l)) _limits[k.Id] = l.Clone();
         }
     }
+
+    private int CountFor(string f) => f switch
+    {
+        "active" => _keys.Count(k => k.IsActive),
+        "disabled" => _keys.Count(k => !k.IsActive),
+        "limited" => _keys.Count(HasLimits),
+        _ => _keys.Count,
+    };
+
+    private bool HasLimits(K k) =>
+        _limits.TryGetValue(k.Id, out var l) && l.ValueKind == JsonValueKind.Object && l.EnumerateObject().Any();
+
+    private K[] Visible() => _keys.Where(k =>
+        (_filter == "all" || (_filter == "active" && k.IsActive) || (_filter == "disabled" && !k.IsActive)
+         || (_filter == "limited" && HasLimits(k)))
+        && (!_activeOnly || k.IsActive)
+        && (string.IsNullOrWhiteSpace(_q)
+            || k.Name.Contains(_q, StringComparison.OrdinalIgnoreCase)
+            || k.Key.StartsWith(_q, StringComparison.OrdinalIgnoreCase))).ToArray();
 
     private string LimitSummary(K k)
     {

@@ -62,3 +62,26 @@ extras (pxpipe, basic-chat, token-saver, mitm page).
 | SPEC-014 | MITM relay + traffic inspector | pending |
 | SPEC-015 | Gamification, radar, discovery, free-tiers, leaderboard | pending |
 | SPEC-016 | CLI binary, Docker, distribution | pending |
+
+## Market-comparison specs (SPEC-101+)
+
+SPEC-001..100 closed the upstream parity roadmap (OmniRoute/9router). SPEC-101+
+come from `docs/analysis/comparativo-mercado-2026-10-11.md` (LLMRouter vs market
+gateways) — improvement work, not ports:
+
+| Spec | Title | Origin (doc §8) |
+|------|-------|-----------------|
+| SPEC-101 | OTEL + `/metrics` Prometheus export | quick win 1 |
+| SPEC-102 | Request-level routing hints (OpenRouter `provider` object) | quick win 2 |
+| SPEC-103 | Audit/telemetry retention TTL + purge job | quick win 3 |
+| SPEC-104 | Config-as-code export/import/diff | quick win 4 |
+| SPEC-105 | Public benchmark methodology | quick win 5 |
+| SPEC-106 | Semantic cache (opt-in) | medium 6 |
+| SPEC-107 | Response guardrails + PII redaction | medium 7 |
+| SPEC-108 | Async usage sink | medium 8 |
+| SPEC-109 | EF Core migrations | medium 9 |
+| SPEC-110 | Tamper-evident audit hash-chain | structural 12 |
+
+Multi-user/RBAC/OIDC + Redis multi-node + OpenRouter-style API resale are
+documented as future evolution in
+`docs/analysis/evolucao-multiuser-openrouter.md` (depends on SPEC-109 first).

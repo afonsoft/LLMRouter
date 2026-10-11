@@ -161,6 +161,14 @@ i18n en/pt-BR/es, db-backups export/import.
 
 ## 8. O que melhorar — priorizado
 
+> **Atualização 2026-10-11**: itens aprovados viraram specs —
+> SPEC-101 (OTEL) · SPEC-102 (routing hints) · SPEC-103 (retenção) · SPEC-104
+> (config-as-code) · SPEC-105 (benchmark) · SPEC-106 (cache semântico) ·
+> SPEC-107 (response guardrails) · SPEC-108 (usage sink) · SPEC-109 (migrations) ·
+> SPEC-110 (audit hash-chain). Itens 10–11 (multi-usuário/RBAC/OIDC + Redis
+> multi-node + modelo de venda estilo OpenRouter) documentados como evolução
+> futura em `docs/analysis/evolucao-multiuser-openrouter.md`.
+
 **Quick wins (alto valor / baixo custo):**
 1. **OTEL + Prometheus**: `System.Diagnostics.Metrics` + OTLP exporter + `/metrics`
    (rps, latency por provider/model, tokens, custo, breaker state, cache hit-rate).

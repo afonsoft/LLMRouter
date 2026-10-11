@@ -1,6 +1,7 @@
 @page "/dashboard/combos"
 @inject Api Api
 @inject Loc Loc
+@inject IJSRuntime JS
 
 <div class="flex between">
     <div>
@@ -21,6 +22,57 @@
 
 @if (_tab == "combos")
 {
+    @* SPEC-119: dismissible 3-step onboarding, upstream "Getting Started". *@
+    @if (!_onboardDismissed)
+    {
+        <div class="card card-p mt-4">
+            <div class="flex between">
+                <div class="bold">@Loc.T("combos.gettingStarted", "Getting Started with Combos")</div>
+                <button class="btn btn-sm" @onclick="DismissOnboarding">@Loc.T("combos.dismiss", "Dismiss")</button>
+            </div>
+            <div class="grid grid-3 mt-4">
+                <div class="col gap-2">
+                    <span class="badge info">1</span>
+                    <div class="sm">@Loc.T("combos.step1", "Add provider connections — combos route across them.")</div>
+                </div>
+                <div class="col gap-2">
+                    <span class="badge info">2</span>
+                    <div class="sm">@Loc.T("combos.step2", "Create a combo and order its model cascade.")</div>
+                </div>
+                <div class="col gap-2">
+                    <span class="badge info">3</span>
+                    <div class="sm">@Loc.T("combos.step3", "Point clients at the combo name as the model.")</div>
+                </div>
+            </div>
+        </div>
+    }
+    @* SPEC-119: alert banners row — missing default combo + health issues. *@
+    @if (!string.IsNullOrEmpty(_defaultCombo) && !_combos.Any(c => c.Name == _defaultCombo))
+    {
+        <div class="card card-p mt-4" style="border-left:3px solid var(--amber,#f5a524)">
+            <div class="flex gap-2 items-center">
+                <span class="material-symbols-outlined" style="font-size:18px;color:var(--amber,#f5a524)">warning</span>
+                <div class="sm">@Loc.T("combos.missingDefault", $"Default combo '{_defaultCombo}' is not defined — requests without a model will fail.")</div>
+            </div>
+        </div>
+    }
+    @if (_healthIssues > 0)
+    {
+        <div class="card card-p mt-4" style="border-left:3px solid var(--amber,#f5a524)">
+            <div class="flex gap-2 items-center">
+                <span class="material-symbols-outlined" style="font-size:18px;color:var(--amber,#f5a524)">monitor_heart</span>
+                <div class="sm">@Loc.T("combos.healthIssues", $"Health Agent: {_healthIssues} combo issue(s) detected — see Analytics → Combo health.")</div>
+            </div>
+        </div>
+    }
+    <div class="flex gap-2 mt-4 items-center" style="flex-wrap:wrap">
+        <div class="seg">
+            <button class="seg-btn @(_kind == "all" ? "on" : "")" @onclick='() => _kind = "all"'>@Loc.T("combos.all", "All") @_combos.Count</button>
+            <button class="seg-btn @(_kind == "intelligent" ? "on" : "")" @onclick='() => _kind = "intelligent"'>@Loc.T("combos.intelligent", "Intelligent") @_combos.Count(c => IsIntelligent(c.Kind))</button>
+            <button class="seg-btn @(_kind == "deterministic" ? "on" : "")" @onclick='() => _kind = "deterministic"'>@Loc.T("combos.deterministic", "Deterministic") @_combos.Count(c => !IsIntelligent(c.Kind))</button>
+        </div>
+        <input class="input" style="max-width:260px" placeholder="@Loc.T("combos.search", "Search combos…")" @bind="_q" @bind:event="oninput" />
+    </div>
     <div class="card card-p mt-4">
         <div class="flex between">
             <div class="bold">@Loc.T("combos.defaults", "Defaults")</div>
@@ -41,7 +93,7 @@
         </div>
     </div>
     <div class="card card-p mt-4">
-        <div class="flex between"><div class="bold">@Loc.T("combos.auto", "Auto combos")</div></div>
+        <div class="flex between"><div class="bold">@Loc.T("combos.autoCatalog", "Auto-routing catalog")</div></div>
         <div class="muted sm mt-2">@Loc.T("combos.autoHint", "Virtual combos resolved live from the candidate pool — usable as model auto/x")</div>
         @foreach (var a in _autoCombos)
         {
@@ -59,7 +111,7 @@
         }
     </div>
     <div class="grid grid-2 mt-4">
-        @foreach (var c in _combos)
+        @foreach (var c in CombosFiltered())
         {
             <div class="card card-p">
                 <div class="flex between">
@@ -80,13 +132,10 @@
                         <button class="btn btn-sm btn-danger" @onclick="() => Delete(c.Id!)">Delete</button>
                     </div>
                 </div>
-                <div class="col gap-2 mt-4">
+                <div class="flex gap-2 mt-4" style="flex-wrap:wrap">
                     @foreach (var (m, i) in c.ModelsList.Select((x, i) => (x, i)))
                     {
-                        <div class="flex gap-2">
-                            <span class="badge">@(i + 1)</span>
-                            <span class="mono sm">@m</span>
-                        </div>
+                        <span class="chip" title="@m"><span class="muted xs">@(i + 1)</span> @m</span>
                     }
                 </div>
                 @if (_testResults.TryGetValue(c.Id ?? "", out var tr))
@@ -111,6 +160,10 @@
         @if (_combos.Count == 0)
         {
             <div class="card"><div class="empty"><span class="material-symbols-outlined">layers</span>@Loc.T("combos.empty", "No combos yet")</div></div>
+        }
+        else if (!CombosFiltered().Any())
+        {
+            <div class="card"><div class="empty"><span class="material-symbols-outlined">search_off</span>@Loc.T("combos.noMatch", "No combos match this filter")</div></div>
         }
     </div>
 }
@@ -245,7 +298,43 @@ else
     private Dictionary<string, List<PoolProbe>> _testResults = [];
     private List<AutoVm> _autoCombos = [];
     private Dictionary<string, string> _dupNames = [];
+    private string _q = "";
+    private string _kind = "all";
+    private bool _onboardDismissed = true;
+    private int _healthIssues;
     private sealed class AutoVm { public string Id = ""; public string Description = ""; public int Count; }
+
+    private static readonly HashSet<string> IntelligentKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "auto", "fusion", "pipeline", "lkgp", "context-optimized", "context-relay",
+        "cache-optimized", "cost-optimized", "quota-weighted", "reset-aware",
+        "reset-window", "headroom", "p2c", "least-used",
+    };
+    private static bool IsIntelligent(string? kind) => kind is not null && IntelligentKinds.Contains(kind);
+
+    private IEnumerable<ComboVm> CombosFiltered() => _combos.Where(c =>
+        (_kind == "all" || (_kind == "intelligent") == IsIntelligent(c.Kind))
+        && (string.IsNullOrWhiteSpace(_q) || c.Name.Contains(_q, StringComparison.OrdinalIgnoreCase)
+            || c.ModelsList.Any(m => m.Contains(_q, StringComparison.OrdinalIgnoreCase))));
+
+    private async Task DismissOnboarding()
+    {
+        _onboardDismissed = true;
+        try { await JS.InvokeVoidAsync("localStorage.setItem", "llmr_combos_onboarding", "1"); }
+        catch (JSException) { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var v = await JS.InvokeAsync<string?>("localStorage.getItem", "llmr_combos_onboarding");
+            _onboardDismissed = v == "1";
+        }
+        catch (JSException) { _onboardDismissed = false; }
+        StateHasChanged();
+    }
     private sealed class PoolProbe { public string Model = ""; public bool Ok; public long? LastLatencyMs; }
 
     protected override async Task OnInitializedAsync() => await Load();
@@ -265,6 +354,15 @@ else
         var cd = await Api.GetAsync("api/settings/combo-defaults");
         _defaultCombo = cd.TryGetProperty("defaultCombo", out var dcv) ? dcv.GetString() ?? "" : "";
         _handoffModel = cd.TryGetProperty("handoffModel", out var hmv) ? hmv.GetString() ?? "" : "";
+        try
+        {
+            var ch = await Api.GetAsync("api/usage/combo-health");
+            _healthIssues = ch.TryGetProperty("autopilot", out var ap)
+                && ap.TryGetProperty("summary", out var sm)
+                && sm.TryGetProperty("issueCount", out var ic)
+                ? ic.GetInt32() : 0;
+        }
+        catch (HttpRequestException) { _healthIssues = 0; }
         var ac = await Api.GetAsync("api/combos/auto");
         _autoCombos = ac.GetProperty("combos").EnumerateArray().Select(x => new AutoVm
         {

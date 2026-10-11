@@ -5,8 +5,16 @@
 <h1 class="page-title">@Loc.T("models.title", "Models & Combos")</h1>
 <p class="page-desc">@Loc.T("models.subtitle", "All models reachable through your connections")</p>
 
-<div class="mt-4 flex gap-2" style="align-items:center">
-    <input class="input" style="max-width:340px" placeholder="@Loc.T("models.search", "Search models…")" @bind="_q" @bind:event="oninput" />
+<div class="mt-4 flex gap-2" style="align-items:center;flex-wrap:wrap">
+    <input class="input" style="max-width:340px" placeholder="@Loc.T("models.search", "Search models, providers, capabilities…")" @bind="_q" @bind:event="oninput" />
+    <select class="input" style="max-width:180px" @bind="_provider">
+        <option value="">@Loc.T("models.allProviders", "All providers")</option>
+        @foreach (var p in _providers) { <option value="@p">@p</option> }
+    </select>
+    <select class="input" style="max-width:160px" @bind="_type">
+        <option value="">@Loc.T("models.allTypes", "All types")</option>
+        @foreach (var t in new[] { "chat", "vision", "embedding", "audio", "combo" }) { <option value="@t">@t</option> }
+    </select>
     <button class="btn" @onclick="() => Reload(true)" disabled="@_loading">
         <span class="material-symbols-outlined" style="font-size:16px">refresh</span>
         @Loc.T("models.fetchLive", "Fetch live")
@@ -16,15 +24,21 @@
 
 <div class="card mt-4 scroll-x">
     <table class="table">
-        <thead><tr><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.context", "Context")</th><th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("providers.name", "Connection")</th></tr></thead>
+        <thead><tr><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("models.type", "Type")</th><th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("models.context", "Context")</th><th>@Loc.T("providers.name", "Connection")</th></tr></thead>
         <tbody>
             @foreach (var m in Filtered().Take(500))
             {
                 <tr>
-                    <td class="mono sm">@m.Model</td>
                     <td><span class="badge info">@m.Provider</span></td>
+                    <td class="mono sm">@m.Model</td>
+                    <td><span class="chip @(m.IsCombo ? "chip-blue" : "")">@(m.IsCombo ? "combo" : TypeOf(m))</span></td>
+                    <td>
+                        @foreach (var cap in m.Caps.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <span class="chip" style="margin-right:4px">@cap</span>
+                        }
+                    </td>
                     <td class="muted sm">@(m.ContextLength?.ToString("N0") ?? "—")</td>
-                    <td class="xs muted">@m.Caps</td>
                     <td class="muted sm">@m.Connection</td>
                 </tr>
             }
@@ -137,12 +151,18 @@
 </div>
 
 @code {
-    private record M(string Model, string Provider, int? ContextLength, string Caps, string Connection);
+    private record M(string Model, string Provider, int? ContextLength, string Caps, string Connection)
+    {
+        public bool IsCombo => Provider == "combo";
+    }
     private record OverrideRow(string Id, string Provider, string Model, string Caps, string UpdatedAt);
     private record SyncedRow(string Provider, string Model, bool Available, string LastSyncAt);
 
     private List<M> _models = [];
     private string _q = "";
+    private string _provider = "";
+    private string _type = "";
+    private List<string> _providers = [];
     private bool _loading;
 
     private static readonly string[] _capNames =
@@ -177,12 +197,32 @@
                 m.TryGetProperty("contextLength", out var cl) && cl.ValueKind == JsonValueKind.Number ? cl.GetInt32() : null,
                 caps, m.GetProperty("connection").GetString() ?? ""));
         }
+        // combo entries flagged type=combo (upstream catalog keeps them in the same table)
+        var cb = await Api.GetAsync("api/combos");
+        foreach (var c in cb.GetProperty("combos").EnumerateArray())
+        {
+            var models = c.TryGetProperty("models", out var mm)
+                ? string.Join(", ", JsonSerializer.Deserialize<List<string>>(mm.GetRawText()) ?? []) : "";
+            _models.Add(new(c.GetProperty("name").GetString() ?? "", "combo", null,
+                c.TryGetProperty("kind", out var kk) ? kk.GetString() ?? "" : "", models));
+        }
+        _providers = _models.Select(m => m.Provider).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x).ToList();
     }
 
-    private IEnumerable<M> Filtered() => string.IsNullOrWhiteSpace(_q)
-        ? _models
-        : _models.Where(m => m.Model.Contains(_q, StringComparison.OrdinalIgnoreCase)
-            || m.Provider.Contains(_q, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<M> Filtered() => _models.Where(m =>
+        (string.IsNullOrWhiteSpace(_q) || m.Model.Contains(_q, StringComparison.OrdinalIgnoreCase)
+            || m.Provider.Contains(_q, StringComparison.OrdinalIgnoreCase)
+            || m.Caps.Contains(_q, StringComparison.OrdinalIgnoreCase))
+        && (_provider == "" || m.Provider == _provider)
+        && (_type == "" || (m.IsCombo ? _type == "combo" : TypeOf(m) == _type)));
+
+    private static string TypeOf(M m) =>
+        m.Caps.Contains("embedding", StringComparison.OrdinalIgnoreCase) ? "embedding"
+        : m.Caps.Contains("audio", StringComparison.OrdinalIgnoreCase) ? "audio"
+        : m.Caps.Contains("vision", StringComparison.OrdinalIgnoreCase)
+            || m.Caps.Contains("image", StringComparison.OrdinalIgnoreCase) ? "vision"
+        : "chat";
 
     private async Task LoadOverrides()
     {

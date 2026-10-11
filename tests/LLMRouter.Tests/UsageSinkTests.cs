@@ -128,10 +128,19 @@ public sealed class UsageSinkTests : IDisposable
         for (var i = 0; i < 7; i++) await _writer.PostUsageAsync(Row(i));
         // Stop completes the writers; the worker drains the remainder in ≤5s.
         await _writer.StopAsync(CancellationToken.None);
+        // StopAsync's 5s budget bounds the WAIT, not the drain — under a loaded
+        // threadpool the worker may commit right after StopAsync returns, so
+        // poll instead of assuming the commit is visible at return.
+        try { await WaitForAsync(db => db.UsageHistory.Count() == 7, ms: 30000); }
+        catch
+        {
+            _out.WriteLine($"applied={_writer.RowsApplied} batches={_writer.BatchesCommitted} drained={_writer.DrainedRows} collected={_writer.Collected} dropped={_writer.UsageDropped}");
+            _out.WriteLine("logs=[" + string.Join(" | ", _log.Lines) + "]");
+            throw;
+        }
         _out.WriteLine($"applied={_writer.RowsApplied} batches={_writer.BatchesCommitted} drained={_writer.DrainedRows} collected={_writer.Collected} dropped={_writer.UsageDropped}");
         _out.WriteLine("logs=[" + string.Join(" | ", _log.Lines) + "]");
         await using var db = Db();
-        _out.WriteLine("usage=" + db.UsageHistory.Count() + " details=" + db.RequestDetails.Count());
         db.UsageHistory.Count().ShouldBe(7, string.Join("\n", _log.Lines));
         db.RequestDetails.Count().ShouldBe(7);
     }

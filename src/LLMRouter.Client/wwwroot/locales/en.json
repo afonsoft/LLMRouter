@@ -5075,7 +5075,11 @@
   "policies": "Routing policies",
   "sessions": "Chat sessions",
   "tags": "Tags",
-  "modelCooldowns": "Model cooldowns"
+  "modelCooldowns": "Model cooldowns",
+  "ready": "LLMRouter is ready",
+  "readySub": "Gateway, database and providers status",
+  "advanced": "Advanced diagnostics",
+  "migrations": "Migrations"
  },
  "telemetry": {
   "title": "System Telemetry",
@@ -15187,5 +15191,17 @@
  "error": {
   "home": "Back home"
  },
- "consoleMore": "See more logs"
+ "consoleMore": "See more logs",
+ "lb": {
+  "overall": "Overall",
+  "weekly": "Weekly",
+  "monthly": "Monthly",
+  "tokensShared": "Tokens Shared",
+  "totalRequests": "Total requests",
+  "requestsToday": "Requests today",
+  "tokensToday": "Tokens today",
+  "rank": "Rank",
+  "name": "Name",
+  "score": "Score"
+ }
 }

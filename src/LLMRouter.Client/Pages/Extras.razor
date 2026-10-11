@@ -42,6 +42,23 @@
 }
 else if (section is "gamification" or "leaderboard")
 {
+    @* SPEC-120: upstream tabs — window + tokens-shared + stat cards. *@
+    <div class="flex gap-2 items-center" style="flex-wrap:wrap">
+        <div class="seg">
+            <button class="seg-btn @(_lbWindow == "all" ? "on" : "")" @onclick='() => SetLb("all", "requests")'>@Loc.T("lb.overall", "Overall")</button>
+            <button class="seg-btn @(_lbWindow == "weekly" ? "on" : "")" @onclick='() => SetLb("weekly", "requests")'>@Loc.T("lb.weekly", "Weekly")</button>
+            <button class="seg-btn @(_lbWindow == "monthly" ? "on" : "")" @onclick='() => SetLb("monthly", "requests")'>@Loc.T("lb.monthly", "Monthly")</button>
+            <button class="seg-btn @(_lbBy == "tokens" ? "on" : "")" @onclick='() => SetLb(_lbWindow, "tokens")'>@Loc.T("lb.tokensShared", "Tokens Shared")</button>
+        </div>
+    </div>
+    @if (_lbStats.ValueKind == JsonValueKind.Object)
+    {
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:14px 0">
+            <div class="card card-p"><div class="xs muted">@Loc.T("lb.totalRequests", "Total requests")</div><div class="bold" style="font-size:22px">@_lbStats.GetProperty("totalRequests").GetInt64()</div></div>
+            <div class="card card-p"><div class="xs muted">@Loc.T("lb.requestsToday", "Requests today")</div><div class="bold" style="font-size:22px">@_lbStats.GetProperty("requestsToday").GetInt64()</div></div>
+            <div class="card card-p"><div class="xs muted">@Loc.T("lb.tokensToday", "Tokens today")</div><div class="bold" style="font-size:22px">@_lbStats.GetProperty("tokensToday").GetInt64()</div></div>
+        </div>
+    }
     @if (_gam is not null)
     {
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px">
@@ -58,11 +75,20 @@ else if (section is "gamification" or "leaderboard")
     }
     @if (_board is not null)
     {
-        <table class="tbl"><thead><tr><th>Model</th><th>Requests</th><th>Tokens</th></tr></thead>
+        <table class="tbl"><thead><tr><th>@Loc.T("lb.rank", "Rank")</th><th>@Loc.T("lb.name", "Name")</th><th>@Loc.T("lb.score", "Score")</th><th>Requests</th><th>Tokens</th></tr></thead>
         <tbody>
+        @{ var rk = 0; }
         @foreach (var r in _board)
         {
-            <tr><td>@r.GetProperty("model").GetString()</td><td>@r.GetProperty("requests").GetInt64()</td><td>@r.GetProperty("tokens").GetInt64()</td></tr>
+            rk++;
+            var score = _lbBy == "tokens" ? r.GetProperty("tokens").GetInt64() : r.GetProperty("requests").GetInt64();
+            <tr>
+                <td><span class="badge @(rk <= 3 ? "ok" : "")">#@rk</span></td>
+                <td class="mono sm">@r.GetProperty("model").GetString()</td>
+                <td class="bold">@score.ToString("N0")</td>
+                <td>@r.GetProperty("requests").GetInt64().ToString("N0")</td>
+                <td class="muted sm">@r.GetProperty("tokens").GetInt64().ToString("N0")</td>
+            </tr>
         }
         </tbody></table>
     }
@@ -284,6 +310,21 @@ else
     private string _title = "", _subtitle = "";
     private JsonElement[]? _discovered, _board, _free, _memory, _hooks, _batches, _audit, _tools;
     private JsonElement? _gam, _plugins;
+    private string _lbWindow = "all", _lbBy = "requests";
+    private JsonElement _lbStats;
+
+    private async Task SetLb(string window, string by)
+    {
+        _lbWindow = window; _lbBy = by;
+        await LoadBoard();
+    }
+
+    private async Task LoadBoard()
+    {
+        var lb = await Api.GetAsync($"api/leaderboard?window={_lbWindow}&by={_lbBy}");
+        _board = lb.GetProperty("leaderboard").EnumerateArray().ToArray();
+        _lbStats = lb.TryGetProperty("stats", out var st) ? st : default;
+    }
     private int _errorPct, _latencyMs;
     private string _memContent = "", _memTags = "", _memQ = "", _whUrl = "", _whEvents = "*";
     private string _plName = "", _plHooks = "", _stName = "", _stKind = "webFetch", _stUrl = "";
@@ -299,7 +340,7 @@ else
             case "discovery": case "radar": await Scan(); break;
             case "gamification": case "leaderboard":
                 _gam = await Api.GetAsync("api/gamification");
-                _board = (await Api.GetAsync("api/leaderboard")).GetProperty("leaderboard").EnumerateArray().ToArray();
+                await LoadBoard();
                 break;
             case "free-tiers":
                 _free = (await Api.GetAsync("api/free-tiers")).GetProperty("providers").EnumerateArray().ToArray();

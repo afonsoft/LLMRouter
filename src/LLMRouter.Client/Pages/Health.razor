@@ -148,7 +148,62 @@
 }
 else
 {
-    <div class="card card-p mt-6">
+    @* SPEC-120: top banner + operational pill, upstream health page. *@
+    <div class="card card-p mt-6" style="border-left:3px solid @(_degraded ? "var(--amber,#f5a524)" : "var(--green,#3fb950)")">
+        <div class="flex between items-center">
+            <div>
+                <div class="bold" style="font-size:16px">@Loc.T("health.ready", "LLMRouter is ready")</div>
+                <div class="muted sm">@Loc.T("health.readySub", "Gateway, database and providers status")</div>
+            </div>
+            <span class="chip @(_degraded ? "chip-amber" : "chip-green")">@(_degraded ? Loc.T("health.degraded", "Degraded") : Loc.T("health.operational", "All systems operational"))</span>
+        </div>
+    </div>
+
+    <div class="grid grid-4 mt-4">
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.uptime", "Uptime")</div>
+            <div class="bold" style="font-size:20px">@FmtUptime(_status)
+            </div>
+        </div>
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.version", "Version")</div>
+            <div class="bold" style="font-size:20px">@(_status.TryGetProperty("version", out var vv) ? vv.GetString() : "—")</div>
+        </div>
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.memory", "Memory RSS")</div>
+            <div class="bold" style="font-size:20px">@FmtBytes(_status.TryGetProperty("memoryRss", out var mr) ? mr.GetInt64() : 0)</div>
+        </div>
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.providers", "Providers")</div>
+            <div class="bold" style="font-size:20px">@(_status.TryGetProperty("providers", out var pv) ? pv.GetInt32() : 0)/@(_status.TryGetProperty("providersTotal", out var pt) ? pt.GetInt32() : 0)</div>
+        </div>
+    </div>
+
+    @* SPEC-120: advanced diagnostics — database card + auto-repair. *@
+    <div class="card card-p mt-4">
+        <div class="flex between">
+            <div class="bold">@Loc.T("health.advanced", "Advanced diagnostics")</div>
+            <button class="btn btn-sm" @onclick="AutoRepair" disabled="@_repairing">@(_repairing ? Loc.T("health.repairing", "Repairing…") : Loc.T("health.runAutoRepair", "Run Auto-Repair"))</button>
+        </div>
+        <div class="grid grid-2 mt-4">
+            <div>
+                <div class="muted sm">@Loc.T("health.database", "Database")</div>
+                <div class="flex gap-2 items-center mt-2">
+                    <span class="chip @(_dbOk ? "chip-green" : "chip-red")">@(_dbOk ? "ok" : "error")</span>
+                    <span class="muted sm mono">@_dbIntegrity</span>
+                </div>
+            </div>
+            <div>
+                <div class="muted sm">@Loc.T("health.migrations", "Migrations")</div>
+                <div class="sm mt-2">@_migApplied / @_migAvailable applied
+                    @if (_migPending > 0) { <span class="chip chip-amber" style="margin-left:6px">@_migPending pending</span> }
+                </div>
+            </div>
+        </div>
+        @if (_repairMsg is not null) { <div class="muted sm mt-2">@_repairMsg</div> }
+    </div>
+
+    <div class="card card-p mt-4">
         <table class="tbl">
             <thead><tr><th>Provider</th><th>Connection</th><th>Active</th><th>Last test</th><th>Cooldown</th><th>Error</th></tr></thead>
             <tbody>
@@ -169,6 +224,47 @@ else
         </table>
         @if (_conns.Count == 0) { <div class="empty"><span class="material-symbols-outlined">health_and_safety</span>No connections</div> }
     </div>
+
+    @* SPEC-120: Session Activity + Quota Monitors sections. *@
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.sessionActivity", "Session Activity")</div></div>
+        <table class="tbl mt-2">
+            <thead><tr><th>Key</th><th>Model</th><th>Messages</th><th>Last seen</th></tr></thead>
+            <tbody>
+                @foreach (var ss in _sessions.Take(8))
+                {
+                    <tr>
+                        <td class="mono sm">@ss.GetProperty("keyId").GetString()</td>
+                        <td class="mono sm">@ss.GetProperty("model").GetString()</td>
+                        <td>@ss.GetProperty("messageCount").GetInt32()</td>
+                        <td class="dim sm">@ss.GetProperty("lastSeenAt").GetString()</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_sessions.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">forum</span>No recent sessions</div> }
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between"><div class="bold">@Loc.T("health.quotaMonitors", "Quota Monitors")</div></div>
+        <table class="tbl mt-2">
+            <thead><tr><th>Connection</th><th>Daily</th><th>Monthly</th><th>State</th></tr></thead>
+            <tbody>
+                @foreach (var q in _quota)
+                {
+                    var exhausted = q.GetProperty("daily").GetProperty("exhausted").GetBoolean()
+                        || q.GetProperty("monthly").GetProperty("exhausted").GetBoolean();
+                    <tr>
+                        <td class="mono sm">@q.GetProperty("connectionId").GetString()</td>
+                        <td class="sm">@q.GetProperty("daily").GetProperty("used").GetInt64() / @q.GetProperty("daily").GetProperty("limit").GetInt64()</td>
+                        <td class="sm">@q.GetProperty("monthly").GetProperty("used").GetInt64() / @q.GetProperty("monthly").GetProperty("limit").GetInt64()</td>
+                        <td><span class="chip @(exhausted ? "chip-red" : "chip-green")">@(exhausted ? "exhausted" : "ok")</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_quota.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">speed</span>No quota monitors — set daily/monthly limits on connections</div> }
+    </div>
 }
 
 @code {
@@ -182,6 +278,33 @@ else
     private List<JsonElement> _tags = [];
     private string _mcProvider = "", _mcModel = "", _mcMinutes = "30", _chainName = "", _chainSteps = "";
     private string _polName = "", _polRule = "{}", _polPriority = "0", _tagType = "", _tagId = "", _tagValue = "";
+    private JsonElement _status = JsonDocument.Parse("{}").RootElement;
+    private List<JsonElement> _quota = [];
+    private bool _degraded, _dbOk = true, _repairing;
+    private string _dbIntegrity = "", _repairMsg = "";
+    private int _migApplied, _migAvailable, _migPending;
+
+    private static string FmtUptime(JsonElement st)
+    {
+        if (!st.TryGetProperty("uptimeSec", out var u)) return "—";
+        var t = TimeSpan.FromSeconds(u.GetInt32());
+        return t.Days > 0 ? $"{t.Days}d {t.Hours}h" : t.Hours > 0 ? $"{t.Hours}h {t.Minutes}m" : $"{t.Minutes}m {t.Seconds}s";
+    }
+    private static string FmtBytes(long b) =>
+        b > 1L << 30 ? $"{b / (double)(1L << 30):0.0} GB" : b > 1L << 20 ? $"{b / (double)(1L << 20):0.0} MB" : $"{b / 1024.0:0} KB";
+
+    private async Task AutoRepair()
+    {
+        _repairing = true; _repairMsg = "";
+        try
+        {
+            var r = await Api.PostAsync("api/db/autorepair", new { });
+            _repairMsg = r.TryGetProperty("integrity", out var i) ? $"integrity={i.GetString()}" : "done";
+        }
+        catch (HttpRequestException ex) { _repairMsg = ex.Message; }
+        _repairing = false;
+        await LoadStatus();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -190,6 +313,27 @@ else
         var cd = await Api.GetAsync("api/resilience/cooldowns");
         _cooldowns = cd.GetProperty("cooldowns").EnumerateArray().ToList();
         await LoadExtras();
+        await LoadStatus();
+    }
+
+    private async Task LoadStatus()
+    {
+        try
+        {
+            _status = await Api.GetAsync("api/omniroute/status");
+            var dg = await Api.GetAsync("api/health/degradation");
+            _degraded = dg.TryGetProperty("degraded", out var d) && d.GetBoolean();
+            var dbh = await Api.GetAsync("api/db/health");
+            _dbOk = dbh.TryGetProperty("ok", out var ok) && ok.GetBoolean();
+            _dbIntegrity = dbh.TryGetProperty("integrity", out var ig) ? ig.GetString() ?? "" : "";
+            var mig = await Api.GetAsync("api/db/migrations");
+            _migApplied = mig.GetProperty("applied").GetInt32();
+            _migAvailable = mig.GetProperty("available").GetInt32();
+            _migPending = mig.GetProperty("pending").GetArrayLength();
+            var q = await Api.GetAsync("api/quota");
+            _quota = q.GetProperty("quota").EnumerateArray().ToList();
+        }
+        catch (HttpRequestException) { }
     }
 
     private async Task LoadExtras()

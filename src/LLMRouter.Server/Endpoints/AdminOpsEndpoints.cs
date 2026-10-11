@@ -142,6 +142,42 @@ public static class AdminOpsEndpoints
             return Results.Json(new { ok = integrity == "ok", integrity, tables }, JsonOpts);
         });
 
+        // SPEC-120: advanced diagnostics — EF migration drift + admin auto-repair.
+        g.MapGet("/db/migrations", async (LlmRouterDbContext db) =>
+        {
+            var applied = (await db.Database.GetAppliedMigrationsAsync()).OrderBy(x => x).ToList();
+            var available = db.Database.GetMigrations().OrderBy(x => x).ToList();
+            var pending = available.Except(applied).ToList();
+            return Results.Json(new
+            {
+                applied = applied.Count, available = available.Count, pending,
+                ok = pending.Count == 0,
+            }, JsonOpts);
+        });
+        g.MapPost("/db/autorepair", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            // admin-only: dashboard session cookie, not an api key
+            if (ctx.User.Identity?.IsAuthenticated != true)
+                return Results.Json(new { error = "admin_required" }, JsonOpts, statusCode: 403);
+            var pendingBefore = db.Database.GetMigrations()
+                .Except(await db.Database.GetAppliedMigrationsAsync()).Count();
+            if (pendingBefore > 0) await db.Database.MigrateAsync();
+            string integrity;
+            try
+            {
+                var conn = db.Database.GetDbConnection();
+                await conn.OpenAsync();
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "PRAGMA integrity_check";
+                integrity = (await cmd.ExecuteScalarAsync())?.ToString() ?? "unknown";
+                await conn.CloseAsync();
+            }
+            catch (Exception ex) { integrity = $"error: {ex.Message}"; }
+            await Core.Extras.Extras.AuditAsync(db, "db.autorepair",
+                $"migrationsApplied={pendingBefore} integrity={integrity}");
+            return Results.Json(new { ok = integrity == "ok", integrity, migrationsApplied = pendingBefore }, JsonOpts);
+        });
+
         // ---- omniroute compat status + route preview (reuse simulate)
         g.MapGet("/omniroute/status", async (LlmRouterDbContext db) => Results.Json(new
         {
@@ -150,6 +186,8 @@ public static class AdminOpsEndpoints
             uptimeSec = (int)(DateTime.UtcNow - Started).TotalSeconds,
             headless = Environment.GetEnvironmentVariable("LLMROUTER_HEADLESS") == "1",
             providers = await db.ProviderConnections.CountAsync(c => c.IsActive),
+            providersTotal = await db.ProviderConnections.CountAsync(),
+            memoryRss = Environment.WorkingSet,
             combos = await db.Combos.CountAsync(),
         }, JsonOpts));
 

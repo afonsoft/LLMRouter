@@ -5070,7 +5070,11 @@
   "policies": "Políticas de roteamento",
   "sessions": "Sessões de chat",
   "tags": "Tags",
-  "modelCooldowns": "Cooldowns de modelo"
+  "modelCooldowns": "Cooldowns de modelo",
+  "ready": "LLMRouter está pronto",
+  "readySub": "Status do gateway, banco e providers",
+  "advanced": "Diagnósticos avançados",
+  "migrations": "Migrations"
  },
  "telemetry": {
   "title": "Telemetria do Sistema",
@@ -15126,5 +15130,17 @@
   "empty": "Nenhuma conexão OAuth ainda",
   "waiting": "Aguardando autorização…"
  },
- "consoleMore": "Ver mais logs"
+ "consoleMore": "Ver mais logs",
+ "lb": {
+  "overall": "Geral",
+  "weekly": "Semanal",
+  "monthly": "Mensal",
+  "tokensShared": "Tokens Compartilhados",
+  "totalRequests": "Total de requests",
+  "requestsToday": "Requests hoje",
+  "tokensToday": "Tokens hoje",
+  "rank": "Rank",
+  "name": "Nome",
+  "score": "Score"
+ }
 }

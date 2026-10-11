@@ -106,17 +106,38 @@ public static class ExtrasEndpoints
             return Results.Json(new { xp, level, badges, requests, tokens, providers }, JsonOpts);
         });
 
-        g.MapGet("/leaderboard", async (LlmRouterDbContext db) =>
+        g.MapGet("/leaderboard", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
-            var rows = await db.UsageHistory
+            // SPEC-120: upstream tabs — window=all|weekly|monthly, by=requests|tokens.
+            var window = ctx.Request.Query["window"].FirstOrDefault() ?? "all";
+            var by = ctx.Request.Query["by"].FirstOrDefault() ?? "requests";
+            var since = window switch
+            {
+                "weekly" => DateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-dd HH:mm:ss"),
+                "monthly" => DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-dd HH:mm:ss"),
+                _ => "",
+            };
+            var scoped = since == ""
+                ? db.UsageHistory
+                : db.UsageHistory.Where(r => string.Compare(r.Timestamp, since) >= 0);
+            var rowsQ = scoped
                 .GroupBy(r => r.Model ?? "unknown")
-                .Select(x => new { model = x.Key, requests = x.LongCount(), tokens = x.Sum(r => r.PromptTokens + r.CompletionTokens) })
-                .OrderByDescending(x => x.requests).Take(20).ToListAsync();
-            var byProvider = await db.UsageHistory
+                .Select(x => new { model = x.Key, requests = x.LongCount(), tokens = x.Sum(r => r.PromptTokens + r.CompletionTokens) });
+            var rows = (by == "tokens" ? rowsQ.OrderByDescending(x => x.tokens) : rowsQ.OrderByDescending(x => x.requests))
+                .Take(20).ToList();
+            var byProvider = await scoped
                 .GroupBy(r => r.Provider ?? "unknown")
                 .Select(x => new { provider = x.Key, requests = x.LongCount(), tokens = x.Sum(r => r.PromptTokens + r.CompletionTokens), cost = x.Sum(r => r.Cost) })
                 .OrderByDescending(x => x.requests).Take(20).ToListAsync();
-            return Results.Json(new { leaderboard = rows, providers = byProvider }, JsonOpts);
+            var today = DateTime.UtcNow.ToString("yyyy-MM-dd") + " 00:00:00";
+            var stats = new
+            {
+                totalRequests = await scoped.LongCountAsync(),
+                requestsToday = await db.UsageHistory.LongCountAsync(r => string.Compare(r.Timestamp, today) >= 0),
+                tokensToday = await db.UsageHistory.Where(r => string.Compare(r.Timestamp, today) >= 0)
+                    .SumAsync(r => (long?)(r.PromptTokens + r.CompletionTokens)) ?? 0,
+            };
+            return Results.Json(new { leaderboard = rows, providers = byProvider, stats, window, by }, JsonOpts);
         });
 
         // ---- chaos ----

@@ -5070,7 +5070,11 @@
   "policies": "Políticas de enrutamiento",
   "sessions": "Sesiones de chat",
   "tags": "Etiquetas",
-  "modelCooldowns": "Cooldowns de modelo"
+  "modelCooldowns": "Cooldowns de modelo",
+  "ready": "LLMRouter está listo",
+  "readySub": "Estado del gateway, base de datos y providers",
+  "advanced": "Diagnósticos avanzados",
+  "migrations": "Migraciones"
  },
  "telemetry": {
   "title": "Telemetría del sistema",
@@ -15126,5 +15130,17 @@
   "empty": "Aún no hay conexiones OAuth",
   "waiting": "Esperando autorización…"
  },
- "consoleMore": "Ver más registros"
+ "consoleMore": "Ver más registros",
+ "lb": {
+  "overall": "General",
+  "weekly": "Semanal",
+  "monthly": "Mensual",
+  "tokensShared": "Tokens Compartidos",
+  "totalRequests": "Requests totales",
+  "requestsToday": "Requests hoy",
+  "tokensToday": "Tokens hoy",
+  "rank": "Rank",
+  "name": "Nombre",
+  "score": "Score"
+ }
 }

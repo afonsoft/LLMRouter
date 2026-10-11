@@ -825,6 +825,8 @@ public static class GatewayEndpoints
         // keys, or pools where every candidate conn opted out.
         string? cacheHash = null; float[]? promptVec = null;
         var semCfg = Core.Cache.SemanticCache.Read(sdata);
+        // SPEC-107: response-side guardrails (block|redact|warn|log)
+        var respGuard = Core.Guardrails.ResponseGuard.Read(sdata);
         var cacheKeyRestricted = apiKey != "dashboard"
             && (await Core.Gateway.HotReads.ApiKeyAsync(db, apiKey)) is { AccessRestricted: true };
         if (!stream && Core.Cache.PromptCache.Enabled(sdata) && body.ValueKind == JsonValueKind.Object
@@ -972,7 +974,9 @@ public static class GatewayEndpoints
                     ctx.Response.ContentType = "text/event-stream";
                     ctx.Response.Headers.CacheControl = "no-cache";
                     ctx.Response.Headers["X-Accel-Buffering"] = "no";
-                    var (pt, ct) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model);
+                    var (pt, ct, gDets) = await StreamThrough(ctx, resp, call.OutboundFormat, inbound, model, respGuard);
+                    if (gDets.Count > 0)
+                        savedDetail = MergeGuardMeta(savedDetail, gDets, respGuard.Mode);
                     Core.Gateway.GatewayMetrics.StreamDuration(target.Provider.Id, target.UpstreamModel,
                         sw.ElapsedMilliseconds - respAt);
                     if (pooled is not null)
@@ -997,10 +1001,36 @@ public static class GatewayEndpoints
                     if (ctx.Items["plugins"] is System.Text.Json.Nodes.JsonArray plArr
                         && translated is JsonObject tj)
                         Core.Extras.PluginHooks.ApplyResponse(plArr, tj);
+                    // SPEC-107: scan the assembled response before serving/caching
+                    var gDets = respGuard.Enabled
+                        ? Core.Guardrails.ResponseGuard.Detect(translated.ToJsonString(JsonOpts), respGuard)
+                        : [];
+                    if (gDets.Count > 0)
+                    {
+                        foreach (var d in gDets)
+                            Core.Gateway.GatewayMetrics.GuardrailHit("response", d.Name, respGuard.Mode);
+                        savedDetail = MergeGuardMeta(savedDetail, gDets, respGuard.Mode);
+                        if (respGuard.Mode == "block"
+                            && Core.Guardrails.ResponseGuard.ShouldBlock(gDets, respGuard.Threshold))
+                        {
+                            ctx.Response.StatusCode = 400;
+                            await WriteError(ctx, inbound, "content_filter",
+                                $"Response blocked by guardrails: {string.Join(", ", gDets.Select(d => d.Name))}");
+                            await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
+                                target.Connection.Id, apiKey, inbound, 0, 0, "400",
+                                "guardrails.content_filter", sw.ElapsedMilliseconds, savedDetail,
+                                userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                            return;
+                        }
+                    }
                     var (pt, ct) = ExtractUsage(translated, inbound);
+                    // redact mode rewrites the served body; never cache the unredacted form
+                    var outJson = respGuard.Enabled && respGuard.Mode == "redact" && gDets.Count > 0
+                        ? Core.Guardrails.ResponseGuard.Redact(translated.ToJsonString(JsonOpts), respGuard)
+                        : translated.ToJsonString(JsonOpts);
                     if (cacheHash is not null)
                         await CacheStoreAsync(ctx, sdata, cacheHash,
-                            target.Provider.Id, model, body.GetRawText(), translated.ToJsonString(JsonOpts),
+                            target.Provider.Id, model, body.GetRawText(), outJson,
                             Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
                     // SPEC-106: semantic layer stores under the serving conn's
                     // opt-out + finish_reason=stop only.
@@ -1032,7 +1062,7 @@ public static class GatewayEndpoints
                         target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
                     await ctx.Response.WriteAsync(
-                        await MgmtBatchEndpoints.RedactResponseAsync(db, translated.ToJsonString(JsonOpts)),
+                        await MgmtBatchEndpoints.RedactResponseAsync(db, outJson),
                         ctx.RequestAborted);
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
@@ -1354,15 +1384,22 @@ public static class GatewayEndpoints
     }
 
     /// <summary>Pipe upstream SSE to the client, translating events; returns (promptTokens, completionTokens).</summary>
-    private static async Task<(int, int)> StreamThrough(
-        HttpContext ctx, HttpResponseMessage resp, string outbound, string inbound, string model)
+    /// SPEC-107: when response guardrails are enabled, each translated SSE
+    /// payload is scanned: redact rewrites in place, block emits a
+    /// content_filter error event + [DONE] and stops the relay.
+    private static async Task<(int, int, List<Core.Guardrails.ResponseGuard.Detection>)> StreamThrough(
+        HttpContext ctx, HttpResponseMessage resp, string outbound, string inbound, string model,
+        Core.Guardrails.ResponseGuard.Cfg? rg = null)
     {
         int pt = 0, ct = 0;
+        var dets = new List<Core.Guardrails.ResponseGuard.Detection>();
+        var blocked = false;
         var state = new Translators.SseState();
         var reader = new StreamReader(await resp.Content.ReadAsStreamAsync(ctx.RequestAborted));
         string? line;
         while ((line = await reader.ReadLineAsync()) is not null)
         {
+            if (blocked) break;
             if (!line.StartsWith("data:"))
             {
                 if (line.StartsWith("event:"))
@@ -1385,10 +1422,54 @@ public static class GatewayEndpoints
                     continue;
                 }
                 TrackUsage(payload, inbound, ref pt, ref ct);
-                await WriteSseLine(ctx, ev, payload);
+                var out2 = payload;
+                if (rg is { Enabled: true })
+                {
+                    var d = Core.Guardrails.ResponseGuard.Detect(payload, rg);
+                    if (d.Count > 0)
+                    {
+                        dets.AddRange(d);
+                        foreach (var x in d)
+                            Core.Gateway.GatewayMetrics.GuardrailHit("response", x.Name, rg.Mode);
+                        if (rg.Mode == "block"
+                            && Core.Guardrails.ResponseGuard.ShouldBlock(d, rg.Threshold))
+                        {
+                            blocked = true;
+                            await WriteSseLine(ctx, "error",
+                                "{\"error\":{\"message\":\"Response blocked by guardrails: "
+                                + string.Join(", ", d.Select(x => x.Name))
+                                + "\",\"type\":\"content_filter\",\"code\":\"content_filter\"}}");
+                            await WriteSseLine(ctx, null, "[DONE]");
+                            break;
+                        }
+                        if (rg.Mode == "redact")
+                            out2 = Core.Guardrails.ResponseGuard.Redact(payload, rg);
+                    }
+                }
+                await WriteSseLine(ctx, ev, out2);
             }
         }
-        return (pt, ct);
+        return (pt, ct, dets);
+    }
+
+    /// <summary>Merge response-guardrail detections into the usage meta:
+    /// {stage:"response",mode,detections:[{name,severity,count}]}.</summary>
+    private static JsonElement? MergeGuardMeta(JsonElement? saved,
+        List<Core.Guardrails.ResponseGuard.Detection> dets, string mode)
+    {
+        var guard = new
+        {
+            stage = "response", mode,
+            detections = dets.Select(d => new { d.Name, d.Severity, d.Count }).ToArray(),
+        };
+        if (saved is { ValueKind: JsonValueKind.Object } s)
+        {
+            var merged = System.Text.Json.Nodes.JsonObject.Create(s);
+            merged!["guardrails"] = System.Text.Json.Nodes.JsonNode.Parse(
+                JsonSerializer.Serialize(guard));
+            return JsonSerializer.SerializeToElement(merged);
+        }
+        return JsonSerializer.SerializeToElement(new { guardrails = guard });
     }
 
     private static async Task WriteSseLine(HttpContext ctx, string? ev, string data)

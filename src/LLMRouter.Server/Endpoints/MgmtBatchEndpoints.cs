@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using LLMRouter.Core.Data;
+using LLMRouter.Core.Usage;
 using Microsoft.EntityFrameworkCore;
 
 namespace LLMRouter.Server.Endpoints;
@@ -596,10 +597,16 @@ public static partial class MgmtBatchEndpoints
 
         g.MapPost("/pricing/sync", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
-            // stub-safe: accepts injected fixture {items:[{model,inputPer1M,outputPer1M}]}
-            JsonElement b;
-            try { b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
-            catch (JsonException) { return Results.Json(new { synced = 0 }, JsonOpts); }
+            // stub-safe: accepts injected fixture {items:[{model,inputPer1M,outputPer1M}]};
+            // empty body syncs real prices from the OpenRouter public catalog
+            // (SPEC-118) into settings.data.catalogSyncedPricing.
+            JsonElement b = default;
+            var hasBody = ctx.Request.ContentLength is > 0;
+            if (hasBody)
+            {
+                try { b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
+                catch (JsonException) { return Results.Json(new { synced = 0 }, JsonOpts); }
+            }
             var synced = 0;
             if (b.ValueKind == JsonValueKind.Object && b.TryGetProperty("items", out var items))
             {
@@ -613,9 +620,74 @@ public static partial class MgmtBatchEndpoints
                     else row.Value = val;
                     synced++;
                 }
+                // mirror into settings.data.catalogSyncedPricing so the catalog
+                // shows the synced flag and PricingService resolves the price.
+                var sd1 = await PricingService.SettingsDataAsync(db);
+                var root1 = sd1.ValueKind == JsonValueKind.Object
+                    ? sd1.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                    : new Dictionary<string, JsonElement>();
+                var syncMap = root1.TryGetValue(PricingService.SyncedKey, out var sm)
+                    && sm.ValueKind == JsonValueKind.Object
+                    ? sm.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                    : new Dictionary<string, JsonElement>();
+                foreach (var it in items.EnumerateArray())
+                {
+                    var model = it.TryGetProperty("model", out var m) ? m.GetString() : null;
+                    if (model is not null) syncMap[model] = it.Clone();
+                }
+                root1[PricingService.SyncedKey] = JsonSerializer.SerializeToElement(syncMap);
+                var srow = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+                srow.Data = JsonSerializer.Serialize(root1);
                 await db.SaveChangesAsync();
+                return Results.Json(new { synced }, JsonOpts);
             }
-            return Results.Json(new { synced }, JsonOpts);
+
+            var prices = new Dictionary<string, JsonElement>();
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+                using var doc = JsonDocument.Parse(
+                    await http.GetStringAsync("https://openrouter.ai/api/v1/models"));
+                foreach (var m in doc.RootElement.GetProperty("data").EnumerateArray())
+                {
+                    var id = m.TryGetProperty("id", out var i) ? i.GetString() : null;
+                    if (id is null || !id.Contains('/')
+                        || !m.TryGetProperty("pricing", out var pr)) continue;
+                    double P(string n) => pr.TryGetProperty(n, out var v)
+                        && double.TryParse(v.GetString(), out var d) ? d * 1_000_000 : 0;
+                    var inp = P("prompt"); var outp = P("completion");
+                    if (inp <= 0 && outp <= 0) continue;
+                    prices[id] = JsonSerializer.SerializeToElement(new
+                    { input = inp, output = outp, syncedAt = DateTime.UtcNow.ToString("O") });
+                }
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
+            {
+                return Results.Json(new { synced = 0, error = "catalog fetch failed" }, JsonOpts);
+            }
+            var sd = await PricingService.SettingsDataAsync(db);
+            var root = sd.ValueKind == JsonValueKind.Object
+                ? sd.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                : new Dictionary<string, JsonElement>();
+            root[PricingService.SyncedKey] = JsonSerializer.SerializeToElement(prices);
+            var row2 = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            row2.Data = JsonSerializer.Serialize(root);
+            await db.SaveChangesAsync();
+            return Results.Json(new { synced = prices.Count }, JsonOpts);
+        });
+
+        // SPEC-118: drop every synced price (user overrides are kept).
+        g.MapPost("/pricing/clear-synced", async (LlmRouterDbContext db) =>
+        {
+            var sd = await PricingService.SettingsDataAsync(db);
+            var root = sd.ValueKind == JsonValueKind.Object
+                ? sd.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
+                : new Dictionary<string, JsonElement>();
+            var cleared = root.Remove(PricingService.SyncedKey);
+            var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            row.Data = JsonSerializer.Serialize(root);
+            await db.SaveChangesAsync();
+            return Results.Json(new { cleared }, JsonOpts);
         });
     }
 

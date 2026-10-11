@@ -38,6 +38,107 @@ public static class AnalyticsEndpoints
 
         g.MapGet("/usage/analytics", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
+            // SPEC-118: upstream contract — ?range=7d|30d|90d|180d|365d|all&presets=1d,7d,30d.
+            var range = ctx.Request.Query["range"].ToString();
+            if (range.Length > 0)
+            {
+                if (range is not ("7d" or "30d" or "90d" or "180d" or "365d" or "all"))
+                    return Results.Json(new { error = $"invalid range '{range}'" }, JsonOpts, statusCode: 400);
+                var since = range == "all" ? ""
+                    : DateTime.UtcNow.AddDays(-int.Parse(range[..^1])).ToString("yyyy-MM-dd HH:mm:ss");
+                var rrows = await db.UsageHistory
+                    .Where(r => since.Length == 0 || string.Compare(r.Timestamp, since) >= 0)
+                    .ToListAsync();
+
+                static string TierOf(UsageRecord r)
+                {
+                    if (r.Meta is not null && r.Meta.Contains("serviceTier"))
+                        try
+                        {
+                            var t = JsonDocument.Parse(r.Meta).RootElement
+                                .TryGetProperty("serviceTier", out var st) ? st.GetString() : null;
+                            if (t is "priority" or "flex") return t;
+                        }
+                        catch (JsonException) { }
+                    return "standard";
+                }
+                static bool IsFallback(UsageRecord r) => r.Meta is not null && r.Meta.Contains("fallback");
+
+                static List<Dictionary<string, object>> RowsBy(IEnumerable<IGrouping<string, UsageRecord>> gs, string field) =>
+                    gs.Select(x => new Dictionary<string, object>
+                    {
+                        [field] = x.Key,
+                        ["requests"] = x.Count(),
+                        ["promptTokens"] = x.Sum(r => r.PromptTokens),
+                        ["completionTokens"] = x.Sum(r => r.CompletionTokens),
+                        ["totalTokens"] = x.Sum(r => r.PromptTokens + r.CompletionTokens),
+                        ["cost"] = Math.Round(x.Sum(r => r.Cost), 6),
+                    }).OrderByDescending(x => (double)x["cost"]).ToList();
+
+                var byProvider = RowsBy(rrows.GroupBy(r => r.Provider ?? "?"), "provider");
+                var byModel = RowsBy(rrows.GroupBy(r => r.Model ?? "?"), "model");
+                var byApiKey = RowsBy(rrows.GroupBy(r => r.ApiKey ?? "?"), "apiKey");
+                var byAccount = RowsBy(rrows.GroupBy(r => r.ConnectionId ?? "?"), "account");
+                var byServiceTier = rrows.GroupBy(TierOf)
+                    .Select(x => new
+                    {
+                        serviceTier = x.Key, label = x.Key,
+                        requests = x.Count(),
+                        promptTokens = x.Sum(r => r.PromptTokens),
+                        completionTokens = x.Sum(r => r.CompletionTokens),
+                        totalTokens = x.Sum(r => r.PromptTokens + r.CompletionTokens),
+                        cost = Math.Round(x.Sum(r => r.Cost), 6),
+                        savings = 0.0, usageSavingsTokens = 0,
+                    }).OrderBy(t => t.serviceTier == "priority" ? 0 : t.serviceTier == "flex" ? 1 : 2).ToList();
+                var dailyTrend = rrows.GroupBy(r => r.Timestamp[..10]).OrderBy(x => x.Key)
+                    .Select(x => new
+                    {
+                        date = x.Key, requests = x.Count(),
+                        tokens = x.Sum(r => r.PromptTokens + r.CompletionTokens),
+                        cost = Math.Round(x.Sum(r => r.Cost), 6),
+                        errors = x.Count(r => !Ok(r.Status)),
+                    }).ToList();
+
+                var fallbackCount = rrows.Count(IsFallback);
+                var streak = 0;
+                var day = DateTime.UtcNow.Date;
+                var daysWith = dailyTrend.Select(d => d.date).ToHashSet();
+                if (!daysWith.Contains(day.ToString("yyyy-MM-dd"))) day = day.AddDays(-1);
+                while (daysWith.Contains(day.ToString("yyyy-MM-dd"))) { streak++; day = day.AddDays(-1); }
+
+                var presets = new Dictionary<string, object>();
+                foreach (var p in ctx.Request.Query["presets"].ToString().Split(',',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (p is not ("1d" or "7d" or "30d" or "90d")) continue;
+                    var pc = DateTime.UtcNow.AddDays(-int.Parse(p[..^1])).ToString("yyyy-MM-dd HH:mm:ss");
+                    presets[p] = new { totalCost = Math.Round(rrows.Where(r => string.Compare(r.Timestamp, pc) >= 0).Sum(r => r.Cost), 6) };
+                }
+
+                return Results.Json(new
+                {
+                    summary = new
+                    {
+                        totalCost = Math.Round(rrows.Sum(r => r.Cost), 6),
+                        totalRequests = rrows.Count,
+                        uniqueModels = rrows.Select(r => r.Model).Where(m => m is not null).Distinct().Count(),
+                        uniqueAccounts = rrows.Select(r => r.ConnectionId).Where(c => c is not null).Distinct().Count(),
+                        uniqueApiKeys = rrows.Select(r => r.ApiKey).Where(k => k is not null).Distinct().Count(),
+                        totalTokens = rrows.Sum(r => r.PromptTokens + r.CompletionTokens),
+                        promptTokens = rrows.Sum(r => r.PromptTokens),
+                        completionTokens = rrows.Sum(r => r.CompletionTokens),
+                        fallbackCount,
+                        fallbackRatePct = rrows.Count > 0 ? Math.Round(fallbackCount * 10000.0 / rrows.Count) / 100.0 : 0,
+                        requestedModelCoveragePct = rrows.Count > 0
+                            ? Math.Round((rrows.Count - fallbackCount) * 10000.0 / rrows.Count) / 100.0 : 0,
+                        streak,
+                    },
+                    byProvider, byModel, byApiKey, byAccount, byServiceTier, dailyTrend,
+                    presetSummaries = presets,
+                    includesFlatRateEstimates = false,
+                }, JsonOpts);
+            }
+
             var cutoff = Since(Days(ctx));
             var rows = await db.UsageHistory.Where(r => string.Compare(r.Timestamp, cutoff) >= 0).ToListAsync();
             var ok = rows.Count(r => Ok(r.Status));

@@ -316,16 +316,24 @@ public sealed class UsageWriter : BackgroundService
             UserKeyId = u.UserKeyId,
         };
         db.UsageHistory.Add(row);
-        db.RequestDetails.Add(new RequestDetail
+        // SPEC-116: settings.requestLogging=false pauses request-payload capture
+        // (usage accounting still writes).
+        var sdata = await HotReads.SettingsDataAsync(db);
+        var recording = !sdata.TryGetProperty("requestLogging", out var rl)
+            || rl.ValueKind is not JsonValueKind.False;
+        if (recording)
         {
-            Id = Guid.NewGuid().ToString("N"),
-            Timestamp = u.Timestamp,
-            Provider = u.Provider,
-            Model = u.Model,
-            ConnectionId = u.ConnectionId,
-            Status = u.Status,
-            Data = u.DetailJson ?? "{}",
-        });
+            db.RequestDetails.Add(new RequestDetail
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Timestamp = u.Timestamp,
+                Provider = u.Provider,
+                Model = u.Model,
+                ConnectionId = u.ConnectionId,
+                Status = u.Status,
+                Data = u.DetailJson ?? "{}",
+            });
+        }
         await GatewayEngine.RollupDailyOnAsync(
             db, u.Provider ?? "", u.Model ?? "", (int)u.PromptTokens, (int)u.CompletionTokens);
         await KeyQuota.CreditDailyAsync(

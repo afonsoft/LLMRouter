@@ -7,68 +7,219 @@
         <h1 class="page-title">@Loc.T("logs.title", "Request logs")</h1>
         <p class="page-desc">@Loc.T("logs.subtitle", "Every request through the gateway")</p>
     </div>
-    <div class="flex gap-2">
-        <select class="input" style="width:130px" @bind="_status" @bind:after="Load">
-            <option value="">All status</option><option value="200">200</option><option value="err">errors</option>
-        </select>
-        <input class="input mono" style="width:150px" placeholder="provider" @bind="_provider" @bind:after="Load" />
-        <input class="input mono" style="width:150px" placeholder="model" @bind="_model" @bind:after="Load" />
+    <div class="flex gap-2" style="align-items:center">
+        <label class="flex muted sm" style="gap:6px;align-items:center">
+            <input type="checkbox" checked="@_recording" @onchange="ToggleRecording" />
+            @Loc.T("logs.recording", "Recording")
+        </label>
         <a class="btn btn-sm" href="/api/log-export?fmt=csv" target="_blank">CSV</a>
         <a class="btn btn-sm" href="/api/log-export" target="_blank">JSONL</a>
+        <button class="btn btn-sm" @onclick="Clean">@Loc.T("logs.cleanHistoryButton", "Clean history")</button>
         <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span>@Loc.T("logs.refresh", "Refresh")</button>
     </div>
 </div>
 
-<div class="card mt-6 scroll-x">
+@if (!_recording)
+{
+    <div class="card card-p mt-4" style="border-left:3px solid var(--warn,#e6a23c)">
+        <span class="sm">@Loc.T("logs.paused", "Request capture paused — usage accounting still records.")</span>
+    </div>
+}
+
+<div class="card card-p mt-4">
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+        <input class="input" style="max-width:220px" placeholder="@Loc.T("logs.searchPlaceholder", "Search model, provider, key, correlation…")"
+               @bind="_q" @bind:after="Load" />
+        <input class="input mono" style="max-width:180px" placeholder="correlation id" @bind="_rid" @bind:after="Load" />
+        <select class="input" style="width:auto" @bind="_model" @bind:after="Load">
+            <option value="">All models</option>
+            @foreach (var m in _meta.Models) { <option value="@m">@m</option> }
+        </select>
+        <select class="input" style="width:auto" @bind="_conn" @bind:after="Load">
+            <option value="">All accounts</option>
+            @foreach (var c in _meta.Accounts) { <option value="@c">@c</option> }
+        </select>
+        <select class="input" style="width:auto" @bind="_key" @bind:after="Load">
+            <option value="">All API keys</option>
+            @foreach (var k in _meta.Keys) { <option value="@k">@Mask(k)</option> }
+        </select>
+        <select class="input" style="width:auto" @bind="_status" @bind:after="Load">
+            <option value="">All status</option>
+            <option value="200">200</option><option value="4xx">4xx</option><option value="5xx">5xx</option><option value="err">errors</option>
+        </select>
+        <select class="input" style="width:auto" @bind="_preset" @bind:after="Load">
+            <option value="">All time</option>
+            <option value="1h">1h</option><option value="1d">1D</option><option value="7d">7D</option><option value="30d">30D</option>
+        </select>
+    </div>
+    @if (_meta.Providers.Count > 0)
+    {
+        <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
+            @foreach (var p in _meta.Providers)
+            {
+                <button class="chip @(_providers.Contains(p) ? "on" : "")" @onclick="() => ToggleProvider(p)">@p</button>
+            }
+        </div>
+    }
+</div>
+
+<div class="card mt-4 scroll-x">
     <table class="table">
-        <thead><tr><th>@Loc.T("logs.time", "Time")</th><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("logs.status", "Status")</th><th></th></tr></thead>
+        <thead><tr>
+            <th>@Loc.T("logs.status", "STATUS")</th><th>@Loc.T("logs.time", "LOGGED")</th><th>@Loc.T("models.model", "MODEL")</th>
+            <th>@Loc.T("providers.provider", "PROVIDER")</th><th>@Loc.T("logs.type", "REQUEST TYPE")</th>
+            <th>@Loc.T("logs.apiKey", "API KEY")</th><th>@Loc.T("logs.latency", "LATENCY")</th><th></th>
+        </tr></thead>
         <tbody>
             @foreach (var l in _logs)
             {
                 <tr>
-                    <td class="muted sm mono">@l.Timestamp</td>
-                    <td class="mono sm">@l.Provider</td>
+                    <td><span class="badge @StatusClass(l.Status)">@l.Status</span></td>
+                    <td class="muted sm mono">@l.At</td>
                     <td class="mono sm">@l.Model</td>
-                    <td><span class="badge @(l.Status == "200" ? "ok" : "err")">@l.Status</span></td>
-                    <td><button class="btn btn-sm" @onclick="() => _detail = _detail == l ? null : l">@(_detail == l ? "Hide" : "Detail")</button></td>
+                    <td class="mono sm">@l.Provider</td>
+                    <td class="sm muted">@(l.Type ?? "—")</td>
+                    <td class="mono sm">@Mask(l.Key)</td>
+                    <td class="sm muted">@l.LatencyMs ms</td>
+                    <td><button class="btn btn-sm" @onclick="() => Toggle(l)">@(_detail?.Id == l.Id ? "Hide" : "Detail")</button></td>
                 </tr>
-                @if (_detail == l && l.Data is not null)
+                @if (_detail?.Id == l.Id)
                 {
-                    <tr><td colspan="5"><pre class="code">@l.Data</pre></td></tr>
+                    <tr><td colspan="8"><pre class="code" style="max-height:300px;overflow:auto">@_detailJson</pre></td></tr>
                 }
             }
             @if (_logs.Count == 0)
             {
-                <tr><td colspan="5"><div class="empty"><span class="material-symbols-outlined">receipt_long</span>@Loc.T("logs.empty", "No requests logged")</div></td></tr>
+                <tr><td colspan="8"><div class="empty"><span class="material-symbols-outlined">receipt_long</span>@Loc.T("logs.empty", "No requests logged")</div></td></tr>
             }
         </tbody>
     </table>
 </div>
+<div class="flex between mt-2">
+    <span class="muted sm">@_logs.Count of @_total</span>
+    @if (_logs.Count < _total)
+    {
+        <button class="btn btn-sm" @onclick="More">@Loc.T("consoleMore", "See more logs")</button>
+    }
+</div>
 
 @code {
-    private record L(string Timestamp, string Provider, string Model, string Status, string? Data, long? LatencyMs, string? Endpoint);
+    private record L(long Id, string At, string? Provider, string? Model, string? Status,
+        string? Type, string? Key, string? Conn, long LatencyMs);
+    private record Meta(List<string> Providers, List<string> Models, List<string> Keys,
+        List<string> Types, List<string> Accounts);
+
     private List<L> _logs = [];
     private L? _detail;
-    private string _status = "", _provider = "", _model = "";
+    private string _detailJson = "";
+    private Meta _meta = new([], [], [], [], []);
+    private HashSet<string> _providers = new(StringComparer.OrdinalIgnoreCase);
+    private string _q = "", _rid = "", _model = "", _conn = "", _key = "", _status = "", _preset = "";
+    private int _total, _limit = 100;
+    private bool _recording = true;
 
-    protected override async Task OnInitializedAsync() => await Load();
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var s = await Api.GetAsync("api/settings");
+            _recording = !s.TryGetProperty("requestLogging", out var rl) || rl.ValueKind != JsonValueKind.False;
+        }
+        catch { }
+        try
+        {
+            var m = await Api.GetAsync("api/usage/call-logs/meta");
+            _meta = new Meta(
+                Strings(m, "providers"), Strings(m, "models"), Strings(m, "keys"),
+                Strings(m, "types"), Strings(m, "accounts"));
+        }
+        catch { }
+        await Load();
+    }
+
+    private static List<string> Strings(JsonElement e, string prop) =>
+        e.TryGetProperty(prop, out var a) && a.ValueKind == JsonValueKind.Array
+            ? a.EnumerateArray().Select(x => x.GetString() ?? "").Where(s => s.Length > 0).ToList() : [];
 
     private async Task Load()
     {
-        var qs = "api/logs?limit=100";
-        if (!string.IsNullOrEmpty(_status)) qs += $"&status={Uri.EscapeDataString(_status == "err" ? "" : _status)}";
-        if (_status == "err") qs += "&status=500"; // rough: show server errors
-        if (!string.IsNullOrEmpty(_provider)) qs += $"&provider={Uri.EscapeDataString(_provider)}";
+        var qs = $"api/usage/call-logs?limit={_limit}";
+        foreach (var p in _providers) qs += $"&providers[]={Uri.EscapeDataString(p)}";
+        if (!string.IsNullOrEmpty(_q)) qs += $"&q={Uri.EscapeDataString(_q)}";
+        if (!string.IsNullOrEmpty(_rid)) qs += $"&correlationId={Uri.EscapeDataString(_rid)}";
         if (!string.IsNullOrEmpty(_model)) qs += $"&model={Uri.EscapeDataString(_model)}";
+        if (!string.IsNullOrEmpty(_conn)) qs += $"&conn={Uri.EscapeDataString(_conn)}";
+        if (!string.IsNullOrEmpty(_key)) qs += $"&key={Uri.EscapeDataString(_key)}";
+        if (_status == "4xx") qs += "&status=4xx";
+        else if (_status == "5xx") qs += "&status=5xx";
+        else if (_status == "err") qs += "&status=err";
+        else if (!string.IsNullOrEmpty(_status)) qs += $"&status={Uri.EscapeDataString(_status)}";
+        if (!string.IsNullOrEmpty(_preset)) qs += $"&from={Uri.EscapeDataString(FromPreset(_preset))}";
         var r = await Api.GetAsync(qs);
-        _logs = r.GetProperty("logs").EnumerateArray().Select(l => new L(
-            l.GetProperty("timestamp").GetString() ?? "",
-            l.GetProperty("provider").GetString() ?? "",
-            l.GetProperty("model").GetString() ?? "",
-            l.GetProperty("status").GetString() ?? "",
-            l.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.String ? Pretty(d.GetString()!) : null,
-            null, null)).ToList();
+        _total = r.TryGetProperty("total", out var t) ? t.GetInt32() : 0;
+        _logs = r.GetProperty("items").EnumerateArray().Select(l => new L(
+            l.GetProperty("id").GetInt64(),
+            l.TryGetProperty("at", out var at) ? at.GetString() ?? "" : "",
+            l.TryGetProperty("provider", out var p) ? p.GetString() : null,
+            l.TryGetProperty("model", out var mo) ? mo.GetString() : null,
+            l.TryGetProperty("status", out var st) ? st.GetString() : null,
+            l.TryGetProperty("type", out var ty) ? ty.GetString() : null,
+            l.TryGetProperty("key", out var k) ? k.GetString() : null,
+            l.TryGetProperty("connectionId", out var c) ? c.GetString() : null,
+            l.TryGetProperty("latencyMs", out var lm) ? lm.GetInt64() : 0)).ToList();
     }
+
+    private static string FromPreset(string p) => (p switch
+    {
+        "1h" => DateTime.UtcNow.AddHours(-1),
+        "1d" => DateTime.UtcNow.AddDays(-1),
+        "7d" => DateTime.UtcNow.AddDays(-7),
+        "30d" => DateTime.UtcNow.AddDays(-30),
+        _ => DateTime.MinValue,
+    }).ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static string StatusClass(string? s) =>
+        s is not null && s.StartsWith('2') ? "ok"
+        : s is not null && s.StartsWith('4') ? "warn"
+        : s is not null && s.StartsWith('5') ? "err"
+        : s == "err" || s == "error" ? "err" : "";
+
+    private static string Mask(string? k) =>
+        string.IsNullOrEmpty(k) ? "—" : k.Length <= 10 ? k : k[..8] + "…";
+
+    private async Task Toggle(L l)
+    {
+        if (_detail?.Id == l.Id) { _detail = null; return; }
+        _detail = l;
+        _detailJson = "…";
+        try
+        {
+            var r = await Api.GetAsync($"api/usage/call-logs/{l.Id}");
+            _detailJson = r.TryGetProperty("detail", out var d) ? Pretty(d.ToString()) : Pretty(r.GetProperty("call").ToString());
+        }
+        catch { _detailJson = "(unavailable)"; }
+    }
+
+    private void ToggleProvider(string p)
+    {
+        if (!_providers.Remove(p)) _providers.Add(p);
+        _ = Load();
+    }
+
+    private async Task ToggleRecording(ChangeEventArgs e)
+    {
+        _recording = e.Value is bool b && b;
+        try { await Api.PutAsync("api/settings", new { requestLogging = _recording }); } catch { }
+    }
+
+    private async Task Clean()
+    {
+        await Api.PostAsync("api/logs/prune?keep=0", new { });
+        _detail = null;
+        await Load();
+    }
+
+    private async Task More() { _limit += 200; await Load(); }
 
     private static string Pretty(string s)
     {

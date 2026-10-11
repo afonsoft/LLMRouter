@@ -102,6 +102,81 @@ public static class BuiltinJobs
         }
     }
 
+    /// <summary>SPEC-103: per-surface retention — settings.retention.{auditEventsDays,
+    /// mcpToolCallsDays, requestDetailsDays, usageHistoryDays, usageDailyDays,
+    /// webhookDeliveriesDays}; 0/null = keep forever. Chunked deletes keep SQLite
+    /// locks short. usageDaily rows are running rollups — purge only when opted in
+    /// (the inline per-request rollup already covers the history window).</summary>
+    public sealed class RetentionPurgeJob : IJob
+    {
+        public string Id => "retention-purge";
+        public string Name => "Audit/telemetry retention purge";
+        public TimeSpan Interval => TimeSpan.FromHours(24);
+        public bool EnabledByDefault => true;
+
+        public const int ChunkSize = 5000;
+
+        private static readonly (string Key, string Table, string Column, string Format, int DefaultDays)[] Surfaces =
+        [
+            ("auditEventsDays", "auditEvents", "At", "O", 90),
+            ("mcpToolCallsDays", "mcpToolCalls", "At", "O", 30),
+            ("requestDetailsDays", "requestDetails", "Timestamp", "yyyy-MM-dd HH:mm:ss", 14),
+            ("webhookDeliveriesDays", "webhookDeliveries", "At", "O", 30),
+            // usageDaily runs first: it is the rollup that must cover the window
+            // before usageHistory rows can go (inline rollup already maintains it).
+            ("usageDailyDays", "usageDaily", "DateKey", "yyyy-MM-dd", 0),
+            ("usageHistoryDays", "usageHistory", "Timestamp", "yyyy-MM-dd HH:mm:ss", 365),
+        ];
+
+        public async Task<string> RunAsync(IServiceProvider services, CancellationToken ct)
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
+            return await PurgeAsync(db, ct);
+        }
+
+        public static async Task<string> PurgeAsync(LlmRouterDbContext db, CancellationToken ct)
+        {
+            var retention = await RetentionNodeAsync(db, ct);
+            var parts = new List<string>();
+            foreach (var (key, table, column, format, def) in Surfaces)
+            {
+                var days = retention?[key] is JsonNode n
+                    && int.TryParse(n.ToString(), out var v) ? Math.Max(v, 0) : def;
+                if (days <= 0) continue;
+                var cutoff = DateTime.UtcNow.AddDays(-days).ToString(format);
+                var n2 = await PurgeChunkedAsync(db, table, column, cutoff, ct);
+                parts.Add($"{table}={n2}");
+            }
+            return parts.Count == 0 ? "nothing to purge" : string.Join(" ", parts);
+        }
+
+        private static async Task<JsonObject?> RetentionNodeAsync(LlmRouterDbContext db, CancellationToken ct)
+        {
+            var s = await db.Settings.FirstOrDefaultAsync(ct);
+            if (s is null) return null;
+            try { return JsonNode.Parse(s.Data)?["retention"] as JsonObject; }
+            catch { return null; }
+        }
+
+        /// <summary>Deletes expired rows in 5k batches (SQLite lacks DELETE..LIMIT —
+        /// a rowid subselect caps each statement's lock window).</summary>
+        public static async Task<int> PurgeChunkedAsync(
+            LlmRouterDbContext db, string table, string column, string cutoff,
+            CancellationToken ct, int chunkSize = ChunkSize)
+        {
+            var total = 0;
+            for (var i = 0; i < 400; i++)
+            {
+                var sql = $"DELETE FROM \"{table}\" WHERE rowid IN (SELECT rowid FROM \"{table}\" WHERE \"{column}\" < {{0}} LIMIT {chunkSize})";
+                var n = await db.Database.ExecuteSqlRawAsync(sql, [cutoff], ct);
+                total += n;
+                if (n < chunkSize) break;
+            }
+            return total;
+        }
+    }
+
     // SPEC-041: quotaSchedules rows whose window elapsed get their daily-token
     // counters (kv scope "keyusage") reset; runs hourly and lets each schedule
     // decide if it's due (daily/weekly/monthly windows).

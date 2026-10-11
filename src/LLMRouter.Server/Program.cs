@@ -139,6 +139,11 @@ using (var scope = app.Services.CreateScope())
     // and LLMR_SKIP_MIGRATE=1.
     LLMRouter.Core.Data.SchemaMigrator.ApplyFromEnvironment(
         db, msg => app.Logger.LogInformation("{Msg}", msg));
+    // SPEC-110: chain audit rows written before the hash-chain feature (lazy,
+    // idempotent — returns 0 once every row carries prevHash/hash).
+    var chained = LLMRouter.Core.Extras.AuditLog.BackfillAsync(db).Result;
+    if (chained > 0)
+        app.Logger.LogInformation("audit hash-chain backfilled {Count} rows", chained);
     // SPEC-108: settings.usageSink.{sync,blockOnFull} tune the writer.
     LLMRouter.Core.Gateway.UsageWriter.ApplySettings(db);
     // Apply persisted resilience overrides to the cooldown tracker (SPEC-007).

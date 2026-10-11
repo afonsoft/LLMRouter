@@ -61,7 +61,9 @@ public class Spec103RetentionTests : IDisposable
         var result = await BuiltinJobs.RetentionPurgeJob.PurgeAsync(db, default);
         result.ShouldContain("auditEvents=1");
         result.ShouldContain("requestDetails=1");
-        (await db.AuditEvents.CountAsync()).ShouldBe(1);
+        // SPEC-110: purge leaves a retention.purge anchor tombstone on top of
+        // the retained row — count only non-tombstone events.
+        (await db.AuditEvents.CountAsync(e => e.Action != "retention.purge")).ShouldBe(1);
         (await db.RequestDetails.CountAsync()).ShouldBe(1);
         (await db.UsageHistory.CountAsync()).ShouldBe(1);
     }

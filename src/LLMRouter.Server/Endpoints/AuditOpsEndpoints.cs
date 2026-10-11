@@ -49,6 +49,30 @@ public static class AuditOpsEndpoints
             }, JsonOpts);
         });
 
+        // ---- SPEC-110: tamper-evident chain verification ----
+        g.MapGet("/audit/verify", async (LlmRouterDbContext db, long? fromId) =>
+        {
+            var (ok, checked_, firstBroken) = await Core.Extras.AuditLog.VerifyAsync(db, fromId);
+            return Results.Json(new
+            {
+                ok, @checked = checked_,
+                firstBrokenAt = firstBroken is null ? null : (long?)firstBroken,
+            }, JsonOpts);
+        });
+        g.MapGet("/audit/verify/latest", async (LlmRouterDbContext db, int? n) =>
+        {
+            var take = Math.Clamp(n ?? 50, 1, 1000);
+            var tail = await db.AuditEvents.Where(e => e.Hash != null)
+                .OrderByDescending(e => e.Id).Take(take).Select(e => e.Id).ToListAsync();
+            var fromId = tail.Count == 0 ? 0 : tail.Min();
+            var (ok, checked_, firstBroken) = await Core.Extras.AuditLog.VerifyAsync(db, fromId);
+            return Results.Json(new
+            {
+                ok, @checked = checked_,
+                firstBrokenAt = firstBroken is null ? null : (long?)firstBroken,
+            }, JsonOpts);
+        });
+
         // ---- MCP tool calls ----
         g.MapGet("/mcp/audit", async (LlmRouterDbContext db, string? tool, int? limit) =>
         {
@@ -86,10 +110,11 @@ public static class AuditOpsEndpoints
 
             if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
             {
-                var sb = new StringBuilder("at,actor,action,target,ip,meta\n");
+                var sb = new StringBuilder("at,actor,action,target,ip,meta,prevHash,hash\n");
                 foreach (var e in rows)
                     sb.AppendLine(string.Join(',',
-                        Csv(e.At), Csv(e.Actor), Csv(e.Action), Csv(e.Target), Csv(e.Ip), Csv(e.Meta)));
+                        Csv(e.At), Csv(e.Actor), Csv(e.Action), Csv(e.Target), Csv(e.Ip), Csv(e.Meta),
+                        Csv(e.PrevHash), Csv(e.Hash)));
                 ctx.Response.ContentType = "text/csv; charset=utf-8";
                 ctx.Response.Headers.ContentDisposition = "attachment; filename=audit-log.csv";
                 await ctx.Response.WriteAsync(sb.ToString());

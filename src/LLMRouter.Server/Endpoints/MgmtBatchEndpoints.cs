@@ -18,8 +18,6 @@ public static partial class MgmtBatchEndpoints
     private const string QuotaPoolScope = "quotaPools";
     private const string AliasScope = "aliasModels";
     private const string KeyPermScope = "keyGroupPerms";
-    private const string WebhookScope = "webhooks";
-    private const string DeliveryScope = "webhookDeliveries";
     private const string PricingDefaultsScope = "pricingDefaults";
     private const string PricingOverridesScope = "pricingOverrides";
 
@@ -479,22 +477,8 @@ public static partial class MgmtBatchEndpoints
 
     // ==================== WEBHOOKS DETAIL ====================
 
-    private static async Task<List<JsonElement>> WebhookList(LlmRouterDbContext db)
-    {
-        var raw = (await db.Kv.FindAsync(WebhookScope, "list"))?.Value;
-        if (raw is null) return [];
-        try { return JsonDocument.Parse(raw).RootElement.EnumerateArray().Select(e => e.Clone()).ToList(); }
-        catch (JsonException) { return []; }
-    }
-
-    private static async Task SaveWebhookList(LlmRouterDbContext db, List<JsonElement> list)
-    {
-        var row = await db.Kv.FindAsync(WebhookScope, "list");
-        var val = JsonSerializer.Serialize(list, JsonOpts);
-        if (row is null) db.Kv.Add(new KvEntry { Scope = WebhookScope, Key = "list", Value = val });
-        else row.Value = val;
-        await db.SaveChangesAsync();
-    }
+    private static Task<List<JsonElement>> WebhookList(LlmRouterDbContext db)
+        => Core.Extras.WebhookStore.ListAsync(db);
 
     private static void WebhookDetail(RouteGroupBuilder g)
     {
@@ -514,9 +498,10 @@ public static partial class MgmtBatchEndpoints
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             var cur = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(list[idx].GetRawText()) ?? [];
             foreach (var p in b.EnumerateObject()) cur[p.Name] = p.Value.Clone();
-            list[idx] = JsonSerializer.SerializeToElement(cur);
-            await SaveWebhookList(db, list);
-            return Results.Json(new { webhook = list[idx] }, JsonOpts);
+            var merged = JsonSerializer.SerializeToElement(cur);
+            await Core.Extras.WebhookStore.UpsertAsync(db, merged);
+            await db.SaveChangesAsync();
+            return Results.Json(new { webhook = merged }, JsonOpts);
         });
 
         g.MapDelete("/webhooks/{id}", async (string id, LlmRouterDbContext db) =>
@@ -524,16 +509,15 @@ public static partial class MgmtBatchEndpoints
             var list = await WebhookList(db);
             var idx = list.FindIndex(w => w.TryGetProperty("id", out var i) && i.GetString() == id);
             if (idx < 0) return Results.NotFound(new { error = "webhook not found" });
-            list.RemoveAt(idx);
-            await SaveWebhookList(db, list);
+            await Core.Extras.WebhookStore.RemoveAsync(db, id);
+            await db.SaveChangesAsync();
             return Results.Json(new { success = true }, JsonOpts);
         });
 
         g.MapGet("/webhooks/{id}/deliveries", async (string id, LlmRouterDbContext db) =>
         {
-            var row = await db.Kv.FindAsync(DeliveryScope, id);
-            var items = row is null ? "[]" : row.Value;
-            return Results.Json(new { webhookId = id, deliveries = JsonDocument.Parse(items).RootElement.Clone() }, JsonOpts);
+            var items = await Core.Extras.WebhookStore.DeliveriesAsync(db, id);
+            return Results.Json(new { webhookId = id, deliveries = items }, JsonOpts);
         });
 
         g.MapPost("/webhooks/{id}/test", async (string id, LlmRouterDbContext db) =>
@@ -547,12 +531,7 @@ public static partial class MgmtBatchEndpoints
                 id = Guid.NewGuid().ToString("N")[..10], webhookId = id,
                 eventType = "webhook.test", status = "ok", at = DateTime.UtcNow.ToString("O"),
             };
-            var row = await db.Kv.FindAsync(DeliveryScope, id);
-            var list = row is null ? new List<object>()
-                : JsonSerializer.Deserialize<List<object>>(row.Value) ?? [];
-            list.Add(delivery);
-            if (row is null) db.Kv.Add(new KvEntry { Scope = DeliveryScope, Key = id, Value = JsonSerializer.Serialize(list, JsonOpts) });
-            else row.Value = JsonSerializer.Serialize(list, JsonOpts);
+            await Core.Extras.WebhookStore.AddDeliveryAsync(db, id, delivery);
             await db.SaveChangesAsync();
             return Results.Json(new { delivery }, JsonOpts);
         });

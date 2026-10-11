@@ -110,6 +110,8 @@ using (var scope = app.Services.CreateScope())
     // and LLMR_SKIP_MIGRATE=1.
     LLMRouter.Core.Data.SchemaMigrator.ApplyFromEnvironment(
         db, msg => app.Logger.LogInformation("{Msg}", msg));
+    // SPEC-108: settings.usageSink.{sync,blockOnFull} tune the writer.
+    LLMRouter.Core.Gateway.UsageWriter.ApplySettings(db);
     // Apply persisted resilience overrides to the cooldown tracker (SPEC-007).
     var srow = db.Settings.FirstOrDefault();
     if (srow is not null)

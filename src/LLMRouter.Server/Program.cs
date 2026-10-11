@@ -288,6 +288,7 @@ FileEndpoints.Map(app);
 KeysQuotaEndpoints.Map(app);
 LogExportEndpoints.Map(app);
 PlaygroundEndpoints.Map(app);
+ConfigEndpoints.Map(app);
 OpenApiExplorerEndpoints.Map(app);
 CacheEndpoints.Map(app);
 DiscoveryEndpoints.Map(app);
@@ -356,6 +357,31 @@ app.Use(async (ctx, next) =>
     }
     await next();
 });
+
+// SPEC-104: headless config bootstrap — apply a llmr-config document once.
+if (Environment.GetEnvironmentVariable("LLMR_CONFIG_IMPORT") is { Length: > 0 } cfgPath
+    && File.Exists(cfgPath))
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
+        var registry = scope.ServiceProvider.GetRequiredService<LLMRouter.Core.Registry.ProviderRegistry>();
+        var doc = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(cfgPath))?.AsObject();
+        if (doc is not null)
+        {
+            var res = await LLMRouter.Core.Config.ConfigAsCode.ImportAsync(
+                doc, scopes: null, dryRun: false, redactedSecrets: "keep",
+                db, registry, CancellationToken.None);
+            app.Logger.LogInformation("LLMR_CONFIG_IMPORT applied: {counts} errors={errs}",
+                string.Join(" ", res.Counts.Select(kv => $"{kv.Key}:{kv.Value}")), res.Errors.Count);
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "LLMR_CONFIG_IMPORT failed for {path}", cfgPath);
+    }
+}
 
 if (!headless)
 {

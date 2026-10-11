@@ -290,9 +290,10 @@ public sealed class GatewayEngine(
         double? reportedCostUsd = null, string? userId = null, string? userKeyId = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+        var sdata = await HotReads.SettingsDataAsync(db);
         // SPEC-097: a trusted provider-reported cost wins over the computed price.
         var cost = reportedCostUsd ?? Usage.PricingService.ComputeCost(
-            await HotReads.SettingsDataAsync(db), registry,
+            sdata, registry,
             provider, model, promptTokens, completionTokens) ?? 0;
 
         // SPEC-101: every logged request feeds the scrapeable meter source.
@@ -344,16 +345,22 @@ public sealed class GatewayEngine(
             UserKeyId = userKeyId,
         };
         db.UsageHistory.Add(usageRow);
-        db.RequestDetails.Add(new RequestDetail
+        // SPEC-116: settings.requestLogging=false pauses request-payload capture.
+        var recording = !sdata.TryGetProperty("requestLogging", out var rl)
+            || rl.ValueKind is not JsonValueKind.False;
+        if (recording)
         {
-            Id = Guid.NewGuid().ToString("N"),
-            Timestamp = now,
-            Provider = provider,
-            Model = model,
-            ConnectionId = connectionId,
-            Status = status,
-            Data = detail?.GetRawText() ?? error ?? "{}",
-        });
+            db.RequestDetails.Add(new RequestDetail
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Timestamp = now,
+                Provider = provider,
+                Model = model,
+                ConnectionId = connectionId,
+                Status = status,
+                Data = detail?.GetRawText() ?? error ?? "{}",
+            });
+        }
         await db.SaveChangesAsync();
         // SPEC-111: spend da vk + débito no ledger — caminho sync (sem writer).
         if (userId is not null || userKeyId is not null)

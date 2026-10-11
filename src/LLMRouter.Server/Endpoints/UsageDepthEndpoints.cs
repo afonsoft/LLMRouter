@@ -18,6 +18,7 @@ public static class UsageDepthEndpoints
         var g = app.MapGroup("/api").RequireAuthorization();
 
         g.MapGet("/usage/call-logs", CallLogs);
+        g.MapGet("/usage/call-logs/meta", CallLogsMeta);
         g.MapGet("/usage/call-logs/{id:long}", CallLogItem);
         g.MapGet("/usage/request-logs", RequestLogs);
         g.MapGet("/usage/proxy-logs", ProxyLogs);
@@ -48,17 +49,26 @@ public static class UsageDepthEndpoints
         var ct = ctx.RequestAborted;
         var q = ctx.Request.Query;
         var rows = await db.UsageHistory.OrderByDescending(u => u.Timestamp).Take(5000).ToListAsync(ct);
+        // SPEC-116: multi-provider filter — accepts repeated providers[]/providers params and csv.
+        var providers = q["providers"].Concat(q["providers[]"])
+            .SelectMany(v => (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var filtered = rows.Where(u =>
-            (q["provider"].FirstOrDefault() is not { } pv || u.Provider == pv)
+            (providers.Count == 0 || (u.Provider is not null && providers.Contains(u.Provider)))
+            && (q["provider"].FirstOrDefault() is not { } pv || u.Provider == pv)
             && (q["model"].FirstOrDefault() is not { } mv || u.Model == mv)
-            && (q["status"].FirstOrDefault() is not { } sv || u.Status == sv)
+            && (q["status"].FirstOrDefault() is not { } sv || StatusMatch(u.Status, sv))
             && (q["key"].FirstOrDefault() is not { } kv || u.ApiKey == kv)
+            && (q["conn"].FirstOrDefault() is not { } cn || u.ConnectionId == cn)
+            && (q["type"].FirstOrDefault() is not { } ty || u.Endpoint == ty)
+            && (q["correlationId"].FirstOrDefault() is not { } rid || (u.Meta?.Contains(rid, StringComparison.Ordinal) ?? false))
             && (q["from"].FirstOrDefault() is not { } f || string.Compare(u.Timestamp, f) >= 0)
             && (q["to"].FirstOrDefault() is not { } t || string.Compare(u.Timestamp, t) <= 0)
             && (q["q"].FirstOrDefault() is not { } s
                 || (u.Model?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
                 || (u.Provider?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
-                || (u.ApiKey?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)))
+                || (u.ApiKey?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (u.Meta?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)))
             .ToList();
         var total = filtered.Count;
         var items = filtered
@@ -67,9 +77,35 @@ public static class UsageDepthEndpoints
             .Select(u => new
             {
                 u.Id, at = u.Timestamp, u.Provider, u.Model, key = u.ApiKey, u.Status,
-                u.LatencyMs, inputTokens = u.PromptTokens, outputTokens = u.CompletionTokens, u.Cost,
+                type = u.Endpoint, u.ConnectionId, u.LatencyMs,
+                inputTokens = u.PromptTokens, outputTokens = u.CompletionTokens, u.Cost,
             });
         await ctx.Response.WriteAsJsonAsync(new { items, total }, JsonOpts, ct);
+    }
+
+    /// <summary>SPEC-116: status param supports exact value or class prefixes (2xx/4xx/5xx/err).</summary>
+    private static bool StatusMatch(string? status, string sv) => sv switch
+    {
+        "4xx" or "5xx" or "2xx" or "3xx" => status is not null && status.StartsWith(sv[0]),
+        "err" or "error" => status is "err" or "error"
+            || (status is not null && (status.StartsWith('4') || status.StartsWith('5'))),
+        _ => status == sv,
+    };
+
+    /// <summary>/api/usage/call-logs/meta — distinct filter options over the recent window.</summary>
+    private static async Task CallLogsMeta(HttpContext ctx, LlmRouterDbContext db)
+    {
+        var ct = ctx.RequestAborted;
+        var rows = await db.UsageHistory.OrderByDescending(u => u.Timestamp).Take(5000)
+            .Select(u => new { u.Provider, u.Model, u.ApiKey, u.Endpoint, u.ConnectionId }).ToListAsync(ct);
+        await ctx.Response.WriteAsJsonAsync(new
+        {
+            providers = rows.Select(r => r.Provider).Where(v => v is not null).Distinct().OrderBy(v => v),
+            models = rows.Select(r => r.Model).Where(v => v is not null).Distinct().OrderBy(v => v),
+            keys = rows.Select(r => r.ApiKey).Where(v => v is not null).Distinct().OrderBy(v => v),
+            types = rows.Select(r => r.Endpoint).Where(v => v is not null).Distinct().OrderBy(v => v),
+            accounts = rows.Select(r => r.ConnectionId).Where(v => v is not null).Distinct().OrderBy(v => v),
+        }, JsonOpts, ct);
     }
 
     /// <summary>Single call row + its requestDetails payload.</summary>

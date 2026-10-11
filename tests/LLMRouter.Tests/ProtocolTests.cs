@@ -89,6 +89,26 @@ public class DocsTests
         m.GetProperty("name").GetString().ShouldBe("LLMRouter");
         m.GetProperty("icons").GetArrayLength().ShouldBeGreaterThan(0);
     }
+
+    [Fact]
+    public void AppCss_font_face_has_single_family_name()
+    {
+        // @font-face font-family must be ONE family name — a comma list is
+        // invalid, the rule is dropped, and icons render as ligature text.
+        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "LLMRouter.Client", "wwwroot", "css", "app.css");
+        var full = Path.GetFullPath(path);
+        if (!File.Exists(full)) return; // client asset; validated when present
+        var css = File.ReadAllText(full);
+        var start = css.IndexOf("@font-face", StringComparison.Ordinal);
+        start.ShouldBeGreaterThanOrEqualTo(0);
+        var blockEnd = css.IndexOf('}', start);
+        blockEnd.ShouldBeGreaterThan(start);
+        var block = css[start..blockEnd];
+        var fam = System.Text.RegularExpressions.Regex.Match(block, @"font-family\s*:\s*([^;]+)");
+        fam.Success.ShouldBeTrue("@font-face must declare font-family");
+        fam.Groups[1].Value.ShouldNotContain(",");
+    }
 }
 
 public class MitmTests

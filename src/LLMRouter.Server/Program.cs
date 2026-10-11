@@ -106,7 +106,10 @@ LLMRouter.Core.Gateway.HotCache.Configure(
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
-    db.EnsureCreated();
+    // SPEC-109: EF migrations own the schema; honors settings.database.autoMigrate
+    // and LLMR_SKIP_MIGRATE=1.
+    LLMRouter.Core.Data.SchemaMigrator.ApplyFromEnvironment(
+        db, msg => app.Logger.LogInformation("{Msg}", msg));
     // Apply persisted resilience overrides to the cooldown tracker (SPEC-007).
     var srow = db.Settings.FirstOrDefault();
     if (srow is not null)

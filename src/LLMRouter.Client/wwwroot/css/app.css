@@ -465,6 +465,15 @@ pre.code {
 }
 .pcard-icon img { max-width: 24px; max-height: 24px; object-fit: contain; }
 .pcard-txt { font-weight: 700; font-size: 11px; letter-spacing: .5px; }
+
+/* console terminal (SPEC-116) */
+.term { background: #0b0e14; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; max-height: 62vh; overflow-y: auto; }
+.term-row { display: flex; gap: 10px; padding: 3px 0; align-items: baseline; }
+.term-lvl { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 4px; }
+.term-lvl-error { background: #7f1d1d; color: #fecaca; }
+.term-lvl-warning { background: #713f12; color: #fde68a; }
+.term-lvl-info { background: #1e3a5f; color: #bfdbfe; }
+.term-msg { color: #d7dce2; white-space: pre-wrap; word-break: break-all; }
 .pcard-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .pcard-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcard-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

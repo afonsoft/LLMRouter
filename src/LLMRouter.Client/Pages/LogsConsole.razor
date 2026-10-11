@@ -6,27 +6,77 @@
 <div class="flex between">
     <div>
         <h1 class="page-title">@Loc.T("consoleLogs", "Console")</h1>
-        <p class="page-desc">Live server log tail (polls every 2s)</p>
+        <p class="page-desc">@Loc.T("consoleDesc", "Live server log tail (polls every 2s)")</p>
     </div>
-    <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span></button>
+    <div class="flex gap-2" style="align-items:center">
+        <span class="muted sm">@_items.Count @Loc.T("consoleEntries", "entries")</span>
+        <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span></button>
+    </div>
 </div>
 
-<div class="card card-p mt-6">
-    <pre class="mono sm" style="white-space:pre-wrap;max-height:60vh;overflow-y:auto;margin:0">@_text</pre>
+<div class="card card-p mt-4">
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+        <select class="input" style="width:auto" @bind="_level">
+            <option value="">@Loc.T("consoleAllLevels", "All Levels")</option>
+            <option value="error">error</option>
+            <option value="warning">warning</option>
+            <option value="info">info</option>
+        </select>
+        <input class="input" style="max-width:280px" placeholder="@Loc.T("common.search", "Search…")" @bind="_q" @bind:event="oninput" />
+        <select class="input" style="width:auto" @bind="_tail" @bind:after="Load">
+            <option value="100">last 100</option>
+            <option value="300">last 300</option>
+            <option value="500">last 500</option>
+        </select>
+    </div>
 </div>
+
+<div class="term mt-4">
+    @foreach (var it in Visible())
+    {
+        <div class="term-row">
+            <span class="term-lvl term-lvl-@it.Level">@it.Level</span>
+            <span class="term-msg mono sm">@it.Message</span>
+        </div>
+    }
+    @if (!Visible().Any())
+    {
+        <div class="term-row"><span class="term-msg muted sm">no entries</span></div>
+    }
+</div>
+@if (_tail < 500 && _items.Count >= _tail)
+{
+    <div class="mt-2"><button class="btn btn-sm" @onclick="More">@Loc.T("consoleMore", "See more logs")</button></div>
+}
 
 @code {
-    private string _text = "";
+    private record E(string Level, string Message);
+    private List<E> _items = [];
+    private string _level = "";
+    private string _q = "";
+    private int _tail = 300;
     private System.Threading.Timer? _timer;
+
     protected override async Task OnInitializedAsync()
     {
         await Load();
         _timer = new(async _ => { await Load(); await InvokeAsync(StateHasChanged); }, null, 2000, 2000);
     }
+
     private async Task Load()
     {
-        var r = await Api.GetAsync("api/console?tail=300");
-        _text = string.Join('\n', r.GetProperty("lines").EnumerateArray().Select(l => l.GetString()));
+        var url = $"api/logs/console?tail={_tail}" + (_level.Length > 0 ? $"&level={_level}" : "");
+        var r = await Api.GetAsync(url);
+        _items = r.GetProperty("items").EnumerateArray()
+            .Select(l => new E(
+                l.TryGetProperty("level", out var lv) ? lv.GetString() ?? "info" : "info",
+                l.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "")).ToList();
     }
+
+    private async Task More() { _tail = Math.Min(500, _tail + 200); await Load(); }
+
+    private IEnumerable<E> Visible() => _items.Where(i =>
+        string.IsNullOrWhiteSpace(_q) || i.Message.Contains(_q, StringComparison.OrdinalIgnoreCase));
+
     public void Dispose() => _timer?.Dispose();
 }

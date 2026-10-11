@@ -40,3 +40,9 @@ Autenticado **somente** por `vk-…` (chave admin/cookie → `403`):
 - `userKeys` é hot-cached (~15s); mutações nos endpoints invalidam o cache na hora — chave desativada para de autenticar imediatamente.
 - Budget usa **reset lazy**: `spendUsd` zera quando `spendPeriodStart` sai do período corrente (não há job).
 - `role` é informativo nesta fase — enforce de RBAC/OIDC vem na fase 1 completa do roadmap multi-usuário (`docs/analysis/evolucao-multiuser-openrouter.md`).
+
+## Catálogo público e signup (SPEC-112)
+
+- `GET /api/public/models` — catálogo OpenRouter-like (`{data:[{id,name,context_length,capabilities,pricing{prompt,completion,currency}}]}`). Público, sem auth. `settings.publicCatalog=false` → 404.
+- Preço de venda: `settings.pricing["provider/model"].sell{input,output}` explícito vence; senão custo × (1 + `settings.markup.defaultPercent|perModel["p/m"]`%).
+- `POST /api/signup` — opt-in via `settings.signup.enabled` (default **false** → 403). Rate-limit 5/h por IP → 429. E-mail duplicado → 409. Cria `User`+`UserKey`(vk-…)+topup `initialCreditUsd` no ledger; resposta 201 `{key,userId,creditUsd}` (a key só aparece uma vez).

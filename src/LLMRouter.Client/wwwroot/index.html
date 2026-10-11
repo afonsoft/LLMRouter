@@ -56,6 +56,16 @@
                 try { await navigator.clipboard.writeText(text); return true; }
                 catch (e) { return false; }
             },
+            bindDocSearch: function () {
+                if (window.__docSearchBound) return;
+                window.__docSearchBound = true;
+                document.addEventListener("keydown", function (e) {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+                        var el = document.getElementById("doc-search");
+                        if (el) { e.preventDefault(); el.focus(); el.select(); }
+                    }
+                });
+            },
             registerHotkeys: function (ref) {
                 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
                 window.__cmdk = ref;

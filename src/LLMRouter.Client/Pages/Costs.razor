@@ -5,56 +5,149 @@
 @inject Loc Loc
 @inject NavigationManager Nav
 
+@* SPEC-118: port of upstream CostOverviewTab — range seg-control, preset spend
+   cards, stat row, Cost Explorer group-by table with cost bars, token/efficiency
+   cards. Pricing tab: stat cards + sync/clear + provider rows with coverage. *@
+
 <div class="flex between">
     <div>
         <h1 class="page-title">@Loc.T("costsOverview", "Costs")</h1>
-        <p class="page-desc">Spend estimate from registry pricing + overrides</p>
+        <p class="page-desc">@Loc.T("costs.subtitle", "Spend estimate from registry pricing + overrides")</p>
     </div>
 </div>
 
 <div class="flex gap-2 mt-6">
-    <a class="tab @(Tab == "overview" ? "on" : "")" href="/dashboard/costs">Overview</a>
-    <a class="tab @(Tab == "pricing" ? "on" : "")" href="/dashboard/costs/pricing">Pricing</a>
-    <a class="tab @(Tab == "budget" ? "on" : "")" href="/dashboard/costs/budget">Budget</a>
+    <a class="tab @(Tab == "overview" ? "on" : "")" href="/dashboard/costs">@Loc.T("costs.overview", "Overview")</a>
+    <a class="tab @(Tab == "pricing" ? "on" : "")" href="/dashboard/costs/pricing">@Loc.T("costs.pricing", "Pricing")</a>
+    <a class="tab @(Tab == "budget" ? "on" : "")" href="/dashboard/costs/budget">@Loc.T("costs.budget", "Budget")</a>
 </div>
 
 @if (Tab == "overview")
 {
-    <div class="grid grid-3 mt-4">
-        <div class="card stat"><div><div class="stat-value">$@_monthCost.ToString("F4")</div><div class="stat-label">This month</div></div></div>
-        <div class="card stat"><div><div class="stat-value">@_monthTokens.ToString("N0")</div><div class="stat-label">Tokens</div></div></div>
-        <div class="card stat"><div><div class="stat-value">@_monthRequests.ToString("N0")</div><div class="stat-label">Requests</div></div></div>
-    </div>
-    @if (_budget > 0)
-    {
-        var pct = Math.Min(100, _budget == 0 ? 0 : 100 * _monthCost / _budget);
-        <div class="card card-p mt-6">
-            <div class="flex between"><span class="bold">Monthly budget</span><span class="mono sm">$@_monthCost.ToString("F2") / $@_budget.ToString("F2")</span></div>
-            <div style="height:8px;background:var(--border);border-radius:4px;margin-top:10px">
-                <div style="height:8px;width:@(pct.ToString("F0"))%;border-radius:4px;background:@(pct > 90 ? "var(--primary)" : "var(--accent)")"></div>
+    <div class="card card-p mt-4">
+        <div class="flex between" style="align-items:flex-end;gap:12px;flex-wrap:wrap">
+            <div>
+                <h2 class="bold" style="margin:0;font-size:18px">@Loc.T("costs.overviewTitle", "Overview")</h2>
+                <p class="dim" style="margin:4px 0 0;font-size:13px">@Loc.T("costs.overviewDescription", "Aggregated spend across the selected window")</p>
+            </div>
+            <div class="seg">
+                @foreach (var r in new[] { "7d", "30d", "90d", "180d", "365d", "all" })
+                {
+                    <button class="seg-btn @(_range == r ? "on" : "")" @onclick="() => SetRange(r)">@RangeLabel(r)</button>
+                }
             </div>
         </div>
-    }
-    <div class="grid grid-2 mt-6">
+    </div>
+
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:16px">
+        <div class="card stat"><div><div class="stat-value" style="color:var(--success)">$@_p1d.ToString("F4")</div><div class="stat-label">@Loc.T("costs.spendToday", "Spend today")</div></div></div>
+        <div class="card stat"><div><div class="stat-value" style="color:var(--accent)">$@_p7d.ToString("F4")</div><div class="stat-label">@Loc.T("costs.spend7d", "Spend 7d")</div></div></div>
+        <div class="card stat"><div><div class="stat-value" style="color:var(--primary)">$@_p30d.ToString("F4")</div><div class="stat-label">@Loc.T("costs.spend30d", "Spend 30d")</div></div></div>
+        <div class="card stat"><div><div class="stat-value" style="color:var(--warning)">$@_totalCost.ToString("F4")</div><div class="stat-label">@RangeLabel(_range)</div></div></div>
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px">
+            <div><div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.requestsInWindow", "Requests in window")</div><div class="bold" style="font-size:18px;margin-top:4px">@_totalRequests.ToString("N0")</div></div>
+            <div><div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.activeProviders", "Active providers")</div><div class="bold" style="font-size:18px;margin-top:4px">@_byProvider.Count</div></div>
+            <div><div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.activeModels", "Active models")</div><div class="bold" style="font-size:18px;margin-top:4px">@_uniqueModels</div></div>
+            <div><div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.avgCostPerRequest", "Avg cost / request")</div><div class="bold" style="font-size:18px;margin-top:4px">$@AvgCost.ToString("F4")</div></div>
+        </div>
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="flex between" style="align-items:center;gap:12px;flex-wrap:wrap">
+            <h3 class="bold" style="margin:0;font-size:14px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.costExplorer", "Cost Explorer")</h3>
+            <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap">
+                <div class="seg">
+                    @foreach (var g in new[] { ("provider", "Provider"), ("model", "Model"), ("apiKey", "API key"), ("account", "Account"), ("serviceTier", "Service") })
+                    {
+                        <button class="seg-btn @(_groupBy == g.Item1 ? "on" : "")" @onclick="() => _groupBy = g.Item1">@g.Item2</button>
+                    }
+                </div>
+                <input class="input" style="width:180px" placeholder="@Loc.T("common.search", "Search")" @bind="_search" @bind:event="oninput" />
+            </div>
+        </div>
+        <table class="table mt-4">
+            <thead><tr><th>@Loc.T("costs.name", "Name")</th><th style="text-align:right">@Loc.T("analytics.requests", "Requests")</th><th style="text-align:right">@Loc.T("analytics.tokens", "Tokens")</th><th style="text-align:right">@Loc.T("costs.cost", "Cost")</th></tr></thead>
+            <tbody>
+                @foreach (var r in ExplorerRows().Take(50))
+                {
+                    var share = _totalCost > 0 ? r.Cost / _totalCost : 0;
+                    <tr>
+                        <td>
+                            <div class="mono sm">@r.Name</div>
+                            <div class="u-bar" style="height:4px;margin-top:4px;max-width:220px"><div class="u-fill" style="width:@((share * 100).ToString("F1"))%;background:var(--primary)"></div></div>
+                        </td>
+                        <td style="text-align:right">@r.Requests.ToString("N0")</td>
+                        <td style="text-align:right" class="dim">@r.Tokens.ToString("N0")</td>
+                        <td style="text-align:right" class="mono sm">$@r.Cost.ToString("F4")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (ExplorerRows().Count == 0)
+        {
+            <div class="empty"><span class="material-symbols-outlined">payments</span>@Loc.T("costs.noCostData", "No usage data in this window")</div>
+        }
+    </div>
+
+    <div class="grid grid-2 mt-4">
         <div class="card card-p">
-            <h3 class="bold" style="margin:0 0 12px">Cost by provider</h3>
-            @foreach (var p in _byProvider)
+            <h3 class="bold" style="margin:0 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.tokenUsage", "Token usage")</h3>
+            <div class="grid" style="grid-template-columns:repeat(2,1fr);gap:12px">
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.totalTokens", "Total")</div><div class="bold" style="font-size:16px">@_totalTokens.ToString("N0")</div></div>
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.inputTokens", "Input")</div><div class="bold" style="font-size:16px">@_promptTokens.ToString("N0")</div></div>
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.outputTokens", "Output")</div><div class="bold" style="font-size:16px">@_completionTokens.ToString("N0")</div></div>
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.ioRatio", "In/out ratio")</div><div class="bold" style="font-size:16px">@(_completionTokens > 0 ? $"{(double)_promptTokens / _completionTokens:F1}:1" : "—")</div></div>
+            </div>
+        </div>
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.routingEfficiency", "Routing efficiency")</h3>
+            <div class="grid" style="grid-template-columns:repeat(2,1fr);gap:12px">
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.fallbackCount", "Fallbacks")</div><div class="bold" style="font-size:16px">@_fallbackCount.ToString("N0")</div></div>
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.fallbackRate", "Fallback rate")</div><div class="bold" style="font-size:16px">@_fallbackRate.ToString("F1")%</div></div>
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.modelCoverage", "Model coverage")</div><div class="bold" style="font-size:16px">@_coverage.ToString("F1")%</div></div>
+                <div><div class="dim" style="font-size:11px;text-transform:uppercase">@Loc.T("costs.streak", "Streak")</div><div class="bold" style="font-size:16px">@_streak d</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-2 mt-4">
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.monthlyForecast", "Monthly forecast")</h3>
+            <div class="dim" style="font-size:12px">@Loc.T("costs.avgDailyCost", "Avg daily (last 7d)")</div>
+            <div class="bold" style="font-size:16px">$@_avgDaily.ToString("F4")</div>
+            <div class="dim" style="font-size:12px;margin-top:8px">@Loc.T("costs.projectedMonthEnd", "Projected month-end")</div>
+            <div class="bold" style="font-size:16px;color:var(--warning)">$@_projected.ToString("F4")</div>
+        </div>
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.periodComparison", "Period comparison")</h3>
+            <div class="dim" style="font-size:12px">@Loc.T("costs.previousPeriod", "Previous half")</div>
+            <div class="bold" style="font-size:16px">$@_firstHalf.ToString("F4")</div>
+            <div class="dim" style="font-size:12px;margin-top:8px">@Loc.T("costs.currentPeriod", "Current half")</div>
+            <div class="bold" style="font-size:16px">$@_secondHalf.ToString("F4") <span class="chip @(_costChange >= 0 ? "chip-red" : "chip-green")" style="font-size:11px">@(_costChange >= 0 ? "+" : "")@_costChange.ToString("F0")%</span></div>
+        </div>
+    </div>
+
+    <div class="grid grid-2 mt-4">
+        <div class="card card-p">
+            <h3 class="bold" style="margin:0 0 12px">@Loc.T("costs.providerShare", "Cost by provider")</h3>
+            @foreach (var p in _byProvider.Take(10))
             {
-                var share = _monthCost > 0 ? p.Cost / _monthCost : 0;
+                var share = _totalCost > 0 ? p.Cost / _totalCost : 0;
                 <div class="mt-2">
-                    <div class="flex between"><span class="mono sm">@p.Provider</span><span class="mono sm">$@p.Cost.ToString("F4")</span></div>
-                    <div style="height:6px;background:var(--border);border-radius:3px;margin-top:4px">
-                        <div style="height:6px;width:@((share * 100).ToString("F0"))%;background:var(--primary);border-radius:3px"></div>
-                    </div>
+                    <div class="flex between"><span class="mono sm">@p.Name</span><span class="mono sm">$@p.Cost.ToString("F4")</span></div>
+                    <div class="u-bar" style="height:6px;margin-top:4px"><div class="u-fill" style="width:@((share * 100).ToString("F0"))%;background:var(--primary)"></div></div>
                 </div>
             }
         </div>
         <div class="card card-p">
-            <h3 class="bold" style="margin:0 0 12px">Top models by cost</h3>
+            <h3 class="bold" style="margin:0 0 12px">@Loc.T("costs.topModels", "Top models by cost")</h3>
             <table class="tbl"><thead><tr><th>Model</th><th>Reqs</th><th>Cost</th></tr></thead><tbody>
-                @foreach (var m in _byModel)
+                @foreach (var m in _byModel.Take(10))
                 {
-                    <tr><td class="mono sm">@m.Model</td><td>@m.Requests</td><td class="mono sm">$@m.Cost.ToString("F4")</td></tr>
+                    <tr><td class="mono sm">@m.Name</td><td>@m.Requests</td><td class="mono sm">$@m.Cost.ToString("F4")</td></tr>
                 }
             </tbody></table>
         </div>
@@ -62,27 +155,69 @@
 }
 else if (Tab == "pricing")
 {
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:16px">
+        <div class="card stat"><div><div class="stat-value">@_providersWithPricing</div><div class="stat-label">@Loc.T("costs.pricingProviders", "Providers with pricing")</div></div></div>
+        <div class="card stat"><div><div class="stat-value">@_catalog.Count</div><div class="stat-label">@Loc.T("costs.registryModels", "Registry models")</div></div></div>
+        <div class="card stat"><div><div class="stat-value">@_pricedCount</div><div class="stat-label">@Loc.T("costs.pricedModels", "Priced")</div></div></div>
+        <div class="card stat"><div><div class="stat-value" style="color:var(--primary)">@_overrideCount</div><div class="stat-label">@Loc.T("costs.userOverrides", "Overrides")</div></div></div>
+    </div>
+
     <div class="card card-p mt-4">
-        <table class="tbl">
-            <thead><tr><th>Provider/Model</th><th>Input $/1M</th><th>Output $/1M</th><th>Override</th></tr></thead>
-            <tbody>
-                @foreach (var m in _catalog)
+        <div class="flex between" style="align-items:center;gap:12px;flex-wrap:wrap">
+            <h3 class="bold" style="margin:0;font-size:14px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("costs.catalog", "Pricing catalog")</h3>
+            <div class="flex" style="gap:8px">
+                <button class="btn" @onclick="Sync" disabled="@_syncing">
+                    <span class="material-symbols-outlined" style="font-size:14px">sync</span>@(_syncing ? Loc.T("common.loading", "Loading…") : Loc.T("costs.syncPricing", "Sync pricing"))
+                </button>
+                <button class="btn" @onclick="ClearSynced" disabled="@_syncing"><span class="material-symbols-outlined" style="font-size:14px">delete</span>@Loc.T("costs.clearSynced", "Clear synced pricing")</button>
+            </div>
+        </div>
+        @if (_syncNote is not null)
+        {
+            <div class="dim" style="font-size:12px;margin-top:8px">@_syncNote</div>
+        }
+        @foreach (var g in _catalog.GroupBy(m => m.Provider).OrderByDescending(g => g.Count()))
+        {
+            var priced = g.Count(m => m.Input is not null || m.Output is not null);
+            var cov = g.Count() > 0 ? 100.0 * priced / g.Count() : 0;
+            var open = _openProviders.Contains(g.Key);
+            <div class="mt-2" style="border:1px solid var(--border);border-radius:12px;background:var(--bg-secondary)">
+                <button class="flex between" style="width:100%;align-items:center;gap:12px;padding:12px 16px;background:none;border:none;cursor:pointer;text-align:left" @onclick="() => ToggleProvider(g.Key)">
+                    <span class="flex" style="gap:10px;align-items:center">
+                        <span class="material-symbols-outlined" style="font-size:18px;color:var(--text-2)">@(open ? "expand_less" : "expand_more")</span>
+                        <span class="bold mono sm">@g.Key</span>
+                        <span class="dim" style="font-size:12px">@g.Count() @Loc.T("costs.models", "models")</span>
+                    </span>
+                    <span class="flex" style="gap:10px;align-items:center">
+                        <span class="dim" style="font-size:11px">@cov.ToString("F0")% @Loc.T("costs.coverage", "coverage")</span>
+                        <span class="u-bar" style="width:90px;height:6px"><span class="u-fill" style="display:block;width:@cov.ToString("F0")%;background:@(cov > 80 ? "var(--success)" : cov > 40 ? "var(--warning)" : "var(--error)")"></span></span>
+                    </span>
+                </button>
+                @if (open)
                 {
-                    <tr>
-                        <td class="mono sm">@m.Provider/@m.Model</td>
-                        <td class="mono sm">@Fmt(m.Input)</td>
-                        <td class="mono sm">@Fmt(m.Output)</td>
-                        <td><span class="badge @(m.Override ? "info" : "")">@(m.Override ? "custom" : "registry")</span></td>
-                    </tr>
+                    <table class="tbl" style="margin:0 16px 12px">
+                        <thead><tr><th>Model</th><th>Input $/1M</th><th>Output $/1M</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var m in g.OrderBy(x => x.Model))
+                            {
+                                <tr>
+                                    <td class="mono sm">@m.Model</td>
+                                    <td><input class="input mono sm" style="width:90px" value="@Fmt(m.Input)" @onchange="e => Queue(m, e.Value, null)" /></td>
+                                    <td><input class="input mono sm" style="width:90px" value="@Fmt(m.Output)" @onchange="e => Queue(m, null, e.Value)" /></td>
+                                    <td><span class="badge @(m.Override ? "badge-warning" : m.Synced ? "badge-info" : "badge-success")">@(m.Override ? "override" : m.Synced ? "synced" : "registry")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 }
-            </tbody>
-        </table>
+            </div>
+        }
     </div>
 }
 else
 {
     <div class="card card-p mt-4" style="max-width:420px">
-        <label class="lbl">Monthly budget (USD)</label>
+        <label class="lbl">@Loc.T("costs.monthlyBudget", "Monthly budget (USD)")</label>
         <input class="input mono" type="number" step="0.01" @bind="_budgetInput" />
         <div class="mt-4"><button class="btn btn-primary" @onclick="SaveBudget">@Loc.T("common.save", "Save")</button></div>
     </div>
@@ -90,23 +225,106 @@ else
 
 @code {
     private string Tab => Nav.Uri.Contains("/pricing") ? "pricing" : Nav.Uri.Contains("/budget") ? "budget" : "overview";
-    private double _monthCost, _budget, _budgetInput;
-    private long _monthTokens, _monthRequests;
-    private List<(string Provider, double Cost, long Requests)> _byProvider = [];
-    private List<(string Model, double Cost, long Requests)> _byModel = [];
-    private List<(string Provider, string Model, double? Input, double? Output, bool Override)> _catalog = [];
+
+    private string _range = "30d", _groupBy = "provider", _search = "";
+    private double _totalCost, _p1d, _p7d, _p30d, _avgDaily, _projected, _firstHalf, _secondHalf, _costChange;
+    private long _totalRequests, _totalTokens, _promptTokens, _completionTokens, _fallbackCount;
+    private int _uniqueModels, _streak;
+    private double _fallbackRate, _coverage;
+    private List<(string Name, long Requests, long Tokens, double Cost)> _byProvider = [], _byModel = [], _byApiKey = [], _byAccount = [], _byTier = [];
+
+    private double _budget, _budgetInput;
+    private List<(string Provider, string Model, double? Input, double? Output, bool Override, bool Synced)> _catalog = [];
+    private int _providersWithPricing, _pricedCount, _overrideCount;
+    private readonly HashSet<string> _openProviders = new();
+    private bool _syncing;
+    private string? _syncNote;
+
+    private double AvgCost => _totalRequests > 0 ? _totalCost / _totalRequests : 0;
+
+    private static string RangeLabel(string r) => r switch
+    {
+        "7d" => "7d", "30d" => "30d", "90d" => "90d", "180d" => "180d", "365d" => "365d", _ => "All",
+    };
+
+    private async Task SetRange(string r)
+    {
+        _range = r;
+        await LoadOverview();
+    }
 
     protected override async Task OnInitializedAsync()
     {
         var r = await Api.GetAsync("api/costs");
-        _monthCost = r.GetProperty("monthCost").GetDouble();
-        _monthTokens = r.GetProperty("monthTokens").GetInt64();
-        _monthRequests = r.GetProperty("monthRequests").GetInt64();
         _budget = _budgetInput = r.GetProperty("budget").GetDouble();
-        _byProvider = r.GetProperty("byProvider").EnumerateArray()
-            .Select(x => (x.GetProperty("provider").GetString() ?? "?", x.GetProperty("cost").GetDouble(), x.GetProperty("requests").GetInt64())).ToList();
-        _byModel = r.GetProperty("byModel").EnumerateArray()
-            .Select(x => (x.GetProperty("model").GetString() ?? "?", x.GetProperty("cost").GetDouble(), x.GetProperty("requests").GetInt64())).ToList();
+        await LoadOverview();
+        await LoadPricing();
+    }
+
+    private async Task LoadOverview()
+    {
+        var r = await Api.GetAsync($"api/usage/analytics?range={_range}&presets=1d,7d,30d");
+        var s = r.GetProperty("summary");
+        _totalCost = s.GetProperty("totalCost").GetDouble();
+        _totalRequests = s.GetProperty("totalRequests").GetInt64();
+        _uniqueModels = s.GetProperty("uniqueModels").GetInt32();
+        _totalTokens = s.GetProperty("totalTokens").GetInt64();
+        _promptTokens = s.GetProperty("promptTokens").GetInt64();
+        _completionTokens = s.GetProperty("completionTokens").GetInt64();
+        _fallbackCount = s.GetProperty("fallbackCount").GetInt64();
+        _fallbackRate = s.GetProperty("fallbackRatePct").GetDouble();
+        _coverage = s.GetProperty("requestedModelCoveragePct").GetDouble();
+        _streak = s.GetProperty("streak").GetInt32();
+
+        if (r.TryGetProperty("presetSummaries", out var ps))
+        {
+            _p1d = ps.TryGetProperty("1d", out var a) ? a.GetProperty("totalCost").GetDouble() : 0;
+            _p7d = ps.TryGetProperty("7d", out var b) ? b.GetProperty("totalCost").GetDouble() : 0;
+            _p30d = ps.TryGetProperty("30d", out var c) ? c.GetProperty("totalCost").GetDouble() : 0;
+        }
+
+        static List<(string, long, long, double)> Rows(JsonElement e, string field)
+        {
+            var l = new List<(string, long, long, double)>();
+            foreach (var x in e.EnumerateArray())
+                l.Add((x.GetProperty(field).GetString() ?? "?",
+                    x.GetProperty("requests").GetInt64(),
+                    x.GetProperty("totalTokens").GetInt64(),
+                    x.GetProperty("cost").GetDouble()));
+            return l;
+        }
+        _byProvider = Rows(r.GetProperty("byProvider"), "provider");
+        _byModel = Rows(r.GetProperty("byModel"), "model");
+        _byApiKey = Rows(r.GetProperty("byApiKey"), "apiKey");
+        _byAccount = Rows(r.GetProperty("byAccount"), "account");
+        _byTier = Rows(r.GetProperty("byServiceTier"), "serviceTier");
+
+        var trend = r.GetProperty("dailyTrend").EnumerateArray()
+            .Select(x => x.GetProperty("cost").GetDouble()).ToList();
+        var recent = trend.TakeLast(7).ToList();
+        _avgDaily = recent.Count > 0 ? recent.Average() : 0;
+        var today = DateTime.UtcNow;
+        var daysLeft = DateTime.DaysInMonth(today.Year, today.Month) - today.Day;
+        _projected = _p30d + _avgDaily * daysLeft;
+        var half = trend.Count / 2;
+        _firstHalf = trend.Take(half).Sum();
+        _secondHalf = trend.Skip(half).Sum();
+        _costChange = _firstHalf > 0 ? (_secondHalf - _firstHalf) / _firstHalf * 100 : _secondHalf > 0 ? 100 : 0;
+    }
+
+    private List<(string Name, long Requests, long Tokens, double Cost)> ExplorerRows()
+    {
+        var src = _groupBy switch
+        {
+            "model" => _byModel, "apiKey" => _byApiKey,
+            "account" => _byAccount, "serviceTier" => _byTier, _ => _byProvider,
+        };
+        return _search.Length == 0 ? src
+            : src.Where(x => x.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task LoadPricing()
+    {
         var pr = await Api.GetAsync("api/pricing");
         _catalog = pr.GetProperty("catalog").EnumerateArray().Select(x =>
         {
@@ -117,11 +335,59 @@ else
                 if (p.TryGetProperty("output", out var oo) && oo.ValueKind == JsonValueKind.Number) o = oo.GetDouble();
             }
             return (x.GetProperty("provider").GetString() ?? "", x.GetProperty("model").GetString() ?? "",
-                i, o, x.GetProperty("hasOverride").GetBoolean());
+                i, o, x.GetProperty("hasOverride").GetBoolean(),
+                x.TryGetProperty("synced", out var sy) && sy.ValueKind == JsonValueKind.True);
         }).ToList();
+        _providersWithPricing = _catalog.Where(m => m.Input is not null || m.Output is not null).Select(m => m.Provider).Distinct().Count();
+        _pricedCount = _catalog.Count(m => m.Input is not null || m.Output is not null);
+        _overrideCount = pr.TryGetProperty("overrides", out var ov) && ov.ValueKind == JsonValueKind.Object
+            ? ov.EnumerateObject().Count() : 0;
     }
 
-    private static string Fmt(double? v) => v is null ? "—" : v.Value.ToString("F2");
+    private void ToggleProvider(string p)
+    {
+        if (!_openProviders.Remove(p)) _openProviders.Add(p);
+    }
+
+    private async Task Queue((string Provider, string Model, double? Input, double? Output, bool Override, bool Synced) m,
+        object? input, object? output)
+    {
+        static double? Parse(object? v, double? cur) => v is string s && double.TryParse(s, out var d) ? d : cur;
+        var body = new Dictionary<string, double?>
+        {
+            ["input"] = input is null ? m.Input : Parse(input, m.Input),
+            ["output"] = output is null ? m.Output : Parse(output, m.Output),
+        };
+        if (body["input"] is null && body["output"] is null) return;
+        await Api.PutAsync($"api/pricing/{m.Provider}/{Uri.EscapeDataString(m.Model)}", body);
+        await LoadPricing();
+    }
+
+    private async Task Sync()
+    {
+        _syncing = true; _syncNote = null;
+        try
+        {
+            var r = await Api.PostAsync("api/pricing/sync", new { });
+            _syncNote = r.TryGetProperty("synced", out var s) ? $"Synced {s.GetInt32()} prices" : "Synced";
+            await LoadPricing();
+        }
+        finally { _syncing = false; }
+    }
+
+    private async Task ClearSynced()
+    {
+        _syncing = true;
+        try
+        {
+            await Api.PostAsync("api/pricing/clear-synced", new { });
+            _syncNote = Loc.T("costs.clearedSynced", "Synced prices cleared");
+            await LoadPricing();
+        }
+        finally { _syncing = false; }
+    }
+
+    private static string Fmt(double? v) => v is null ? "" : v.Value.ToString("F2");
 
     private async Task SaveBudget()
     {

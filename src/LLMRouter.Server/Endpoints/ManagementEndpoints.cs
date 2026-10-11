@@ -684,14 +684,21 @@ public static class ManagementEndpoints
                 && ov.ValueKind == JsonValueKind.Object)
                 foreach (var kv in ov.EnumerateObject())
                     overrides[kv.Name] = kv.Value;
+            var synced = new Dictionary<string, object>();
+            if (sd.ValueKind == JsonValueKind.Object
+                && sd.TryGetProperty(PricingService.SyncedKey, out var sn)
+                && sn.ValueKind == JsonValueKind.Object)
+                foreach (var kv in sn.EnumerateObject())
+                    synced[kv.Name] = kv.Value;
             var catalog = r.UiProviders().SelectMany(t =>
                 (r.GetProvider(t.Entry.Id)?.Models ?? []).Select(m => new
                 {
                     provider = t.Entry.Id, model = m.Id,
                     price = m.Pricing is null ? null : m.Pricing,
                     hasOverride = overrides.ContainsKey($"{t.Entry.Id}/{m.Id}"),
+                    synced = synced.ContainsKey($"{t.Entry.Id}/{m.Id}"),
                 }));
-            return Results.Json(new { catalog, overrides }, JsonOpts);
+            return Results.Json(new { catalog, overrides, synced }, JsonOpts);
         });
 
         g.MapPut("/pricing/{provider}/{model}", async (string provider, string model,

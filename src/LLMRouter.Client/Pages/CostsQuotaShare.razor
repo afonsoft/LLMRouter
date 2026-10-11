@@ -1,9 +1,41 @@
 @page "/dashboard/costs/quota-share"
 @inject Api Api
 @inject Loc Loc
+@inject NavigationManager Nav
 
-<h1 class="page-title">@Loc.T("costsQuotaShare", "Quota share")</h1>
-<p class="page-desc">@Loc.T("costsQuotaShareSubtitle", "How quota pools split usage across keys and connections")</p>
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("costsQuotaShare", "Quota share")</h1>
+        <p class="page-desc">@Loc.T("costsQuotaShareSubtitle", "How quota pools split usage across keys and connections")</p>
+    </div>
+    <a class="btn btn-primary" href="/dashboard/quota"><span class="material-symbols-outlined" style="font-size:16px">add</span>@Loc.T("qs.newGroup", "New group")</a>
+</div>
+
+<div class="mt-4" style="display:flex;align-items:flex-start;gap:10px;border:1px solid rgba(245,158,11,.3);background:rgba(245,158,11,.08);border-radius:12px;padding:14px 16px">
+    <span class="material-symbols-outlined" style="color:var(--warning);font-size:20px">warning</span>
+    <div class="sm" style="color:var(--text-2)">@Loc.T("qs.warning", "Quota share pools meter every request routed through them — exhausted pools reject traffic until the window resets.")</div>
+</div>
+
+<div class="grid grid-2 mt-4">
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("qs.howItWorks", "How Quota Share works")</h3>
+        <ol class="sm" style="color:var(--text-2);padding-left:18px;margin:0;display:flex;flex-direction:column;gap:8px">
+            <li>@Loc.T("qs.step1", "Create a pool grouping API keys and provider connections under one quota window.")</li>
+            <li>@Loc.T("qs.step2", "Assign members — every request through a member counts toward the pool.")</li>
+            <li>@Loc.T("qs.step3", "Set token/request limits per window (5h, daily, weekly, monthly).")</li>
+            <li>@Loc.T("qs.step4", "The router checks remaining capacity before dispatching and exhausts the pool at 0%.")</li>
+        </ol>
+    </div>
+    <div class="card card-p">
+        <h3 class="bold mb-4">@Loc.T("qs.availableEndpoints", "Available endpoints")</h3>
+        <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("qs.baseUrl", "Base URL")</div>
+        <div class="mono sm" style="margin:4px 0 12px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border)">@Nav.BaseUri v1</div>
+        <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">@Loc.T("qs.samplePost", "Sample POST")</div>
+        <pre class="mono sm" style="margin:4px 0 0;padding:10px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border);white-space:pre-wrap">POST /v1/chat/completions
+Authorization: Bearer &lt;api-key&gt;
+{ "model": "&lt;combo-or-model&gt;", "messages": [...] }</pre>
+    </div>
+</div>
 
 <div class="grid grid-2 mt-4">
     <div class="card card-p">

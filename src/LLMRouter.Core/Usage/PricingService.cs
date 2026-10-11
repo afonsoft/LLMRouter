@@ -7,11 +7,14 @@ namespace LLMRouter.Core.Usage;
 /// <summary>
 /// Cost computation: user price overrides in settings.data.catalogUserPricing
 /// ({ "provider/model": { "input": x, "output": y } } per 1M tokens) take
-/// precedence over the registry model's own pricing entry.
+/// precedence, then synced prices (settings.data.catalogSyncedPricing, written
+/// by POST /api/pricing/sync), then the registry model's own pricing entry.
 /// </summary>
 public static class PricingService
 {
     public const string OverridesKey = "catalogUserPricing";
+    /// <summary>SPEC-118: prices synced from a public catalog (OpenRouter).</summary>
+    public const string SyncedKey = "catalogSyncedPricing";
 
     /// <summary>Returns (inputPer1M, outputPer1M) USD, or null when unknown.</summary>
     public static (double input, double output)? GetPrice(
@@ -23,6 +26,14 @@ public static class PricingService
             && ov.TryGetProperty($"{provider}/{model}", out var e))
         {
             var p = ParsePrice(e);
+            if (p is not null) return p;
+        }
+        if (settingsData.ValueKind == JsonValueKind.Object
+            && settingsData.TryGetProperty(SyncedKey, out var sy)
+            && sy.ValueKind == JsonValueKind.Object
+            && sy.TryGetProperty($"{provider}/{model}", out var se))
+        {
+            var p = ParsePrice(se);
             if (p is not null) return p;
         }
         var prov = registry.GetProvider(provider);

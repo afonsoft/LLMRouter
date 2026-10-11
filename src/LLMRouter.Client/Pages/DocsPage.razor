@@ -2,46 +2,216 @@
 @page "/docs/{*Slug}"
 @inject Api Api
 @inject Loc Loc
+@inject IJSRuntime JS
 
-<h1 class="page-title">@Loc.T("docs.title", "Docs")</h1>
+<style>
+    .docs-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
+    .docs-sidebar { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding-right: 4px; }
+    .docs-back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted, #a1a1aa); font-size: 13px; text-decoration: none; margin-bottom: 14px; }
+    .docs-back:hover { color: var(--fg, #e4e4e7); }
+    .docs-cat { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted, #a1a1aa); margin: 16px 0 6px; font-weight: 600; }
+    .doc-link { display: block; padding: 5px 10px; border-left: 2px solid transparent; color: var(--muted, #a1a1aa); font-size: 13.5px; text-decoration: none; border-radius: 0 6px 6px 0; }
+    .doc-link:hover { color: var(--fg, #e4e4e7); background: var(--surface-2, #1c2230); }
+    .doc-link.active { color: var(--accent, #f4a7c3); border-left-color: var(--accent, #f4a7c3); background: var(--surface-2, #1c2230); }
+    .docs-home { max-width: 860px; margin: 0 auto; padding: 24px 12px; }
+    .docs-hero { text-align: center; margin: 32px 0 48px; }
+    .docs-hero h1 { font-size: 34px; font-weight: 700; margin: 0 0 12px; }
+    .docs-hero .desc { font-size: 16px; color: var(--muted, #a1a1aa); margin-bottom: 14px; }
+    .docs-hero kbd { padding: 2px 7px; background: var(--surface-2, #1c2230); border: 1px solid var(--grid-line, rgba(255,255,255,.06)); border-radius: 5px; font-family: ui-monospace, monospace; font-size: 12px; }
+    .docs-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px; }
+    .docs-card { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 16px; border: 1px solid var(--grid-line, rgba(255,255,255,.06)); border-radius: 12px; background: var(--surface, #161b27); text-decoration: none; transition: border-color .15s; }
+    .docs-card:hover { border-color: var(--accent, #f4a7c3); }
+    .docs-card .material-symbols-outlined { font-size: 30px; color: var(--accent, #f4a7c3); margin-bottom: 10px; }
+    .docs-card .t { font-weight: 600; color: var(--fg, #e4e4e7); }
+    .docs-card .d { font-size: 13px; color: var(--muted, #a1a1aa); margin-top: 6px; }
+    .docs-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .docs-section { border: 1px solid var(--grid-line, rgba(255,255,255,.06)); border-radius: 12px; padding: 20px; background: var(--surface, #161b27); }
+    .docs-section h2 { font-size: 15px; font-weight: 600; margin: 0; }
+    .docs-section .sub { font-size: 13px; color: var(--muted, #a1a1aa); margin-top: 2px; }
+    .docs-section ul { list-style: none; padding: 0; margin: 14px 0 0; }
+    .docs-section li { margin: 8px 0; }
+    .docs-section a { color: var(--muted, #a1a1aa); font-size: 13.5px; text-decoration: none; }
+    .docs-section a:hover { color: var(--accent, #f4a7c3); }
+    .docs-content { max-width: 860px; }
+    .docs-crumb { font-size: 13px; color: var(--muted, #a1a1aa); margin-bottom: 14px; }
+    .docs-crumb a { color: var(--muted, #a1a1aa); text-decoration: none; }
+    .docs-crumb a:hover { color: var(--fg, #e4e4e7); }
+    .docs-pagenav { display: flex; justify-content: space-between; gap: 16px; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--grid-line, rgba(255,255,255,.06)); }
+    .docs-pagenav a { color: var(--accent, #f4a7c3); font-size: 14px; text-decoration: none; }
+</style>
 
-<div class="grid" style="grid-template-columns:240px 1fr;gap:14px">
-    <div class="card card-p" style="align-self:start">
-        @foreach (var f in _files)
+<div class="docs-layout">
+    <aside class="docs-sidebar">
+        <a class="docs-back" href="/dashboard">
+            <span class="material-symbols-outlined" style="font-size:16px">arrow_back</span>
+            @Loc.T("docs.backToDashboard", "Back to Dashboard")
+        </a>
+        <input id="doc-search" class="input" style="width:100%;margin-bottom:6px"
+               placeholder="@Loc.T("docs.search", "Search docs…")"
+               @bind="_q" @bind:event="oninput" />
+        @if (!string.IsNullOrWhiteSpace(_q))
         {
-            <a href="/docs/@f" class="doc-link @(Slug == f ? "active" : "")">@f</a>
+            var hits = AllPages().Where(p =>
+                p.Title.Contains(_q, StringComparison.OrdinalIgnoreCase) ||
+                p.Slug.Contains(_q, StringComparison.OrdinalIgnoreCase)).Take(20).ToList();
+            @if (hits.Count == 0) { <p class="muted sm" style="padding:8px 4px">@Loc.T("docs.noResults", "No results")</p> }
+            @foreach (var p in hits)
+            {
+                <a href="/docs/@p.Slug" class="doc-link">@p.Title</a>
+            }
         }
-        @if (_files.Count == 0) { <p class="muted">…</p> }
-    </div>
-    <div class="card card-p">
-        @if (_html is not null) { @((MarkupString)_html) }
-        else { <p class="muted">@Loc.T("docs.pick", "Pick a document on the left")</p> }
-    </div>
+        else
+        {
+            @foreach (var cat in _tree)
+            {
+                <div class="docs-cat">@CatLabel(cat.Key)</div>
+                @foreach (var p in cat.Value)
+                {
+                    <a href="/docs/@p.Slug" class="doc-link @(Slug == p.Slug ? "active" : "")">@p.Title</a>
+                }
+            }
+        }
+    </aside>
+
+    <main>
+        @if (Slug is null)
+        {
+            <div class="docs-home">
+                <div class="docs-hero">
+                    <h1>@Loc.T("docs.homeTitle", "LLMRouter Documentation")</h1>
+                    <p class="desc">@Loc.T("docs.homeDesc", "Gateway, routing, providers and operations — everything in one place.")</p>
+                    <p class="sm muted">@((MarkupString)Loc.T("docs.searchHint", "Press <kbd>Ctrl</kbd>+<kbd>K</kbd> to search"))</p>
+                </div>
+
+                <div class="docs-cards">
+                    <a class="docs-card" href="/docs/en/README">
+                        <span class="material-symbols-outlined">rocket_launch</span>
+                        <span class="t">@Loc.T("docs.featuredQuickStartTitle", "Quick Start")</span>
+                        <span class="d">@Loc.T("docs.featuredQuickStartDesc", "System overview and first steps")</span>
+                    </a>
+                    <a class="docs-card" href="/docs/en/routing-strategies">
+                        <span class="material-symbols-outlined">auto_awesome</span>
+                        <span class="t">@Loc.T("docs.featuredAutoComboTitle", "Auto-Combo Guide")</span>
+                        <span class="d">@Loc.T("docs.featuredAutoComboDesc", "Routing strategies and combo behavior")</span>
+                    </a>
+                    <a class="docs-card" href="/docs/en/configuration">
+                        <span class="material-symbols-outlined">link</span>
+                        <span class="t">@Loc.T("docs.featuredProvidersTitle", "Configuration Guide")</span>
+                        <span class="d">@Loc.T("docs.featuredProvidersDesc", "Providers, keys and environment settings")</span>
+                    </a>
+                </div>
+
+                <div class="docs-sections">
+                    <div class="docs-section">
+                        <h2>@Loc.T("docs.nonTechTitle", "For Non-Tech Users")</h2>
+                        <p class="sub">@Loc.T("docs.nonTechSub", "Get started and learn the basics")</p>
+                        <ul>
+                            @foreach (var p in SectionPages("home", "getting-started", "guides"))
+                            {
+                                <li><a href="/docs/@p.Slug">@p.Title</a></li>
+                            }
+                        </ul>
+                    </div>
+                    <div class="docs-section">
+                        <h2>@Loc.T("docs.techTitle", "For Tech Users")</h2>
+                        <p class="sub">@Loc.T("docs.techSub", "Architecture, routing, ops and reference")</p>
+                        <ul>
+                            @foreach (var p in SectionPages("configuration", "architecture", "management", "reference", "routing", "monitoring", "security", "providers", "comparison", "operations"))
+                            {
+                                <li><a href="/docs/@p.Slug">@p.Title</a></li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="docs-content">
+                <div class="docs-crumb">
+                    <a href="/docs">Docs</a>
+                    @if (_cur is not null)
+                    {
+                        <text> / @CatLabel(CategoryOf(_cur.Slug)) / @_cur.Title</text>
+                    }
+                </div>
+                @if (_html is not null) { @((MarkupString)_html) }
+                else { <p class="muted">@Loc.T("docs.pick", "Pick a document on the left")</p> }
+
+                @{
+                    var (prev, next) = PrevNext();
+                }
+                <div class="docs-pagenav">
+                    <span>@if (prev is not null) { <a href="/docs/@prev.Slug">← @prev.Title</a> }</span>
+                    <span>@if (next is not null) { <a href="/docs/@next.Slug">@next.Title →</a> }</span>
+                </div>
+            </div>
+        }
+    </main>
 </div>
 
 @code {
     [Parameter] public string? Slug { get; set; }
-    private List<string> _files = [];
-    private string? _html;
+
+    private sealed record DocPage(string Slug, string Title);
+    private List<KeyValuePair<string, List<DocPage>>> _tree = [];
+    private string? _html, _q;
+    private DocPage? _cur;
+
+    private static string Prettify(string s) =>
+        string.Join(' ', s.Split('-').Select(w => w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..]));
+
+    private string CatLabel(string cat) => Loc.T($"docs.cat.{cat}", Prettify(cat));
+
+    private List<DocPage> AllPages() => _tree.SelectMany(kv => kv.Value).ToList();
+
+    private IEnumerable<DocPage> SectionPages(params string[] cats) =>
+        _tree.Where(kv => cats.Contains(kv.Key)).SelectMany(kv => kv.Value);
+
+    private string CategoryOf(string slug) =>
+        _tree.FirstOrDefault(kv => kv.Value.Any(p => p.Slug == slug)).Key ?? "";
+
+    private (DocPage?, DocPage?) PrevNext()
+    {
+        var all = AllPages();
+        var i = all.FindIndex(p => p.Slug == Slug);
+        if (i < 0) return (null, null);
+        return (i > 0 ? all[i - 1] : null, i + 1 < all.Count ? all[i + 1] : null);
+    }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var r = await Api.GetAsync("api/docs");
-            _files = r.GetProperty("files").EnumerateArray().Select(f => f.GetString()!).OrderBy(x => x).ToList();
+            var r = await Api.GetAsync($"api/docs/tree?lang={Loc.Lang}");
+            _tree = r.GetProperty("tree").EnumerateArray().Select(cat =>
+                new KeyValuePair<string, List<DocPage>>(
+                    cat.GetProperty("category").GetString()!,
+                    cat.GetProperty("pages").EnumerateArray()
+                        .Select(p => new DocPage(p.GetProperty("slug").GetString()!, p.GetProperty("title").GetString()!))
+                        .ToList())).ToList();
         }
-        catch { /* best-effort: failure is non-fatal */ }
+        catch { /* best-effort */ }
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Slug is null) return;
+        if (Slug is null) { _html = null; _cur = null; return; }
         try
         {
             var r = await Api.GetAsync($"api/docs/{Slug}");
             _html = r.GetProperty("html").GetString();
+            _cur = AllPages().FirstOrDefault(p => p.Slug == Slug)
+                ?? new DocPage(Slug, Prettify(Slug.Split('/')[^1]));
         }
         catch { _html = "<p>not found</p>"; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await JS.InvokeVoidAsync("llmrouter.bindDocSearch"); } catch { }
+        }
     }
 }

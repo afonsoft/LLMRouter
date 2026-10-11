@@ -160,16 +160,26 @@ public static class BuiltinJobs
         }
 
         /// <summary>Deletes expired rows in 5k batches (SQLite lacks DELETE..LIMIT —
-        /// a rowid subselect caps each statement's lock window).</summary>
+        /// a rowid subselect caps each statement's lock window). Table/column are
+        /// compile-time literals per surface — only cutoff and chunk size bind.</summary>
         public static async Task<int> PurgeChunkedAsync(
             LlmRouterDbContext db, string table, string column, string cutoff,
             CancellationToken ct, int chunkSize = ChunkSize)
         {
+            var sql = (table, column) switch
+            {
+                ("auditEvents", "At") => """DELETE FROM "auditEvents" WHERE rowid IN (SELECT rowid FROM "auditEvents" WHERE "At" < {0} LIMIT {1})""",
+                ("mcpToolCalls", "At") => """DELETE FROM "mcpToolCalls" WHERE rowid IN (SELECT rowid FROM "mcpToolCalls" WHERE "At" < {0} LIMIT {1})""",
+                ("requestDetails", "Timestamp") => """DELETE FROM "requestDetails" WHERE rowid IN (SELECT rowid FROM "requestDetails" WHERE "Timestamp" < {0} LIMIT {1})""",
+                ("webhookDeliveries", "At") => """DELETE FROM "webhookDeliveries" WHERE rowid IN (SELECT rowid FROM "webhookDeliveries" WHERE "At" < {0} LIMIT {1})""",
+                ("usageDaily", "DateKey") => """DELETE FROM "usageDaily" WHERE rowid IN (SELECT rowid FROM "usageDaily" WHERE "DateKey" < {0} LIMIT {1})""",
+                ("usageHistory", "Timestamp") => """DELETE FROM "usageHistory" WHERE rowid IN (SELECT rowid FROM "usageHistory" WHERE "Timestamp" < {0} LIMIT {1})""",
+                _ => throw new ArgumentException($"unknown purge surface {table}.{column}"),
+            };
             var total = 0;
             for (var i = 0; i < 400; i++)
             {
-                var sql = $"DELETE FROM \"{table}\" WHERE rowid IN (SELECT rowid FROM \"{table}\" WHERE \"{column}\" < {{0}} LIMIT {chunkSize})";
-                var n = await db.Database.ExecuteSqlRawAsync(sql, [cutoff], ct);
+                var n = await db.Database.ExecuteSqlRawAsync(sql, [cutoff, chunkSize], ct);
                 total += n;
                 if (n < chunkSize) break;
             }

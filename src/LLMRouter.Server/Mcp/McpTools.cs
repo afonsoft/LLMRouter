@@ -78,9 +78,11 @@ public static class McpTools
     };
 
     public static IEnumerable<object> ListTools() =>
-        Canonical.Select(t => (object)new { name = t.Name, description = t.Description, inputSchema = t.InputSchema });
+        Canonical.Select(t => (object)new { name = t.Name, description = t.Description, inputSchema = t.InputSchema })
+            .Concat(McpToolsExtra.ListTools());
 
-    public static bool IsCanonical(string name) => Canonical.Any(t => t.Name == name);
+    public static bool IsCanonical(string name) =>
+        Canonical.Any(t => t.Name == name) || McpToolsExtra.IsCanonical(name);
 
     private static string? Arg(JsonElement a, string name) =>
         a.ValueKind == JsonValueKind.Object && a.TryGetProperty(name, out var v) ? v.ToString() : null;
@@ -514,7 +516,7 @@ public static class McpTools
                 return new { results = hits.Select(h => JsonNode.Parse(h.GetRawText())), count = hits.Count };
             }
             default:
-                return null;
+                return await McpToolsExtra.DispatchAsync(name, args, ctx, db, registry, hf);
         }
     }
 }

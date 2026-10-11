@@ -74,7 +74,7 @@ public static class ToolsEndpoints
             {
                 tools = CliToolsManifest.Tools.Select(t => new
                 {
-                    t.Id, t.Name, t.Binary, t.InstallHint, t.Inbound,
+                    t.Id, t.Name, t.Binary, t.InstallHint, t.Inbound, t.Category,
                     detected = CliToolsManifest.Detected(t),
                     env = CliToolsManifest.EnvFor(t, baseUrl, "<your-api-key>"),
                 }),

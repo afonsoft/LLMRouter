@@ -10,32 +10,34 @@ namespace LLMRouter.Core.Registry;
 /// </summary>
 public static class CliToolsManifest
 {
+    /// <summary>SPEC-121: categoria de exibição — "code" (code tools),
+    /// "agent" (broad autonomous agents) ou "ide" (IDE extensions/companions).</summary>
     public sealed record CliTool(
         string Id, string Name, string Binary, string InstallHint,
-        string Inbound, Dictionary<string, string> Env);
+        string Inbound, Dictionary<string, string> Env, string Category = "code");
 
     public static readonly CliTool[] Tools =
     [
         new("claude-code", "Claude Code", "claude", "npm i -g @anthropic-ai/claude-code",
-            "claude", new() { ["ANTHROPIC_BASE_URL"] = "{baseUrl}", ["ANTHROPIC_AUTH_TOKEN"] = "{apiKey}" }),
+            "claude", new() { ["ANTHROPIC_BASE_URL"] = "{baseUrl}", ["ANTHROPIC_AUTH_TOKEN"] = "{apiKey}" }, "code"),
         new("codex", "Codex CLI", "codex", "npm i -g @openai/codex",
-            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "code"),
         new("gemini-cli", "Gemini CLI", "gemini", "npm i -g @google/gemini-cli",
-            "gemini", new() { ["GEMINI_BASE_URL"] = "{baseUrl}/v1beta", ["GEMINI_API_KEY"] = "{apiKey}" }),
+            "gemini", new() { ["GEMINI_BASE_URL"] = "{baseUrl}/v1beta", ["GEMINI_API_KEY"] = "{apiKey}" }, "code"),
         new("cursor", "Cursor", "cursor-agent", "cursor.com → Agent config",
-            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "agent"),
         new("opencode", "OpenCode", "opencode", "npm i -g opencode-ai",
-            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "agent"),
         new("windsurf", "Windsurf", "windsurf", "windsurf.com → settings.json",
-            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "agent"),
         new("kiro", "Kiro CLI", "kiro-cli", "kiro.dev → CLI install",
-            "claude", new() { ["ANTHROPIC_BASE_URL"] = "{baseUrl}", ["ANTHROPIC_AUTH_TOKEN"] = "{apiKey}" }),
+            "claude", new() { ["ANTHROPIC_BASE_URL"] = "{baseUrl}", ["ANTHROPIC_AUTH_TOKEN"] = "{apiKey}" }, "code"),
         new("zed", "Zed", "zed", "zed.dev → settings.json anthropic/openai sections",
-            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "ide"),
         new("aider", "Aider", "aider", "pipx install aider-chat",
-            "openai", new() { ["OPENAI_API_BASE"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_API_BASE"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "code"),
         new("continue", "Continue", "continue", "VS Code/JetBrains extension → config.yaml",
-            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }),
+            "openai", new() { ["OPENAI_BASE_URL"] = "{baseUrl}/v1", ["OPENAI_API_KEY"] = "{apiKey}" }, "ide"),
     ];
 
     /// <summary>Resolve {baseUrl}/{apiKey} placeholders into the tool's env map.</summary>

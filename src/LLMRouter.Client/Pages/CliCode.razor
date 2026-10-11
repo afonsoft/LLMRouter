@@ -1,0 +1,98 @@
+@page "/dashboard/cli-code"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("cliCode.title", "CLI Code")</h1>
+<p class="page-desc">@Loc.T("cliCode.subtitle", "Auto-sync CLI profiles to this gateway and companion setup")</p>
+
+<div class="card card-p" style="margin-bottom:16px">
+    <h3 class="bold" style="margin:0 0 6px">@Loc.T("cliCode.autoSync", "CLI profile auto-sync")</h3>
+    <p class="muted sm" style="margin:0 0 12px">Selected CLIs get this gateway's base URL + key written into their env/config on next apply.</p>
+    <label class="flex" style="gap:8px;align-items:center;margin-bottom:12px">
+        <input type="checkbox" @bind="_enabled" />
+        @Loc.T("cliCode.enabled", "Enable auto-sync")
+    </label>
+    @if (_tools is not null)
+    {
+        <div class="flex" style="gap:16px;flex-wrap:wrap">
+            @foreach (var t in _tools)
+            {
+                var id = t.GetProperty("id").GetString()!;
+                var detected = t.GetProperty("detected").GetBoolean();
+                <label class="flex" style="gap:6px;align-items:center">
+                    <input type="checkbox" checked="@_selected.Contains(id)" @onchange='() => Toggle(id)' />
+                    @t.GetProperty("name").GetString()
+                    @if (detected) { <span class="badge ok">detected</span> }
+                </label>
+            }
+        </div>
+    }
+    <div class="flex" style="gap:10px;align-items:center;margin-top:14px">
+        <button class="btn btn-primary" @onclick="Save" disabled="@_busy">@Loc.T("common.save", "Save")</button>
+        @if (_saved) { <span class="badge ok">saved</span> }
+    </div>
+</div>
+
+<div class="card card-p" style="margin-bottom:16px">
+    <h3 class="bold" style="margin:0 0 6px">@Loc.T("cliCode.companion", "CLI companion")</h3>
+    <p class="muted sm" style="margin:0">Detected CLIs can also pull their config from <code>/api/cli-tools/&lt;id&gt;/config</code> — point your CLI's config file at that URL or paste the env block below.</p>
+</div>
+
+@if (_tools is { Length: > 0 })
+{
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+        @foreach (var t in _tools)
+        {
+            <div class="card card-p">
+                <div class="flex between" style="margin-bottom:6px">
+                    <h3 class="bold" style="margin:0">@t.GetProperty("name").GetString()</h3>
+                    <span class="badge @(t.GetProperty("detected").GetBoolean() ? "ok" : "warn")">@(t.GetProperty("detected").GetBoolean() ? "detected" : "not found")</span>
+                </div>
+                <pre class="code-block" style="font-size:11px;max-height:110px;overflow:auto">@EnvBlock(t)</pre>
+                <button class="btn btn-sm" style="margin-top:8px" @onclick='() => Copy(EnvBlock(t))'>@Loc.T("common.copy", "Copy")</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private JsonElement[]? _tools;
+    private bool _enabled, _busy, _saved;
+    private readonly HashSet<string> _selected = [];
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/cli-tools");
+        _tools = r.TryGetProperty("tools", out var arr) ? arr.EnumerateArray().ToArray() : [];
+        var s = await Api.GetAsync("api/settings");
+        if (s.TryGetProperty("cliProfileAutoSync", out var cfg) && cfg.ValueKind == JsonValueKind.Object)
+        {
+            _enabled = cfg.TryGetProperty("enabled", out var en) && en.ValueKind == JsonValueKind.True;
+            if (cfg.TryGetProperty("tools", out var tl) && tl.ValueKind == JsonValueKind.Array)
+                foreach (var x in tl.EnumerateArray()) _selected.Add(x.GetString()!);
+        }
+        else if (_tools is { Length: > 0 })
+        {
+            foreach (var t in _tools.Where(t => t.GetProperty("detected").GetBoolean()))
+                _selected.Add(t.GetProperty("id").GetString()!);
+        }
+    }
+
+    private void Toggle(string id) { if (!_selected.Remove(id)) _selected.Add(id); }
+
+    private async Task Save()
+    {
+        _busy = true; _saved = false;
+        await Api.PutAsync("api/settings", new
+        {
+            cliProfileAutoSync = new { enabled = _enabled, tools = _selected.ToArray() },
+        });
+        _busy = false; _saved = true;
+    }
+
+    private static string EnvBlock(JsonElement t) =>
+        string.Join('\n', t.GetProperty("env").EnumerateObject().Select(kv => $"export {kv.Name}=\"{kv.Value.GetString()}\""));
+
+    private async Task Copy(string s) => await Js.InvokeVoidAsync("navigator.clipboard.writeText", s);
+}

@@ -1,0 +1,67 @@
+@page "/dashboard/profile"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("profile.title", "Profile")</h1>
+<p class="page-desc">@Loc.T("profile.subtitle", "Your account and usage at a glance")</p>
+
+<div class="card card-p" style="margin-bottom:16px">
+    <div class="flex between">
+        <div>
+            <h3 class="bold" style="margin:0 0 4px">@Loc.T("profile.account", "Administrator")</h3>
+            <p class="muted sm" style="margin:0">@Loc.T("profile.accountDesc", "Dashboard owner — full access to every feature")</p>
+        </div>
+        <span class="badge info">admin</span>
+    </div>
+</div>
+
+<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">
+    <div class="card card-p"><div class="stat-num">@_keys</div><div class="muted sm">@Loc.T("profile.apiKeys", "API keys")</div></div>
+    <div class="card card-p"><div class="stat-num">@_conns</div><div class="muted sm">@Loc.T("profile.connections", "Provider connections")</div></div>
+    <div class="card card-p"><div class="stat-num">@_combos</div><div class="muted sm">@Loc.T("profile.combos", "Combos")</div></div>
+    <div class="card card-p"><div class="stat-num">@_requests</div><div class="muted sm">@Loc.T("profile.recentRequests", "Recent requests")</div></div>
+</div>
+
+<h2 class="bold" style="margin:0 0 10px">@Loc.T("profile.badges", "Badges")</h2>
+<p class="muted sm" style="margin:0 0 10px">@Loc.T("profile.badgesHint", "Gamification stats (XP, streaks, badges) land here — upcoming parity work.")</p>
+<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;opacity:.55">
+    @foreach (var b in _badges)
+    {
+        <div class="card card-p" style="text-align:center">
+            <span class="material-symbols-outlined" style="font-size:26px;color:var(--muted)">lock</span>
+            <div class="bold" style="font-size:12px;margin-top:4px">@b</div>
+            <div class="muted" style="font-size:11px">locked</div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] _badges =
+        ["First Token", "Token Consumer", "Explorer", "Polyglot", "Resilient", "Daily User"];
+
+    private string _keys = "…", _conns = "…", _combos = "…", _requests = "…";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var keys = await Api.GetAsync("api/keys");
+        _keys = Count(keys, "keys");
+        var conns = await Api.GetAsync("api/provider-connections");
+        _conns = Count(conns, "connections");
+        var combos = await Api.GetAsync("api/combos");
+        _combos = Count(combos, "combos");
+        var act = await Api.GetAsync("api/activity?limit=500");
+        _requests = Count(act, "events");
+    }
+
+    private static string Count(JsonElement doc, string prop)
+    {
+        try
+        {
+            if (doc.ValueKind == JsonValueKind.Array) return doc.GetArrayLength().ToString();
+            if (doc.ValueKind == JsonValueKind.Object && doc.TryGetProperty(prop, out var a) && a.ValueKind == JsonValueKind.Array)
+                return a.GetArrayLength().ToString();
+        }
+        catch { }
+        return "0";
+    }
+}

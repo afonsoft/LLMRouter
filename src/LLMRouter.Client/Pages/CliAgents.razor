@@ -1,0 +1,73 @@
+@page "/dashboard/cli-agents"
+@inject Api Api
+@inject Loc Loc
+
+<h1 class="page-title">@Loc.T("cliAgents.title", "CLI agents")</h1>
+<p class="page-desc">@Loc.T("cliAgents.subtitle", "Detected coding agents and tools that can route through this gateway")</p>
+
+<input class="input" style="max-width:320px;margin-bottom:14px" placeholder="Search…" @bind="_q" @bind:event="oninput" />
+
+@if (_tools is null)
+{
+    <p class="muted">…</p>
+}
+else
+{
+    @foreach (var g in _groups)
+    {
+        var items = Filtered(g.Id);
+        if (items.Length == 0 && !string.IsNullOrWhiteSpace(_q)) continue;
+        <h2 class="bold" style="margin:20px 0 10px">@g.Label <span class="muted" style="font-weight:400;font-size:12px">(@items.Length)</span></h2>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
+            @foreach (var t in items)
+            {
+                var detected = t.GetProperty("detected").GetBoolean();
+                <div class="card card-p">
+                    <div class="flex between" style="margin-bottom:6px">
+                        <h3 class="bold" style="margin:0">@t.GetProperty("name").GetString()</h3>
+                        <span class="badge @(detected ? "ok" : "warn")">@(detected ? Loc.T("cliTools.detected", "detected") : Loc.T("cliTools.notDetected", "not found"))</span>
+                    </div>
+                    <p class="muted" style="font-size:12px;margin:0 0 8px">@t.GetProperty("installHint").GetString()</p>
+                    <pre class="code-block" style="font-size:11px;max-height:110px;overflow:auto">@EnvBlock(t)</pre>
+                    <button class="btn btn-sm" style="margin-top:8px" @onclick='() => Copy(EnvBlock(t))'>@Loc.T("common.copy", "Copy")</button>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private record Group(string Id, string Label);
+    private static readonly Group[] Groups =
+    [
+        new("code", "Code tools"),
+        new("agent", "Broad autonomous agents"),
+        new("ide", "IDE extensions & companions"),
+    ];
+    private readonly Group[] _groups = Groups;
+    private JsonElement[]? _tools;
+    private string _q = "";
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var r = await Api.GetAsync("api/cli-tools");
+        _tools = r.TryGetProperty("tools", out var arr) ? arr.EnumerateArray().ToArray() : [];
+    }
+
+    private JsonElement[] Filtered(string cat)
+    {
+        var items = (_tools ?? []).Where(t =>
+            (t.TryGetProperty("category", out var c) ? c.GetString() : "code") == cat);
+        if (!string.IsNullOrWhiteSpace(_q))
+            items = items.Where(t =>
+                t.GetProperty("name").GetString()!.Contains(_q, StringComparison.OrdinalIgnoreCase)
+                || t.GetProperty("installHint").GetString()!.Contains(_q, StringComparison.OrdinalIgnoreCase));
+        return items.ToArray();
+    }
+
+    private static string EnvBlock(JsonElement t) =>
+        string.Join('\n', t.GetProperty("env").EnumerateObject().Select(kv => $"export {kv.Name}=\"{kv.Value.GetString()}\""));
+
+    private async Task Copy(string s) => await Js.InvokeVoidAsync("navigator.clipboard.writeText", s);
+}

@@ -293,6 +293,78 @@ public static class ExtendedTranslators
 
     // ---------- Responses API (openai-responses) ----------
 
+    /// <summary>
+    /// SPEC-097: readable Responses compaction restore (upstream
+    /// open-sse/utils/readableCompaction.ts #16101). An `encrypted_content`
+    /// starting with `ocx1:` is strict-base64 UTF-8 summary text restored as a
+    /// user message prefixed by the codex summary marker.
+    /// </summary>
+    public static class ReadableCompaction
+    {
+        public const string BridgePrefix = "ocx1:";
+        public const string SummaryPrefix =
+            "Another language model started to solve this problem and produced a summary of its thinking process. " +
+            "You also have access to the state of the tools that were used by that language model. " +
+            "Use this to build on the work that has already been done and avoid duplicating work. " +
+            "Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:";
+
+        private static readonly HashSet<string> Types = new(StringComparer.Ordinal)
+            { "compaction", "compaction_summary", "context_compaction" };
+
+        /// <summary>Strict base64: canonical alphabet + padding only.</summary>
+        private static readonly System.Text.RegularExpressions.Regex StrictBase64 = new(
+            @"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>Item is a compaction-ish type.</summary>
+        public static bool IsCompactionType(string? type) => type is not null && Types.Contains(type);
+
+        /// <summary>Bare marker `{"type":"context_compaction","id"?}` — nothing to translate.</summary>
+        public static bool IsBareMarker(JsonNode? item)
+        {
+            if (item is not JsonObject o || o["type"]?.GetValue<string>() != "context_compaction")
+                return false;
+            foreach (var kv in o)
+                if (kv.Key is not ("type" or "id")) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Restore `{"type":"message","role":"user","content":[{"type":"input_text",
+        /// "text": SUMMARY_PREFIX + "\n\n" + summary}]}` when the item carries a
+        /// readable `ocx1:` payload; else null. Malformed payloads surface as
+        /// unsupported_feature via the caller (they are not readable).
+        /// </summary>
+        public static JsonObject? TryRestore(JsonNode? item)
+        {
+            if (item is not JsonObject o) return null;
+            var type = o["type"]?.GetValue<string>();
+            if (!IsCompactionType(type)) return null;
+            var enc = o["encrypted_content"]?.GetValue<string>();
+            if (enc is null || !enc.StartsWith(BridgePrefix, StringComparison.Ordinal)) return null;
+            var payload = enc[BridgePrefix.Length..];
+            string summary;
+            try
+            {
+                if (payload.Length == 0 || !StrictBase64.IsMatch(payload)) return null;
+                var bytes = Convert.FromBase64String(payload);
+                summary = System.Text.Encoding.UTF8.GetString(bytes);
+                if (string.IsNullOrWhiteSpace(summary)) return null;
+            }
+            catch { return null; }
+            return new JsonObject
+            {
+                ["type"] = "message",
+                ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "input_text",
+                    ["text"] = $"{SummaryPrefix}\n\n{summary}",
+                }),
+            };
+        }
+    }
+
     /// <summary>chat.completions request → Responses API request body.</summary>
     public static JsonObject ChatToResponsesRequest(JsonObject req)
     {
@@ -400,6 +472,29 @@ public static class ExtendedTranslators
                             ["tool_call_id"] = item?["call_id"]?.DeepClone(),
                             ["content"] = item?["output"]?.DeepClone(),
                         });
+                        break;
+                    case "compaction":
+                    case "compaction_summary":
+                    case "context_compaction":
+                        // SPEC-097: readable ocx1: compaction summaries restore to
+                        // plaintext; bare markers (only type/id) pass through as
+                        // nothing to translate (upstream #16101).
+                        if (ReadableCompaction.TryRestore(item) is { } restored)
+                        {
+                            messages.Add(new JsonObject
+                            {
+                                ["role"] = restored["role"]?.DeepClone(),
+                                ["content"] = restored["content"]?.DeepClone(),
+                            });
+                        }
+                        else if (!ReadableCompaction.IsBareMarker(item))
+                        {
+                            messages.Add(new JsonObject
+                            {
+                                ["role"] = "user",
+                                ["content"] = "[earlier conversation was compacted; the summary is stored in a format this model cannot read]",
+                            });
+                        }
                         break;
                 }
             }

@@ -283,7 +283,14 @@ public class ComboPlanner
             foreach (var m in TrailingUserItems(messages, "role")) ScanMessage(m);
         if (body.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.Array)
             foreach (var it in TrailingUserItems(input, "role"))
+            {
                 if (it.TryGetProperty("content", out var c)) ScanContent(c);
+                // SPEC-097: images nested in Responses tool outputs count too — reroute
+                // mode preserves the whole body, so these must reach a vision target.
+                var itType = GetStr(it, "type");
+                if (itType is "function_call_output" or "custom_tool_call_output"
+                    && it.TryGetProperty("output", out var o)) ScanContent(o);
+            }
         var contents = body.TryGetProperty("contents", out var gc) ? gc
             : body.TryGetProperty("request", out var req) && req.TryGetProperty("contents", out var rc) ? rc : default;
         if (contents.ValueKind == JsonValueKind.Array)

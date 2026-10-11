@@ -362,7 +362,27 @@ public static class V1LeftoversEndpoints
         var row = await db.Kv.FindAsync([ProxySubScope, p], ct);
         if (row is null) { await WriteJson(ctx, new { error = "not found" }, 404); return; }
         var obj = JsonNode.Parse(row.Value) as JsonObject ?? new JsonObject();
-        obj["lastRefresh"] = DateTime.UtcNow.ToString("o");
+        var now = DateTime.UtcNow;
+        // SPEC-097: a repeat inside the subscription's throttle window is recorded
+        // on the row without raising a standing failure warning (upstream #16067).
+        var throttleSec = obj["throttleSeconds"]?.GetValue<double>() ?? 0;
+        if (throttleSec > 0
+            && obj["lastRefresh"]?.GetValue<string>() is { } last
+            && DateTime.TryParse(last, null, System.Globalization.DateTimeStyles.RoundtripKind, out var lastAt)
+            && now - lastAt < TimeSpan.FromSeconds(throttleSec))
+        {
+            obj["lastThrottledAt"] = now.ToString("o");
+            obj["throttleCount"] = (obj["throttleCount"]?.GetValue<int>() ?? 0) + 1;
+            row.Value = obj.ToJsonString();
+            await db.SaveChangesAsync(ct);
+            await WriteJson(ctx, new
+            {
+                provider = p, refreshed = false, throttled = true,
+                nextEligibleAt = (lastAt + TimeSpan.FromSeconds(throttleSec)).ToString("o"),
+            });
+            return;
+        }
+        obj["lastRefresh"] = now.ToString("o");
         row.Value = obj.ToJsonString();
         await db.SaveChangesAsync(ct);
         var count = obj["nodes"] is JsonArray arr ? arr.Count : 0;

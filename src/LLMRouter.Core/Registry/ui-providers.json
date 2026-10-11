@@ -3999,6 +3999,18 @@
    "riskNoticeVariant": "oauth",
    "passthroughModels": true,
    "authHint": "Sign in with the Muse Code device flow (same as `muse login` / CLIProxyAPI `-meta-login`) to use a Muse subscription, or paste a META_API_KEY. Device login keeps the durable dca token and mints the inference key; a 401 remints that key. Wire format is OpenAI Responses (POST /responses)."
+  },
+  "codebuddy-intl": {
+   "id": "codebuddy-intl",
+   "serviceKinds": [
+    "llm"
+   ],
+   "alias": "cbai",
+   "name": "CodeBuddy International",
+   "icon": "smart_toy",
+   "color": "#7C3AED",
+   "website": "https://www.codebuddy.ai",
+   "apiHint": "CodeBuddy International OpenAI-compatible gateway (codebuddy.ai). Curated model roster (GLM, Kimi, MiniMax, DeepSeek, Hunyuan, GPT, Gemini); streaming is forced upstream."
   }
  },
  "NOAUTH_PROVIDERS": {

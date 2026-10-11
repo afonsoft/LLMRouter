@@ -108,6 +108,13 @@ public sealed class GatewayEngine(
                 return !Routing.DisabledModels.IsDisabled(disabled, p, mid);
             }).ToList();
 
+        // SPEC-102: request-level routing hints (`provider` object) — combo resolutions
+        // only; a bare provider/model call bypasses like upstream single-target calls.
+        var hints = Routing.RequestHints.Parse(requestBody);
+        if (hints is not null && (combo is not null || Routing.AutoCombos.IsAuto(effectiveModel)))
+            models = await Routing.RequestHints.ApplyToModelsAsync(
+                models, hints, db, resolver, registry, planner, sdata, requestBody, aliases);
+
         var targets = new List<ResolvedTarget>();
         foreach (var m in models)
         {
@@ -138,6 +145,10 @@ public sealed class GatewayEngine(
                 && (mc.Model == "*" || string.Equals(mc.Model, t.UpstreamModel, StringComparison.OrdinalIgnoreCase)
                     || string.Equals($"{t.Provider.Id}/{t.UpstreamModel}", mc.Model, StringComparison.OrdinalIgnoreCase))))
                 .ToList();
+
+        // SPEC-102: target-level hints — data_collection filter + allow_fallbacks.
+        if (hints is not null)
+            targets = Routing.RequestHints.ApplyToTargets(targets, hints);
 
         // SPEC-070: named fallback chains — when the whole candidate list is
         // exhausted, try each active chain's steps (model or combo names)

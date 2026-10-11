@@ -113,7 +113,17 @@ public static class PlaygroundEndpoints
                 return Results.Json(new { error = "model required" }, JsonOpts, statusCode: 400);
             JsonElement? reqBody = b.TryGetProperty("body", out var rb) && rb.ValueKind == JsonValueKind.Object ? rb : null;
 
-            var targets = await engine.ResolveAsync(model, reqBody);
+            List<LLMRouter.Core.Gateway.ResolvedTarget> targets;
+            try
+            {
+                targets = await engine.ResolveAsync(model, reqBody);
+            }
+            catch (LLMRouter.Core.Routing.RouteHintException rhe)
+            {
+                // SPEC-102: provider.order slug desconhecido
+                return Results.Json(new { error = "invalid_provider", message = rhe.Message },
+                    JsonOpts, statusCode: 400);
+            }
             var steps = targets.Select((t, i) => new
             {
                 order = i + 1,

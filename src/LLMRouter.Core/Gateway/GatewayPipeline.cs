@@ -258,7 +258,11 @@ public sealed class GatewayEngine(
             var el = JsonDocument.Parse(d).RootElement;
             foreach (var k in new[] { "apiKey", "accessToken", "token", "key", "secret" })
                 if (el.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String)
-                    return v.GetString();
+                    // enc:v1: ciphertext migrado do OmniRoute — decifra com
+                    // STORAGE_ENCRYPTION_KEY; pula para o próximo campo se falhar.
+                    if (Security.OmniCrypto.MaybeDecrypt(v.GetString()) is { } s)
+                        return s;
+            return null;
         }
         catch { /* best-effort: failure is non-fatal */ }
         return null;

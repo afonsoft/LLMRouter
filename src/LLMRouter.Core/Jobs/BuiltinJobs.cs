@@ -248,7 +248,8 @@ public static class BuiltinJobs
         public bool EnabledByDefault => true;
         public async Task<string> RunAsync(IServiceProvider services, CancellationToken ct)
         {
-            var db = services.GetRequiredService<Data.LlmRouterDbContext>();
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.LlmRouterDbContext>();
             var sdata = await Usage.PricingService.SettingsDataAsync(db);
             var n = await Routing.SettingsOps.ReenableDisabledAsync(db, sdata);
             return n > 0 ? $"re-enabled {n}" : "none due";

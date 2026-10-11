@@ -19,15 +19,15 @@ public static class GatewayMetrics
     public static readonly Counter<long> Requests = M.CreateCounter<long>(
         "llmr_requests_total", description: "Gateway requests by provider/model/status.");
     public static readonly Histogram<double> RequestDurationMs = M.CreateHistogram<double>(
-        "llmr_request_duration_ms", unit: "ms", description: "End-to-end gateway latency.");
+        "llmr_request_duration_ms", description: "End-to-end gateway latency.");
     public static readonly Counter<long> Tokens = M.CreateCounter<long>(
         "llmr_tokens_total", description: "Tokens by provider/model/kind.");
     public static readonly Counter<double> CostUsd = M.CreateCounter<double>(
-        "llmr_cost_usd_total", unit: "USD", description: "Estimated cost by provider/model.");
+        "llmr_cost_usd_total", description: "Estimated cost by provider/model.");
     public static readonly Histogram<double> UpstreamTtfbMs = M.CreateHistogram<double>(
-        "llmr_upstream_ttfb_ms", unit: "ms", description: "Time to upstream response headers.");
+        "llmr_upstream_ttfb_ms", description: "Time to upstream response headers.");
     public static readonly Histogram<double> StreamDurationMs = M.CreateHistogram<double>(
-        "llmr_stream_duration_ms", unit: "ms", description: "Stream body relay duration.");
+        "llmr_stream_duration_ms", description: "Stream body relay duration.");
     public static readonly Counter<long> RateLimitViolations = M.CreateCounter<long>(
         "llmr_ratelimit_violations_total", description: "Rejected/skipped requests by scope.");
     public static readonly Counter<long> ComboSteps = M.CreateCounter<long>(

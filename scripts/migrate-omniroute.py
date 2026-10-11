@@ -13,6 +13,16 @@ O script é idempotente (INSERT OR IGNORE por Id). Tokens e segredos das
 conexões são copiados para a coluna `Data` — trate o arquivo de destino
 como sensível.
 
+A senha de admin do OmniRoute é bcrypt e não é convertida — use
+--admin-password SENHA para gravar um hash pbkdf2 no destino
+(settings.adminPasswordHash), senão o login do dashboard fica
+impossível quando o destino já tem hash.
+
+Credenciais das conexões migram como ciphertext `enc:v1:` (AES-256-GCM).
+O LLMRouter as decifra automaticamente quando a env
+STORAGE_ENCRYPTION_KEY tem a MESMA chave usada no OmniRoute — sem ela,
+as conexões migram mas não autenticam (re-autenticar no dashboard).
+
 Requer SQLite >= 3.40. Se o seu Python for antigo (sqlite < 3.40) o
 schema do OmniRoute pode falhar ao abrir (objetos FTS com sintaxe nova);
 nesse caso `pip install pysqlite3-binary` é usado automaticamente quando
@@ -351,6 +361,39 @@ def migrate_audit(src, dst, dry):
     report("auditEvents", len(rs))
 
 
+def migrate_admin_password(dst, password, dry):
+    """A senha admin do OmniRoute vive em key_value['password'] como bcrypt —
+    incompatível com o pbkdf2 do LLMRouter (settings.adminPasswordHash).
+    Com --admin-password grava um hash novo; sem ele só avisa."""
+    if password is None:
+        row = dst.execute("SELECT Data FROM settings WHERE Id=1").fetchone()
+        has_hash = row and '"adminPasswordHash"' in (row[0] or "")
+        if has_hash:
+            print("AVISO: settings.adminPasswordHash já existe e NÃO veio do OmniRoute;")
+            print("       se o hash for desconhecido, o login do dashboard vai falhar.")
+        print("Dica: --admin-password SENHA grava um hash pbkdf2 válido no destino.")
+        return
+    import base64
+    import hashlib
+    import os
+
+    iters = 100_000
+    salt = os.urandom(16)
+    h = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iters)
+    ph = f"pbkdf2${iters}${base64.b64encode(salt).decode()}${base64.b64encode(h).decode()}"
+    if not dry:
+        row = dst.execute("SELECT Data FROM settings WHERE Id=1").fetchone()
+        data = json.loads(row[0]) if row and row[0] else {}
+        data["setupComplete"] = True
+        data["adminPasswordHash"] = ph
+        dst.execute(
+            "INSERT INTO settings (Id,Data) VALUES (1,?) "
+            "ON CONFLICT(Id) DO UPDATE SET Data=excluded.Data",
+            (json.dumps(data),),
+        )
+    report("settings(admin)", 1)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Migra OmniRoute DB -> LLMRouter DB")
     ap.add_argument("omni_db")
@@ -359,6 +402,8 @@ def main():
     ap.add_argument("--no-usage", action="store_true", help="pula usage_history")
     ap.add_argument("--no-call-logs", action="store_true", help="pula call_logs")
     ap.add_argument("--no-kv", action="store_true", help="pula key_value")
+    ap.add_argument("--admin-password", metavar="SENHA",
+                    help="grava adminPasswordHash pbkdf2 no destino")
     args = ap.parse_args()
 
     src = _connect(args.omni_db, ro=True)
@@ -376,6 +421,7 @@ def main():
             migrate_call_logs(src, dst, args.dry_run)
         if not args.no_kv:
             migrate_kv(src, dst, args.dry_run)
+        migrate_admin_password(dst, args.admin_password, args.dry_run)
         if args.dry_run:
             dst.rollback()
             print("[dry-run] nada foi escrito")

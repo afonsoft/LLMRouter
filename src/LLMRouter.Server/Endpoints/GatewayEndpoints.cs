@@ -802,24 +802,6 @@ public static class GatewayEndpoints
         if (oneProxy is not null)
             oneProxy.Set(await Core.Gateway.HotReads.OneProxyCurrentAsync(db, sdata));
 
-        // SPEC-045: prompt cache — replay stored responses for identical
-        // non-stream requests (identity = canonical body minus volatile keys)
-        string? cacheHash = null;
-        if (!stream && Core.Cache.PromptCache.Enabled(sdata) && body.ValueKind == JsonValueKind.Object)
-        {
-            cacheHash = Core.Cache.PromptCache.ComputeHash(inbound, model, body);
-            if (await Core.Cache.PromptCache.LookupAsync(db, cacheHash, ctx.RequestAborted) is { } cached)
-            {
-                ctx.Response.ContentType = "application/json";
-                ctx.Response.Headers["x-cache"] = "hit";
-                await ctx.Response.WriteAsync(cached, ctx.RequestAborted);
-                await engine.LogUsageAsync("cache", model, null, apiKey, inbound, 0, 0, "200", null, sw.ElapsedMilliseconds,
-                    JsonSerializer.SerializeToElement(new { cached = true }),
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
-                return;
-            }
-        }
-
         List<LLMRouter.Core.Gateway.ResolvedTarget> targets;
         try
         {
@@ -838,6 +820,45 @@ public static class GatewayEndpoints
             if (models.Count > 0)
                 targets = targets.Where(t => $"{t.Provider.Id}/{t.UpstreamModel}" != models[0]).ToList();
         }
+        // SPEC-045 + SPEC-106: prompt cache — exact hit → semantic hit →
+        // upstream. Never for streaming/tools/high-temp bodies, restricted
+        // keys, or pools where every candidate conn opted out.
+        string? cacheHash = null; float[]? promptVec = null;
+        var semCfg = Core.Cache.SemanticCache.Read(sdata);
+        var cacheKeyRestricted = apiKey != "dashboard"
+            && (await Core.Gateway.HotReads.ApiKeyAsync(db, apiKey)) is { AccessRestricted: true };
+        if (!stream && Core.Cache.PromptCache.Enabled(sdata) && body.ValueKind == JsonValueKind.Object
+            && !Core.Cache.SemanticCache.BypassesBody(body)
+            && !cacheKeyRestricted
+            && targets.Any(t => !Core.Cache.SemanticCache.ConnOptOut(t.Connection.Data)))
+        {
+            cacheHash = Core.Cache.PromptCache.ComputeHash(inbound, model, body);
+            string? cached = await Core.Cache.PromptCache.LookupAsync(db, cacheHash, ctx.RequestAborted);
+            var layer = "hit"; var sim = 0.0;
+            if (cached is null && semCfg.Enabled
+                && Core.Cache.SemanticCache.TextOf(body) is { Length: > 0 } ptxt)
+            {
+                promptVec = await Core.Cache.SemanticCache.EmbedAsync(
+                    db, httpFactory, sdata, semCfg, ptxt, ctx.RequestAborted);
+                if (await Core.Cache.SemanticCache.LookupAsync(
+                        db, httpFactory, sdata, model, promptVec, semCfg, ctx.RequestAborted)
+                    is { } hit)
+                { cached = hit.Response; layer = "semantic"; sim = hit.Similarity; }
+            }
+            if (cached is not null)
+            {
+                ctx.Response.ContentType = "application/json";
+                ctx.Response.Headers["x-cache"] = layer;
+                if (sim > 0)
+                    ctx.Response.Headers["x-cache-similarity"] = sim.ToString("0.000");
+                await ctx.Response.WriteAsync(cached, ctx.RequestAborted);
+                await engine.LogUsageAsync("cache", model, null, apiKey, inbound, 0, 0, "200", null, sw.ElapsedMilliseconds,
+                    JsonSerializer.SerializeToElement(new { cached = true, layer }),
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                return;
+            }
+        }
+
         if (targets.Count == 0)
         {
             ctx.Response.StatusCode = 400;
@@ -981,6 +1002,21 @@ public static class GatewayEndpoints
                         await CacheStoreAsync(ctx, sdata, cacheHash,
                             target.Provider.Id, model, body.GetRawText(), translated.ToJsonString(JsonOpts),
                             Core.Cache.PromptCache.IsReasoningRequest(body), pt + ct, ctx.RequestAborted);
+                    // SPEC-106: semantic layer stores under the serving conn's
+                    // opt-out + finish_reason=stop only.
+                    if (cacheHash is not null && semCfg.Enabled
+                        && !Core.Cache.SemanticCache.ConnOptOut(target.Connection.Data)
+                        && FinishReasonIsStop(translated)
+                        && Core.Cache.SemanticCache.TextOf(body) is { Length: > 0 } storeText)
+                    {
+                        var writer2 = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+                        var vec = promptVec ?? await Core.Cache.SemanticCache.EmbedAsync(
+                            db, httpFactory, sdata, semCfg, storeText, ctx.RequestAborted);
+                        var respJson = translated.ToJsonString(JsonOpts);
+                        var hash2 = cacheHash;
+                        await writer2.PostAsync(d => Core.Cache.SemanticCache.StoreAsync(
+                            d, sdata, hash2, model, vec, respJson, semCfg, CancellationToken.None));
+                    }
                     ctx.Response.ContentType = "application/json";
                     PropagateRateLimitHeaders(ctx, resp);
                     await QuotaCapture.CaptureAsync(db, target.Provider.Id,
@@ -1441,6 +1477,22 @@ public static class GatewayEndpoints
     {
         var writer = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
         await writer.PostAsync(d => Core.Routing.SettingsOps.ReportConnectionAsync(d, sdata, connId, success));
+    }
+
+    /// <summary>SPEC-106: only complete (finish_reason=stop) responses are
+    /// cacheable — tool_use/length/error finishes never enter either layer.</summary>
+    private static bool FinishReasonIsStop(System.Text.Json.Nodes.JsonNode? translated)
+    {
+        try
+        {
+            if (translated is System.Text.Json.Nodes.JsonObject tj
+                && tj["choices"] is System.Text.Json.Nodes.JsonArray ch && ch.Count > 0
+                && ch[0] is System.Text.Json.Nodes.JsonObject c0
+                && c0["finish_reason"] is System.Text.Json.Nodes.JsonValue fr)
+                return fr.GetValue<string>() == "stop";
+        }
+        catch { }
+        return true; // no finish_reason field (non-OpenAI formats) → allow
     }
 
     /// <summary>SPEC-074: prompt-cache store off the request path.</summary>

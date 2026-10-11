@@ -16,22 +16,24 @@ public static class SettingsExtrasEndpoints
 
     // Sub-settings live as keys inside the main settings.data blob — same
     // shape upstream uses, and what SPEC-047's ipFilter middleware reads.
-    private static async Task<IResult> GetAsync(LlmRouterDbContext db, string key)
+    private const string AdminScope = "admin";
+
+    private static async Task<IResult> GetAsync(LlmRouterDbContext db, string key, CancellationToken ct)
     {
-        var s = await db.Settings.FirstOrDefaultAsync();
+        var s = await db.Settings.FirstOrDefaultAsync(ct);
         var d = AuthEndpoints.Parse(s?.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
         return Results.Json(d.TryGetValue(key, out var v) ? v : (JsonElement?)null, JsonOpts);
     }
 
     private static async Task<IResult> PutAsync(HttpContext ctx, LlmRouterDbContext db, string key)
     {
-        var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-        var s = await db.Settings.FirstOrDefaultAsync()
+        var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body, ctx.RequestAborted);
+        var s = await db.Settings.FirstOrDefaultAsync(ctx.RequestAborted)
             ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
         var d = AuthEndpoints.Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
         d[key] = b;
         s.Data = JsonSerializer.Serialize(d);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ctx.RequestAborted);
         return Results.Json(new { ok = true }, JsonOpts);
     }
 
@@ -42,7 +44,13 @@ public static class SettingsExtrasEndpoints
     public static void Map(WebApplication app)
     {
         var g = app.MapGroup("/api").RequireAuthorization();
+        MapSettingsOps(g);
+        MapAuthReset(g);
+        MapMisc(app, g);
+    }
 
+    private static void MapSettingsOps(RouteGroupBuilder g)
+    {
         g.MapPost("/settings/purge-cache", async () =>
         {
             Core.Gateway.HotCache.Default.InvalidateAll();
@@ -90,9 +98,9 @@ public static class SettingsExtrasEndpoints
         {
             routes = new[]
             {
-                new { path = "/api/settings", scope = "admin" },
-                new { path = "/api/providers", scope = "admin" },
-                new { path = "/api/keys", scope = "admin" },
+                new { path = "/api/settings", scope = AdminScope },
+                new { path = "/api/providers", scope = AdminScope },
+                new { path = "/api/keys", scope = AdminScope },
                 new { path = "/v1/*", scope = "apiKey" },
                 new { path = "/mcp", scope = "apiKey" },
                 new { path = "/healthz", scope = "anonymous" },
@@ -111,8 +119,8 @@ public static class SettingsExtrasEndpoints
             return Results.Json(new { ok = true }, JsonOpts);
         });
 
-        g.MapGet("/settings/qdrant/{section}", async (string section, LlmRouterDbContext db) =>
-            await GetAsync(db, $"qdrant.{section}"));
+        g.MapGet("/settings/qdrant/{section}", async (string section, LlmRouterDbContext db, HttpContext ctx) =>
+            await GetAsync(db, $"qdrant.{section}", ctx.RequestAborted));
         g.MapPut("/settings/qdrant/{section}", async (string section, HttpContext ctx, LlmRouterDbContext db) =>
             await PutAsync(ctx, db, $"qdrant.{section}"));
 
@@ -121,7 +129,10 @@ public static class SettingsExtrasEndpoints
             var rows = await db.Kv.Where(k => k.Scope == "ccDiscovery").ToListAsync();
             return Results.Json(new { metrics = rows.Select(r => new { r.Key, value = JsonNode.Parse(r.Value) }) }, JsonOpts);
         });
+    }
 
+    private static void MapAuthReset(RouteGroupBuilder g)
+    {
         // ---- forgot/reset password (token row + log; no SMTP in docker) ----
         g.MapPost("/auth/forgot-password", async (HttpContext ctx, LlmRouterDbContext db, ILoggerFactory lf) =>
         {
@@ -132,7 +143,7 @@ public static class SettingsExtrasEndpoints
                 Scope = "passwordResets", Key = token,
                 Value = JsonSerializer.Serialize(new
                 {
-                    user = b.TryGetProperty("email", out var e) ? e.GetString() : "admin",
+                    user = b.TryGetProperty("email", out var e) ? e.GetString() : AdminScope,
                     expires = DateTimeOffset.UtcNow.AddHours(1).ToString("o"),
                 }),
             });
@@ -163,7 +174,10 @@ public static class SettingsExtrasEndpoints
             await db.SaveChangesAsync();
             return Results.Json(new { ok = true }, JsonOpts);
         }).AllowAnonymous();
+    }
 
+    private static void MapMisc(WebApplication app, RouteGroupBuilder g)
+    {
         // ---- misc leftovers ----
         app.MapMethods("/api/upstream-proxy/{**path}", new[] { "GET", "POST", "PUT", "DELETE" },
             (HttpContext ctx, string? path, IHttpClientFactory hf) =>

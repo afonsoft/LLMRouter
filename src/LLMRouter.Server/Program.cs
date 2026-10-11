@@ -299,6 +299,7 @@ SessionPoolEndpoints.Map(app);
 CliDeviceEndpoints.Map(app);
 VscodeEndpoints.Map(app);
 UserKeysEndpoints.Map(app);
+PublicCatalogEndpoints.Map(app);
 EvalsEndpoints.Map(app);
 A2aEndpoints.Map(app);
 ConductorEndpoints.Map(app);

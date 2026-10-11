@@ -15096,10 +15096,21 @@
     "empty": "No models — add a provider connection first"
   },
   "login": {
-    "subtitle": "Sign in to your router",
+    "subtitle": "Enter your password to continue",
     "firstRun": "First run — set your admin password.",
     "password": "Password",
-    "confirm": "Confirm password"
+    "confirm": "Confirm password",
+    "title": "Sign in",
+    "signIn": "Sign in",
+    "createAccount": "Create account",
+    "heroTitle": "Unified AI API Proxy",
+    "heroSubtitle": "Route requests to multiple AI providers through a single endpoint. Load balancing, failover, and usage tracking built in.",
+    "feature1": "Multi-Provider",
+    "feature1Sub": "OpenAI, Anthropic, Google, and more",
+    "feature2": "Load Balancing",
+    "feature2Sub": "Distribute requests intelligently",
+    "feature3": "Usage Tracking",
+    "feature3Sub": "Monitor costs and tokens"
   },
   "a2a": {
     "title": "A2A agents",

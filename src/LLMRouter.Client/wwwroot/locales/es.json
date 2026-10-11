@@ -14955,10 +14955,21 @@
   "consoleLogs": "Consola",
   "costsOverview": "Resumen de costes",
   "login": {
-    "subtitle": "Inicia sesión en tu router",
+    "subtitle": "Ingresa tu contraseña para continuar",
     "firstRun": "Primera ejecución — define tu contraseña de admin.",
     "password": "Contraseña",
-    "confirm": "Confirmar contraseña"
+    "confirm": "Confirmar contraseña",
+    "title": "Iniciar sesión",
+    "signIn": "Iniciar sesión",
+    "createAccount": "Crear cuenta",
+    "heroTitle": "Proxy unificado de APIs de IA",
+    "heroSubtitle": "Enruta solicitudes a múltiples proveedores de IA por un solo endpoint. Balanceo, failover y métricas de uso integrados.",
+    "feature1": "Multi-Provider",
+    "feature1Sub": "OpenAI, Anthropic, Google y más",
+    "feature2": "Balanceo de carga",
+    "feature2Sub": "Distribuye solicitudes inteligentemente",
+    "feature3": "Métricas de uso",
+    "feature3Sub": "Monitorea costos y tokens"
   },
   "logsTimeline": "Línea de tiempo de requests",
   "mcp": {

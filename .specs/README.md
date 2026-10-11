@@ -85,3 +85,21 @@ gateways) — improvement work, not ports:
 Multi-user/RBAC/OIDC + Redis multi-node + OpenRouter-style API resale are
 documented as future evolution in
 `docs/analysis/evolucao-multiuser-openrouter.md` (depends on SPEC-109 first).
+
+UI-parity migration specs (OmniRoute → LLMRouter), ordered by impact —
+audit: `docs/analysis/ui-parity-audit-2026-10-11.md`:
+
+| Spec | Title |
+|------|-------|
+| SPEC-113 | Activity feed parity |
+| SPEC-114 | API Keys page parity |
+| SPEC-115 | Providers page parity |
+| SPEC-116 | Logs pages parity (request/console/proxy) |
+| SPEC-117 | Analytics pages parity (utilization/combo-health) |
+| SPEC-118 | Costs pages parity (overview/pricing/budget/quota-share) |
+| SPEC-119 | Combos + Model catalog parity |
+| SPEC-120 | Health + Leaderboard parity |
+| SPEC-121 | Profile/CLI pages parity (+content fixes) |
+| SPEC-122 | Docs hub parity |
+| SPEC-123 | Settings sub-routes parity (optional) |
+| SPEC-124 | Home finishing parity |

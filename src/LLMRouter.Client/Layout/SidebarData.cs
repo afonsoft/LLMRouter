@@ -25,6 +25,7 @@ public static class SidebarData
             new("combos-live", "/dashboard/combos/live", "combosLive", "account_tree", Label: "Combo Studio", Subtitle: "combosLiveSubtitle", SubtitleFallback: "Live routing cascade"),
             new("quota", "/dashboard/quota", "providerQuota", "tune", Subtitle: "providerQuotaSubtitle"),
             new("rate-limits", "/dashboard/rate-limits", "rateLimits", "speed", Label: "Rate limits", Subtitle: "rateLimitsSubtitle", SubtitleFallback: "Per-key/provider/model throttling"),
+            new("users", "/dashboard/users", "users", "group", Label: "Users", Subtitle: "usersSubtitle", SubtitleFallback: "Accounts, keys & balances"),
             new("relay", "/dashboard/relay", "relay", "podcasts", Label: "Relay", Subtitle: "relaySubtitle", SubtitleFallback: "Per-client access tokens"),
             new("session-pools", "/dashboard/session-pools", "sessionPools", "group_work", Label: "Session pools", Subtitle: "sessionPoolsSubtitle", SubtitleFallback: "Warm upstream sessions"),
             new("costs-quota-share", "/dashboard/costs/quota-share", "costsQuotaShare", "pie_chart", Subtitle: "costsQuotaShareSubtitle"),

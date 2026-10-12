@@ -104,6 +104,13 @@ try {
   if (portalBg !== 'rgb(11, 14, 20)') fail(`docs portal bg ${portalBg} != #0b0e14`);
   if (await page.$('.sidebar')) fail('docs page leaked the dashboard sidebar');
 
+  // 13. SPEC-134: /dashboard/users renders the admin table + create form
+  await page.goto(base + '/dashboard/users', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.tbl', { timeout: 60_000 });
+  const usersTxt = await page.$eval('main', (e) => e.textContent);
+  if (!usersTxt.includes('Create user') || !usersTxt.includes('Balance'))
+    fail('users page missing create form or balance column');
+
   console.log('E2E smoke OK');
 } catch (err) {
   fail(err.message);

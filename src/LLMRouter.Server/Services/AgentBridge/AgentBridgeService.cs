@@ -13,7 +13,6 @@ public sealed class AgentBridgeService
     public MitmCa Ca { get; }
     public MitmProxy Proxy { get; }
     private readonly IServiceScopeFactory _scopes;
-    private readonly ILogger<AgentBridgeService> _log;
     private string? _lastError;
     private DateTimeOffset? _startedAt;
 
@@ -21,7 +20,6 @@ public sealed class AgentBridgeService
         IHostEnvironment env, IConfiguration cfg)
     {
         _scopes = scopes;
-        _log = log;
         var dataDir = cfg["Mitm:DataDir"];
         Ca = new MitmCa(dataDir);
         var forward = Environment.GetEnvironmentVariable("LLMR_INTERNAL_URL")

@@ -17,24 +17,29 @@ public sealed record MitmTarget(
 /// </summary>
 public static partial class AgentBridgeTargets
 {
+    private const string ClaudeSonnet45 = "claude-sonnet-4.5";
+    private const string Claude35Sonnet = "claude-3.5-sonnet";
+    private const string Gpt4o = "gpt-4o";
+    private static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(100);
+
     public static readonly MitmTarget[] All =
     [
         new("antigravity", "Antigravity IDE",
             ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com",
              "daily-cloudcode-pa.sandbox.googleapis.com", "autopush-cloudcode-pa.sandbox.googleapis.com"],
-            ["gemini-2.5-pro", "gemini-2.5-flash", "claude-sonnet-4.5"],
+            ["gemini-2.5-pro", "gemini-2.5-flash", ClaudeSonnet45],
             "which antigravity"),
         new("kiro", "Kiro IDE",
             ["q.amazonaws.com", "codewhisperer.us-east-1.amazonaws.com"],
-            ["claude-sonnet-4.5", "claude-sonnet-4"],
+            [ClaudeSonnet45, "claude-sonnet-4"],
             "which kiro"),
         new("copilot", "GitHub Copilot",
             ["api.githubcopilot.com", "copilot-proxy.githubusercontent.com"],
-            ["gpt-4o", "claude-3.5-sonnet", "gemini-2.0-flash"],
+            [Gpt4o, Claude35Sonnet, "gemini-2.0-flash"],
             null),
         new("ghe-copilot", "GitHub Enterprise Copilot",
             [],
-            ["gpt-4o", "claude-3.5-sonnet", "gemini-2.0-flash"],
+            [Gpt4o, Claude35Sonnet, "gemini-2.0-flash"],
             null),
         new("codex", "OpenAI Codex",
             ["chatgpt.com"],
@@ -42,33 +47,33 @@ public static partial class AgentBridgeTargets
             "which codex"),
         new("cursor", "Cursor IDE",
             ["api2.cursor.sh"],
-            ["claude-sonnet-4.5", "gpt-4o"],
+            [ClaudeSonnet45, Gpt4o],
             "which cursor"),
         new("zed", "Zed",
             ["api.zed.dev"],
-            ["claude-3.5-sonnet", "gpt-4o"],
+            [Claude35Sonnet, Gpt4o],
             "which zed"),
         new("claude-code", "Claude Code",
             ["api.anthropic.com"],
-            ["claude-sonnet-4.5", "claude-opus-4.5"],
+            [ClaudeSonnet45, "claude-opus-4.5"],
             "which claude"),
         new("open-code", "OpenCode",
             ["opencode.ai"],
-            ["gpt-4o", "claude-3.5-sonnet"],
+            [Gpt4o, Claude35Sonnet],
             "which opencode"),
         new("trae", "Trae",
             ["trae.invalid"],
-            ["claude-sonnet-4.5", "gpt-4o"],
+            [ClaudeSonnet45, Gpt4o],
             "which trae"),
     ];
 
     /// <summary>Default bypass list — ported verbatim from passthrough.ts.</summary>
     private static readonly Regex[] DefaultBypass =
     [
-        new Regex(@"\.bank\.", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"(^|\.)gov(\.|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"(^|\.)okta\.com$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        new Regex(@"(^|\.)auth0\.com$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\.bank\.", RegexOptions.IgnoreCase | RegexOptions.Compiled, MatchTimeout),
+        new Regex(@"(^|\.)gov(\.|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled, MatchTimeout),
+        new Regex(@"(^|\.)okta\.com$", RegexOptions.IgnoreCase | RegexOptions.Compiled, MatchTimeout),
+        new Regex(@"(^|\.)auth0\.com$", RegexOptions.IgnoreCase | RegexOptions.Compiled, MatchTimeout),
     ];
 
     /// <summary>Glob match (* wildcard) — linear scan, ReDoS-safe (ported).</summary>

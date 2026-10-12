@@ -29,12 +29,15 @@ public sealed class MitmProxy : IAsyncDisposable
     private Task? _acceptLoop;
     private int _active;
 
+    private long _total;
+    private long _intercepted;
+    private long _passthrough;
     public int Port { get; private set; }
     public bool Running => _listener is not null;
     public int ActiveConnections => _active;
-    public long TotalConnections;
-    public long Intercepted;
-    public long Passthrough;
+    public long TotalConnections => _total;
+    public long Intercepted => _intercepted;
+    public long Passthrough => _passthrough;
 
     public MitmProxy(MitmCa ca, string forwardBase,
         Func<string, Task<IReadOnlyList<string>>>? bypassProvider = null,
@@ -65,9 +68,10 @@ public sealed class MitmProxy : IAsyncDisposable
     public async Task Stop()
     {
         if (_listener is null) return;
-        _cts?.Cancel();
+        if (_cts is not null) await _cts.CancelAsync();
         _listener.Stop();
-        try { await (_acceptLoop ?? Task.CompletedTask); } catch { }
+        try { await (_acceptLoop ?? Task.CompletedTask); }
+        catch (OperationCanceledException) { /* expected on shutdown */ }
         _listener = null;
         _cts?.Dispose();
         _cts = null;
@@ -83,12 +87,12 @@ public sealed class MitmProxy : IAsyncDisposable
             TcpClient client;
             try { client = await _listener!.AcceptTcpClientAsync(ct); }
             catch { break; }
-            Interlocked.Increment(ref TotalConnections);
+            Interlocked.Increment(ref _total);
             _ = Task.Run(async () =>
             {
                 Interlocked.Increment(ref _active);
                 try { await Handle(client, ct); }
-                catch (Exception e) { _log?.LogDebug("mitm conn: {Msg}", e.Message); }
+                catch (Exception e) { _log?.LogDebug(e, "mitm connection handler failed"); }
                 finally { Interlocked.Decrement(ref _active); client.Dispose(); }
             }, ct);
         }
@@ -114,14 +118,14 @@ public sealed class MitmProxy : IAsyncDisposable
 
             if (kind is "bypass" or "passthrough")
             {
-                Interlocked.Increment(ref Passthrough);
+                Interlocked.Increment(ref _passthrough);
                 await stream.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray(), ct);
                 await RelayTcp(stream, host, port, ct);
                 return;
             }
 
             // Target: 200 → TLS terminate with signed leaf → intercept HTTP.
-            Interlocked.Increment(ref Intercepted);
+            Interlocked.Increment(ref _intercepted);
             await stream.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray(), ct);
             var leaf = _ca.LeafFor(host);
             var tls = new SslStream(stream, leaveInnerStreamOpen: false);
@@ -130,7 +134,7 @@ public sealed class MitmProxy : IAsyncDisposable
                 ServerCertificate = leaf,
                 EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
             }, ct);
-            await InterceptHttp(new BufferedReader(tls), tls, target!, host, ct);
+            await InterceptHttp(new BufferedReader(tls), tls, target!, ct);
             return;
         }
 
@@ -154,13 +158,13 @@ public sealed class MitmProxy : IAsyncDisposable
                 while ((n = await a.ReadAsync(buf, ct)) > 0)
                     await b.WriteAsync(buf.AsMemory(0, n), ct);
             }
-            catch { }
+            catch { /* relay termination (peer close or cancel) is expected */ }
             finally { ArrayPool<byte>.Shared.Return(buf); }
         }
     }
 
     /// <summary>Intercept HTTP/1.1 requests inside a terminated TLS stream.</summary>
-    private async Task InterceptHttp(BufferedReader reader, SslStream tls, MitmTarget target, string host, CancellationToken ct)
+    private async Task InterceptHttp(BufferedReader reader, SslStream tls, MitmTarget target, CancellationToken ct)
     {
         var mappings = await _mappingsProvider(target.Id);
         var apiKey = await _apiKeyProvider();
@@ -254,7 +258,7 @@ public sealed class MitmProxy : IAsyncDisposable
                 return Encoding.UTF8.GetBytes(node.ToJsonString());
             }
         }
-        catch { }
+        catch (JsonException) { /* malformed body — forward unmapped */ }
         return body;
     }
 
@@ -284,7 +288,7 @@ public sealed class MitmProxy : IAsyncDisposable
                 if (size == 0) { await reader.ReadUntil("\r\n"u8.ToArray(), 4096, ct); break; }
                 var chunk = await reader.ReadExact(size + 2, ct);
                 if (chunk is null) break;
-                ms.Write(chunk, 0, size);
+                await ms.WriteAsync(chunk.AsMemory(0, size), ct);
             }
             return ms.ToArray();
         }
@@ -313,13 +317,13 @@ public sealed class MitmProxy : IAsyncDisposable
                 if (idx >= 0)
                 {
                     _carry.SetLength(0);
-                    _carry.Write(cur, idx + delim.Length, cur.Length - idx - delim.Length);
+                    await _carry.WriteAsync(cur.AsMemory(idx + delim.Length), ct);
                     return (cur[..(idx + delim.Length)], cur[(idx + delim.Length)..]);
                 }
                 if (cur.Length >= max) return null;
                 var n = await _s.ReadAsync(_buf, ct);
                 if (n <= 0) return null;
-                _carry.Write(_buf, 0, n);
+                await _carry.WriteAsync(_buf.AsMemory(0, n), ct);
             }
         }
 
@@ -329,21 +333,21 @@ public sealed class MitmProxy : IAsyncDisposable
             if (cur.Length >= count)
             {
                 _carry.SetLength(0);
-                _carry.Write(cur, count, cur.Length - count);
+                await _carry.WriteAsync(cur.AsMemory(count), ct);
                 return cur[..count];
             }
             using var ms = new MemoryStream();
-            ms.Write(cur, 0, cur.Length);
+            await ms.WriteAsync(cur, ct);
             _carry.SetLength(0);
             while (ms.Length < count)
             {
                 var n = await _s.ReadAsync(_buf, ct);
                 if (n <= 0) return null;
-                ms.Write(_buf, 0, n);
+                await ms.WriteAsync(_buf.AsMemory(0, n), ct);
             }
             var all = ms.ToArray();
             if (all.Length > count)
-                _carry.Write(all, count, all.Length - count);
+                await _carry.WriteAsync(all.AsMemory(count), ct);
             return all[..count];
         }
     }

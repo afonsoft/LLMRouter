@@ -50,7 +50,7 @@ public sealed class MitmCa
     {
         if (!CertExists) return null;
         var cert = X509Certificate2.CreateFromPemFile(CertPath, KeyPath);
-        return (cert, (RSA)cert.GetRSAPrivateKey()!);
+        return (cert, cert.GetRSAPrivateKey()!);
     }
 
     public (X509Certificate2 cert, RSA key) Ensure()
@@ -105,7 +105,7 @@ public sealed class MitmCa
                 thumb = c.Thumbprint;
                 expiry = c.NotAfter.ToUniversalTime().ToString("o");
             }
-            catch { }
+            catch (Exception) { /* unreadable/corrupt PEM — Info reports nulls */ }
         }
         return new { certPath = CertPath, certExists = exists, certTrusted = IsTrusted(), thumbprint = thumb, notAfter = expiry };
     }

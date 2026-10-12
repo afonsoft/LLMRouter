@@ -17,14 +17,15 @@ public static class AgentBridgeEndpoints
     public static void Map(WebApplication app)
     {
         var g = app.MapGroup("/api/tools/agent-bridge").RequireAuthorization();
-        MapAgents(g);
+        MapAgentsList(g);
+        MapAgentMappings(g);
         MapServer(g);
         MapBypass(g);
         MapCert(g);
         MapMisc(g);
     }
 
-    private static void MapAgents(RouteGroupBuilder g)
+    private static void MapAgentsList(RouteGroupBuilder g)
     {
         g.MapGet("/agents", async (AgentBridgeService svc, LlmRouterDbContext db) =>
         {
@@ -55,6 +56,10 @@ public static class AgentBridgeEndpoints
             return Results.Ok(new { ok = true, reset = id });
         });
 
+    }
+
+    private static void MapAgentMappings(RouteGroupBuilder g)
+    {
         g.MapGet("/agents/{id}/mappings", async (string id, LlmRouterDbContext db) =>
         {
             if (AgentBridgeTargets.All.All(x => x.Id != id))
@@ -184,7 +189,7 @@ public static class AgentBridgeEndpoints
 
         g.MapGet("/cert/download", (AgentBridgeService svc) =>
         {
-            var (cert, _) = svc.Ca.Ensure();
+            svc.Ca.Ensure();
             var pem = System.IO.File.ReadAllText(svc.Ca.CertPath);
             return Results.Text(pem, "application/x-pem-file",
                 System.Text.Encoding.UTF8);

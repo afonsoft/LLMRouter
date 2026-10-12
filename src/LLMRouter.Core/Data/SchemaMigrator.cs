@@ -58,8 +58,14 @@ public static class SchemaMigrator
 
             SeedMigrationsHistory(db);
             try { db.Database.Migrate(); }
-            catch (Exception ex) when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
-            { /* schema raced by a parallel host */ }
+            catch (Exception ex) when (SchemaAhead(ex))
+            {
+                // "already exists" (table raced by a parallel host) or "duplicate
+                // column name" (schema created by EnsureCreated/current model —
+                // newer than the baseline the history seed assumes). Both mean
+                // the schema is already at or ahead of what the failing
+                // migration would produce; the backfill covers real gaps.
+            }
             LegacyBackfill(db);
         }
     }
@@ -70,6 +76,17 @@ public static class SchemaMigrator
     /// baseline migration as applied so <c>Migrate()</c> is a no-op; the
     /// backfill below covers any gaps versus the baseline.
     /// </summary>
+    private static bool SchemaAhead(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase)
+                || e.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
     private static void SeedMigrationsHistory(LlmRouterDbContext db)
     {
         var conn = db.Database.GetDbConnection();

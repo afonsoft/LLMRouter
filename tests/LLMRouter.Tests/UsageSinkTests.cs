@@ -128,6 +128,9 @@ public sealed class UsageSinkTests : IDisposable
         for (var i = 0; i < 7; i++) await _writer.PostUsageAsync(Row(i));
         // Stop completes the writers; the worker drains the remainder in ≤5s.
         await _writer.StopAsync(CancellationToken.None);
+        // Under a starved threadpool the worker may not have been scheduled at
+        // all — drain any residue on this thread, then poll for visibility.
+        await _writer.FlushAsync();
         // StopAsync's 5s budget bounds the WAIT, not the drain — under a loaded
         // threadpool the worker may commit right after StopAsync returns, so
         // poll instead of assuming the commit is visible at return.

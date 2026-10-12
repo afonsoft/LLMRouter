@@ -59,13 +59,13 @@ const out = {};
 for (const route of PAGES) {
   try {
     const resp = await page.goto(cfg.base + route, { waitUntil: 'domcontentloaded', timeout: 60_000 }); // NOSONAR — pages audited sequentially to keep server load low
-    await page.waitForTimeout(cfg.settle);
+    await page.waitForTimeout(cfg.settle); // NOSONAR — settle time per page is intentional
     const keys = ['body', 'h1', 'h2', 'h3', 'inputs', 'selects', 'buttons', 'links', 'cards', 'tableHead', 'nav', 'sidebarItems'];
     const sels = ['body', 'h1', 'h2', 'h3',
       'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])',
       'select', 'button', 'a', '[class*="card"], [class*="Card"]', 'th', 'nav',
       'nav a, aside a, [class*="sidebar"] a'];
-    const vals = await Promise.all(sels.map(s => grab(s)));
+    const vals = await Promise.all(sels.map(s => grab(s))); // NOSONAR — page loop stays sequential by design
     out[route] = { status: resp?.status(), ...Object.fromEntries(keys.map((k, i) => [k, vals[i]])) };
     console.log(`${route}: ok`);
   } catch (e) { out[route] = { error: e.message.slice(0, 120) }; console.log(`${route}: FAIL`); }

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using LLMRouter.Core.Data;
+using Microsoft.EntityFrameworkCore;
 
 
 namespace LLMRouter.Core.Extras;
@@ -87,6 +88,30 @@ public static class Extras
             }
         }
         catch { /* best-effort: failure is non-fatal */ }
+    }
+
+    /// <summary>Returns the singleton settings row (Id=1), creating it if absent.
+    /// Two concurrent writers can both observe the row missing and race the INSERT;
+    /// on DbUpdateException the loser detaches and re-reads the winner's row.</summary>
+    public static async Task<SettingRow> GetOrCreateSettingsAsync(LlmRouterDbContext db)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var s = await db.Settings.FirstOrDefaultAsync();
+            if (s is not null) return s;
+            db.Settings.Add(new SettingRow { Id = 1, Data = "{}" });
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+            {
+                db.ChangeTracker.Clear();
+                continue;
+            }
+            return await db.Settings.FirstAsync();
+        }
+        return await db.Settings.FirstAsync();
     }
 
     /// <summary>Audit log entry appended to kv 'audit' (JSON array, capped at 1000).

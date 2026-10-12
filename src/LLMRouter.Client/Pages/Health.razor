@@ -380,7 +380,7 @@ else
         @foreach (var kv in _providerHealth)
         {
             var st = kv.Value.GetProperty("state").GetString() ?? "CLOSED";
-            var color = st == "OPEN" ? "var(--red,#f85149)" : st == "HALF_OPEN" ? "var(--amber,#f5a524)" : "var(--green,#3fb950)";
+            var color = StateColor(st);
             <div class="flex between items-center mt-2" style="padding:8px 0;border-top:1px solid var(--grid-line,rgba(255,255,255,.06))">
                 <div class="flex gap-2 items-center">
                     <span style="width:8px;height:8px;border-radius:50%;background:@color;display:inline-block"></span>
@@ -395,7 +395,7 @@ else
                         <span class="muted sm">· @Tf("health.lastFailure", "since {0}", oa.GetString())</span>
                     }
                 </div>
-                <span class="chip @(st == "OPEN" ? "chip-red" : st == "HALF_OPEN" ? "chip-amber" : "chip-green")">@st.ToLowerInvariant()</span>
+                <span class="chip @StateChip(st)">@st.ToLowerInvariant()</span>
             </div>
         }
         @if (_providerHealth.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">health_and_safety</span>@Loc.T("health.noCBData", "No circuit breaker data — all providers operational")</div> }
@@ -531,21 +531,45 @@ else
     // locales use upstream named placeholders ({time}/{count}); normalize any
     // single-brace token to {0} before string.Format.
     private string Tf(string key, string fallback, object? arg) =>
-        string.Format(System.Text.RegularExpressions.Regex.Replace(
-            Loc.T(key, fallback) ?? fallback, @"\{[^{}]*\}", "{0}"), arg);
-    private string Tel(string p) =>
-        _telemetry.ValueKind == JsonValueKind.Object && _telemetry.TryGetProperty(p, out var v)
-            ? v.ValueKind == JsonValueKind.Number ? v.GetDouble().ToString(v.GetDouble() % 1 == 0 ? "0" : "0.00") : v.ToString()
-            : "0";
+        string.Format(Placeholder.Replace(Loc.T(key, fallback) ?? fallback, "{0}"), arg);
+    private static readonly System.Text.RegularExpressions.Regex Placeholder =
+        new(@"\{[^{}]*\}", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+    private string Tel(string p)
+    {
+        if (_telemetry.ValueKind != JsonValueKind.Object || !_telemetry.TryGetProperty(p, out var v))
+            return "0";
+        if (v.ValueKind != JsonValueKind.Number)
+            return v.ToString();
+        var d = v.GetDouble();
+        return d.ToString(d % 1 == 0 ? "0" : "0.00");
+    }
+    private static string StateColor(string st) => st switch
+    {
+        "OPEN" => "var(--red,#f85149)",
+        "HALF_OPEN" => "var(--amber,#f5a524)",
+        _ => "var(--green,#3fb950)",
+    };
+    private static string StateChip(string st) => st switch
+    {
+        "OPEN" => "chip-red",
+        "HALF_OPEN" => "chip-amber",
+        _ => "chip-green",
+    };
 
     private static string FmtUptime(long seconds)
     {
         if (seconds <= 0) return "—";
         var t = TimeSpan.FromSeconds(seconds);
-        return t.Days > 0 ? $"{t.Days}d {t.Hours}h" : t.Hours > 0 ? $"{t.Hours}h {t.Minutes}m" : $"{t.Minutes}m {t.Seconds}s";
+        if (t.Days > 0) return $"{t.Days}d {t.Hours}h";
+        if (t.Hours > 0) return $"{t.Hours}h {t.Minutes}m";
+        return $"{t.Minutes}m {t.Seconds}s";
     }
-    private static string FmtBytes(long b) =>
-        b > 1L << 30 ? $"{b / (double)(1L << 30):0.0} GB" : b > 1L << 20 ? $"{b / (double)(1L << 20):0.0} MB" : $"{b / 1024.0:0} KB";
+    private static string FmtBytes(long b)
+    {
+        if (b > 1L << 30) return $"{b / (double)(1L << 30):0.0} GB";
+        if (b > 1L << 20) return $"{b / (double)(1L << 20):0.0} MB";
+        return $"{b / 1024.0:0} KB";
+    }
 
     private async Task AutoRepair()
     {
@@ -564,7 +588,7 @@ else
     {
         _resetting = true;
         try { await Api.DeleteAsync("api/monitoring/health"); }
-        catch (HttpRequestException) { }
+        catch (HttpRequestException) { /* best-effort reset; reload shows resulting state */ }
         _resetting = false;
         await LoadStatus();
     }
@@ -572,7 +596,7 @@ else
     private async Task UnblockAll()
     {
         try { await Api.PostAsync("api/resilience/reset", new { }); }
-        catch (HttpRequestException) { }
+        catch (HttpRequestException) { /* best-effort; reload shows resulting state */ }
         await LoadStatus();
     }
 
@@ -617,61 +641,76 @@ else
         try
         {
             _snap = await Api.GetAsync("api/monitoring/health");
-            _degraded = _snap.TryGetProperty("degraded", out var d) && d.GetBoolean();
-            _checked = _snap.TryGetProperty("checked_", out var ck) && ck.TryGetInt32(out var c) ? c : 0;
-            _errors = _snap.TryGetProperty("errors", out var er) && er.TryGetInt32(out var e) ? e : 0;
-            _errorRate = _snap.TryGetProperty("errorRate", out var ra) && ra.TryGetDouble(out var rv) ? rv : 0;
-            _providerHealth = _snap.TryGetProperty("providerHealth", out var ph) && ph.ValueKind == JsonValueKind.Object
-                ? ph.EnumerateObject().Select(p => new KeyValuePair<string, JsonElement>(p.Name, p.Value)).ToList() : [];
-            _rateLimits = _snap.TryGetProperty("rateLimitStatus", out var rl) && rl.ValueKind == JsonValueKind.Object
-                ? rl.EnumerateObject().Select(p => new KeyValuePair<string, JsonElement>(p.Name, p.Value)).ToList() : [];
-            _learned = _snap.TryGetProperty("learnedLimits", out var ll) && ll.ValueKind == JsonValueKind.Object
-                ? ll.EnumerateObject().Select(p => new KeyValuePair<string, List<JsonElement>>(p.Name,
-                    p.Value.ValueKind == JsonValueKind.Array ? p.Value.EnumerateArray().ToList() : [])).ToList() : [];
-            _lockouts = _snap.TryGetProperty("lockouts", out var lo) && lo.ValueKind == JsonValueKind.Array
-                ? lo.EnumerateArray().ToList() : [];
-            if (_snap.TryGetProperty("quotaMonitor", out var qm))
-            {
-                _qmActive = qm.TryGetProperty("active", out var qa) && qa.TryGetInt32(out var qav) ? qav : 0;
-                _qmAlerting = qm.TryGetProperty("alerting", out var ql) && ql.TryGetInt32(out var qlv) ? qlv : 0;
-                _qmExhausted = qm.TryGetProperty("exhausted", out var qe) && qe.TryGetInt32(out var qev) ? qev : 0;
-                _qmMonitors = qm.TryGetProperty("monitors", out var qmm) && qmm.ValueKind == JsonValueKind.Array
-                    ? qmm.EnumerateArray().ToList() : [];
-            }
+            ParseSnapshot();
             _lastRefresh = DateTime.Now.ToString("HH:mm:ss");
-
-            var conc = await Api.GetAsync("api/admin/concurrency");
-            _concTime = conc.TryGetProperty("timestamp", out var ts2) ? ts2.GetString() ?? "" : "";
-            if (conc.TryGetProperty("semaphores", out var sem) && sem.TryGetProperty("admission", out var adm))
-            {
-                _concRunning = adm.TryGetProperty("running", out var rr2) ? rr2.GetInt32() : 0;
-                _concQueued = adm.TryGetProperty("queued", out var qq) ? qq.GetInt32() : 0;
-                _concLimit = adm.TryGetProperty("limit", out var ll2) ? ll2.GetInt32() : 0;
-            }
-
-            var dbh = await Api.GetAsync("api/db/health");
-            _dbOk = dbh.TryGetProperty("ok", out var ok) && ok.GetBoolean();
-            _dbIntegrity = dbh.TryGetProperty("integrity", out var ig) ? ig.GetString() ?? "" : "";
-            var mig = await Api.GetAsync("api/db/migrations");
-            _migApplied = mig.GetProperty("applied").GetInt32();
-            _migAvailable = mig.GetProperty("available").GetInt32();
-            _migPending = mig.GetProperty("pending").GetArrayLength();
-
+            await LoadConcurrency();
+            await LoadDbHealth();
             _telemetry = await Api.GetAsync("api/telemetry/summary");
-            var ap = await Api.GetAsync("api/providers/health-autopilot");
-            if (ap.ValueKind == JsonValueKind.Object)
-            {
-                _autoEnabled = ap.TryGetProperty("enabled", out var ae) && ae.ValueKind == JsonValueKind.True;
-                _autoThreshold = ap.TryGetProperty("failureThreshold", out var at2) && at2.TryGetDouble(out var atv) ? atv : 0.5;
-                _autoMinChecks = ap.TryGetProperty("minChecks", out var mc2) && mc2.TryGetInt32(out var mcv) ? mcv : 5;
-                _autoRetest = ap.TryGetProperty("retestMin", out var rt) && rt.TryGetInt32(out var rtv) ? rtv : 30;
-            }
+            await LoadAutopilot();
             var mx = await Api.GetAsync("api/providers/health-matrix");
             _matrix = mx.TryGetProperty("connections", out var mxc) && mxc.ValueKind == JsonValueKind.Array
                 ? mxc.EnumerateArray().ToList() : [];
         }
-        catch (HttpRequestException) { }
+        catch (HttpRequestException) { /* partial dashboard state is still useful */ }
         _loading = false;
+    }
+
+    private void ParseSnapshot()
+    {
+        _degraded = _snap.TryGetProperty("degraded", out var d) && d.GetBoolean();
+        _checked = _snap.TryGetProperty("checked_", out var ck) && ck.TryGetInt32(out var c) ? c : 0;
+        _errors = _snap.TryGetProperty("errors", out var er) && er.TryGetInt32(out var e) ? e : 0;
+        _errorRate = _snap.TryGetProperty("errorRate", out var ra) && ra.TryGetDouble(out var rv) ? rv : 0;
+        _providerHealth = _snap.TryGetProperty("providerHealth", out var ph) && ph.ValueKind == JsonValueKind.Object
+            ? ph.EnumerateObject().Select(p => new KeyValuePair<string, JsonElement>(p.Name, p.Value)).ToList() : [];
+        _rateLimits = _snap.TryGetProperty("rateLimitStatus", out var rl) && rl.ValueKind == JsonValueKind.Object
+            ? rl.EnumerateObject().Select(p => new KeyValuePair<string, JsonElement>(p.Name, p.Value)).ToList() : [];
+        _learned = _snap.TryGetProperty("learnedLimits", out var ll) && ll.ValueKind == JsonValueKind.Object
+            ? ll.EnumerateObject().Select(p => new KeyValuePair<string, List<JsonElement>>(p.Name,
+                p.Value.ValueKind == JsonValueKind.Array ? p.Value.EnumerateArray().ToList() : [])).ToList() : [];
+        _lockouts = _snap.TryGetProperty("lockouts", out var lo) && lo.ValueKind == JsonValueKind.Array
+            ? lo.EnumerateArray().ToList() : [];
+        if (_snap.TryGetProperty("quotaMonitor", out var qm))
+        {
+            _qmActive = qm.TryGetProperty("active", out var qa) && qa.TryGetInt32(out var qav) ? qav : 0;
+            _qmAlerting = qm.TryGetProperty("alerting", out var ql) && ql.TryGetInt32(out var qlv) ? qlv : 0;
+            _qmExhausted = qm.TryGetProperty("exhausted", out var qe) && qe.TryGetInt32(out var qev) ? qev : 0;
+            _qmMonitors = qm.TryGetProperty("monitors", out var qmm) && qmm.ValueKind == JsonValueKind.Array
+                ? qmm.EnumerateArray().ToList() : [];
+        }
+    }
+
+    private async Task LoadConcurrency()
+    {
+        var conc = await Api.GetAsync("api/admin/concurrency");
+        _concTime = conc.TryGetProperty("timestamp", out var ts2) ? ts2.GetString() ?? "" : "";
+        if (conc.TryGetProperty("semaphores", out var sem) && sem.TryGetProperty("admission", out var adm))
+        {
+            _concRunning = adm.TryGetProperty("running", out var rr2) ? rr2.GetInt32() : 0;
+            _concQueued = adm.TryGetProperty("queued", out var qq) ? qq.GetInt32() : 0;
+            _concLimit = adm.TryGetProperty("limit", out var ll2) ? ll2.GetInt32() : 0;
+        }
+    }
+
+    private async Task LoadDbHealth()
+    {
+        var dbh = await Api.GetAsync("api/db/health");
+        _dbOk = dbh.TryGetProperty("ok", out var ok) && ok.GetBoolean();
+        _dbIntegrity = dbh.TryGetProperty("integrity", out var ig) ? ig.GetString() ?? "" : "";
+        var mig = await Api.GetAsync("api/db/migrations");
+        _migApplied = mig.GetProperty("applied").GetInt32();
+        _migAvailable = mig.GetProperty("available").GetInt32();
+        _migPending = mig.GetProperty("pending").GetArrayLength();
+    }
+
+    private async Task LoadAutopilot()
+    {
+        var ap = await Api.GetAsync("api/providers/health-autopilot");
+        if (ap.ValueKind != JsonValueKind.Object) return;
+        _autoEnabled = ap.TryGetProperty("enabled", out var ae) && ae.ValueKind == JsonValueKind.True;
+        _autoThreshold = ap.TryGetProperty("failureThreshold", out var at2) && at2.TryGetDouble(out var atv) ? atv : 0.5;
+        _autoMinChecks = ap.TryGetProperty("minChecks", out var mc2) && mc2.TryGetInt32(out var mcv) ? mcv : 5;
+        _autoRetest = ap.TryGetProperty("retestMin", out var rt) && rt.TryGetInt32(out var rtv) ? rtv : 30;
     }
 
     private async Task LoadExtras()

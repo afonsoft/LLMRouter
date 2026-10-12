@@ -163,7 +163,7 @@ public static class SettingsExtrasEndpoints
             if (row is null)
                 return Results.Json(new { error = "invalid token" }, JsonOpts, statusCode: 400);
             db.Kv.Remove(row);
-            var s = await db.Settings.FirstOrDefaultAsync() ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var s = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
             var d = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(s.Data) ?? [];
             var salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
             var hash = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(

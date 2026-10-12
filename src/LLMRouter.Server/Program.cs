@@ -104,6 +104,7 @@ builder.Services.AddHttpClient("batches");
 builder.Services.AddHttpClient("gami");
 builder.Services.AddHttpClient("logexport");
 builder.Services.AddSingleton<LLMRouter.Core.Routing.OneProxyState>();
+builder.Services.AddSingleton<LLMRouter.Server.Services.CliTools.CliToolService>();
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(10);
@@ -304,6 +305,7 @@ SettingsRoutingEndpoints.Map(app);
 RelayEndpoints.Map(app);
 SessionPoolEndpoints.Map(app);
 CliDeviceEndpoints.Map(app);
+LLMRouter.Server.Endpoints.CliToolsEndpoints.Map(app);
 VscodeEndpoints.Map(app);
 UserKeysEndpoints.Map(app);
 PublicCatalogEndpoints.Map(app);

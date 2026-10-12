@@ -15,10 +15,22 @@ public static class A2aEndpoints
 
     private static object View(A2aTask t) => new
     {
-        t.Id, t.Agent, t.State, t.Result, t.Error,
+        t.Id, t.Agent, t.State, t.Result, t.Error, t.Skill,
         t.CreatedAt, t.StartedAt, t.FinishedAt,
         payload = JsonSerializer.Deserialize<JsonElement>(t.Payload),
     };
+
+    /// <summary>ours → upstream state names for the history contract.</summary>
+    private static string UpstreamState(string s) => s switch
+    {
+        "queued" => "submitted",
+        "running" => "working",
+        "done" => "completed",
+        _ => s,
+    };
+
+    private static readonly HashSet<string> UpstreamStates =
+        ["submitted", "working", "completed", "failed", "cancelled"];
 
     public static void Map(WebApplication app)
     {
@@ -32,6 +44,7 @@ public static class A2aEndpoints
                 Id = Guid.NewGuid().ToString("N")[..12],
                 Agent = req.TryGetProperty("agent", out var a) ? a.GetString() : null,
                 Payload = req.TryGetProperty("payload", out var p) ? p.GetRawText() : req.GetRawText(),
+                Skill = req.TryGetProperty("skill", out var sk) ? sk.GetString() : null,
                 CreatedAt = Now(),
             };
             db.A2aTasks.Add(t);
@@ -75,6 +88,47 @@ public static class A2aEndpoints
             if (t.StartedAt is not null) history.Add(new { state = "running", at = t.StartedAt });
             if (t.FinishedAt is not null) history.Add(new { state = t.State, at = t.FinishedAt });
             return Results.Json(new { id = t.Id, history }, JsonOpts);
+        });
+
+        // SPEC-129: upstream GET /api/a2a/tasks/history — persisted history with
+        // from/to/skill/state/limit(≤500)/offset filters and upstream state names.
+        g.MapGet("/tasks/history", async (HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var q2 = ctx.Request.Query;
+            var state = q2["state"].FirstOrDefault();
+            if (state is not null && !UpstreamStates.Contains(state))
+                return Results.Json(new { error = new { message = $"invalid state: {state}" } }, JsonOpts, statusCode: 400);
+            var limit = int.TryParse(q2["limit"].FirstOrDefault(), out var l) && l > 0 ? Math.Min(l, 500) : 100;
+            var offset = int.TryParse(q2["offset"].FirstOrDefault(), out var o) && o >= 0 ? o : 0;
+
+            var q = db.A2aTasks.AsQueryable();
+            if (q2["from"].FirstOrDefault() is { } from && DateTime.TryParse(from, out var fdt))
+                q = q.Where(t => string.Compare(t.CreatedAt, fdt.ToString("yyyy-MM-dd HH:mm:ss")) >= 0);
+            if (q2["to"].FirstOrDefault() is { } to && DateTime.TryParse(to, out var tdt))
+                q = q.Where(t => string.Compare(t.CreatedAt, tdt.ToString("yyyy-MM-dd HH:mm:ss")) <= 0);
+            if (q2["skill"].FirstOrDefault() is { } skill) q = q.Where(t => t.Skill == skill);
+            if (state is not null)
+            {
+                var ours = state switch
+                {
+                    "submitted" => "queued", "working" => "running", "completed" => "done",
+                    _ => state,
+                };
+                q = q.Where(t => t.State == ours);
+            }
+            var rows = await q.OrderByDescending(t => t.CreatedAt).Skip(offset).Take(limit).ToListAsync();
+            return Results.Json(new
+            {
+                items = rows.Select(t => new
+                {
+                    id = t.Id,
+                    state = UpstreamState(t.State),
+                    skill = t.Skill,
+                    createdAt = t.CreatedAt,
+                    updatedAt = t.FinishedAt ?? t.StartedAt ?? t.CreatedAt,
+                    completedAt = t.FinishedAt,
+                }),
+            }, JsonOpts);
         });
 
         g.MapGet("/status", async (LlmRouterDbContext db) =>

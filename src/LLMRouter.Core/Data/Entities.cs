@@ -367,6 +367,26 @@ public class VscodeToken
 
 // ---- SPEC-053: A2A tasks + conductor lifecycle ----
 
+[Table("userLevels")]
+public class UserLevel
+{
+    [Key]
+    public string ApiKeyId { get; set; } = "";
+    public long TotalXp { get; set; }
+    public int CurrentLevel { get; set; } = 1;
+    public string UpdatedAt { get; set; } = "";
+}
+
+[Table("leaderboard")]
+public class LeaderboardScore
+{
+    // composite PK (ApiKeyId, Scope) via HasKey in OnModelCreating
+    public string ApiKeyId { get; set; } = "";
+    public string Scope { get; set; } = "";
+    public long Score { get; set; }
+    public string UpdatedAt { get; set; } = "";
+}
+
 [Table("a2aTasks")]
 public class A2aTask
 {
@@ -375,6 +395,8 @@ public class A2aTask
     public string? Agent { get; set; }
     // JSON: {model, text}
     public string Payload { get; set; } = "{}";
+    // SPEC-129: upstream a2a task skill tag (providerDiscovery|quotaManagement|…)
+    public string? Skill { get; set; }
     // queued | running | done | failed | cancelled
     public string State { get; set; } = "queued";
     public string? Result { get; set; }

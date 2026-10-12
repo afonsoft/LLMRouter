@@ -2,31 +2,70 @@
 @inject Api Api
 @inject Loc Loc
 
-<h1 class="page-title">@Loc.T("cliAgents.title", "CLI agents")</h1>
-<p class="page-desc">@Loc.T("cliAgents.subtitle", "Detected coding agents and tools that can route through this gateway")</p>
+@* SPEC-133: upstream cli-agents chrome — title+subtitle, refresh detection,
+   search, detection filter select, visible count, tool grid. *@
+<div class="flex between items-center" style="flex-wrap:wrap;gap:10px">
+    <div>
+        <h1 class="page-title">@Loc.T("cliAgents.title", "CLI agents")</h1>
+        <p class="page-desc">@Loc.T("cliAgents.subtitle", "Detected coding agents and tools that can route through this gateway")</p>
+    </div>
+    <button class="btn btn-sm" @onclick="Detect" disabled="@_detecting">
+        <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px">refresh</span>
+        @(_detecting ? "…" : Loc.T("cliAgents.refreshDetection", "Refresh detection"))
+    </button>
+</div>
 
-<input class="input" style="max-width:320px;margin-bottom:14px" placeholder="Search…" @bind="_q" @bind:event="oninput" />
+<div class="flex gap-2 mt-4 items-center" style="flex-wrap:wrap">
+    <input class="input" style="max-width:320px" placeholder="@Loc.T("cliAgents.searchPlaceholder", "Search tools…")" @bind="_q" @bind:event="oninput" />
+    <select class="input" style="width:auto" @bind="_detection">
+        <option value="all">@Loc.T("cliAgents.detectionAll", "All")</option>
+        <option value="installed">@Loc.T("cliAgents.detectionInstalled", "Installed")</option>
+        <option value="not-installed">@Loc.T("cliAgents.detectionNotInstalled", "Not installed")</option>
+    </select>
+    <span class="muted sm">@Tf("cliAgents.visibleCount", "{0} tools", VisibleCount())</span>
+</div>
 
 @if (_tools is null)
 {
-    <p class="muted">…</p>
+    <p class="muted mt-6">…</p>
+}
+else if (VisibleCount() == 0)
+{
+    <div class="empty mt-6" style="padding:48px 0">
+        <span class="material-symbols-outlined" style="font-size:40px">search_off</span>
+        <div class="muted sm">@Loc.T("cliAgents.emptyState", "No tools match your filters")</div>
+    </div>
 }
 else
 {
     @foreach (var g in _groups)
     {
         var items = Filtered(g.Id);
-        if (items.Length == 0 && !string.IsNullOrWhiteSpace(_q)) continue;
+        if (items.Length == 0) continue;
         <h2 class="bold" style="margin:20px 0 10px">@g.Label <span class="muted" style="font-weight:400;font-size:12px">(@items.Length)</span></h2>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">
             @foreach (var t in items)
             {
+                var id = t.GetProperty("id").GetString() ?? "";
                 var detected = t.GetProperty("detected").GetBoolean();
+                var st = StatusOf(id);
                 <div class="card card-p">
-                    <div class="flex between" style="margin-bottom:6px">
-                        <h3 class="bold" style="margin:0">@t.GetProperty("name").GetString()</h3>
+                    <div class="flex between items-center" style="margin-bottom:6px">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined" style="font-size:18px;color:var(--muted,#a1a1aa)">terminal</span>
+                            <h3 class="bold" style="margin:0">@t.GetProperty("name").GetString()</h3>
+                            <span class="mono" style="font-size:11px;color:var(--muted,#a1a1aa);background:rgba(255,255,255,.05);padding:1px 6px;border-radius:4px">@t.GetProperty("binary").GetString()</span>
+                        </div>
                         <span class="badge @(detected ? "ok" : "warn")">@(detected ? Loc.T("cliTools.detected", "detected") : Loc.T("cliTools.notDetected", "not found"))</span>
                     </div>
+                    @if (st is not null)
+                    {
+                        <div class="flex gap-2" style="flex-wrap:wrap;margin-bottom:8px">
+                            <span class="chip @(st.Installed ? "chip-green" : "")">@(st.Installed ? "installed" : "not installed")</span>
+                            @if (st.Configured) { <span class="chip">configured</span> }
+                            @if (st.Runnable) { <span class="chip">runnable</span> }
+                        </div>
+                    }
                     <p class="muted" style="font-size:12px;margin:0 0 8px">@t.GetProperty("installHint").GetString()</p>
                     <pre class="code-block" style="font-size:11px;max-height:110px;overflow:auto">@EnvBlock(t)</pre>
                     <button class="btn btn-sm" style="margin-top:8px" @onclick='() => Copy(EnvBlock(t))'>@Loc.T("common.copy", "Copy")</button>
@@ -46,13 +85,73 @@ else
     ];
     private readonly Group[] _groups = Groups;
     private JsonElement[]? _tools;
+    private Dictionary<string, ToolStatus> _statuses = new();
     private string _q = "";
+    private string _detection = "all";
+    private bool _detecting;
     [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    private sealed record ToolStatus(bool Installed, bool Runnable, bool Configured, string? CommandPath);
 
     protected override async Task OnInitializedAsync()
     {
         var r = await Api.GetAsync("api/cli-tools");
         _tools = r.TryGetProperty("tools", out var arr) ? arr.EnumerateArray().ToArray() : [];
+        await LoadStatuses();
+    }
+
+    private async Task LoadStatuses()
+    {
+        try
+        {
+            var s = await Api.GetAsync("api/cli-tools/all-statuses");
+            if (s.TryGetProperty("statuses", out var map) && map.ValueKind == JsonValueKind.Object)
+            {
+                _statuses = map.EnumerateObject().ToDictionary(
+                    kv => kv.Name,
+                    kv => new ToolStatus(
+                        kv.Value.TryGetProperty("installed", out var i) && i.GetBoolean(),
+                        kv.Value.TryGetProperty("runnable", out var rn) && rn.GetBoolean(),
+                        kv.Value.TryGetProperty("configured", out var cf) && cf.GetBoolean(),
+                        kv.Value.TryGetProperty("commandPath", out var cp) && cp.ValueKind == JsonValueKind.String ? cp.GetString() : null));
+            }
+        }
+        catch (HttpRequestException) { }
+    }
+
+    private ToolStatus? StatusOf(string id) =>
+        _statuses.TryGetValue(id, out var s) ? s
+        : _statuses.FirstOrDefault(kv => kv.Key.Contains(id, StringComparison.OrdinalIgnoreCase)
+            || id.Contains(kv.Key, StringComparison.OrdinalIgnoreCase)).Value;
+
+    private async Task Detect()
+    {
+        _detecting = true;
+        try
+        {
+            await Api.GetAsync("api/cli-tools/detect");
+            await LoadStatuses();
+            var r = await Api.GetAsync("api/cli-tools");
+            _tools = r.TryGetProperty("tools", out var arr) ? arr.EnumerateArray().ToArray() : [];
+        }
+        catch (HttpRequestException) { }
+        _detecting = false;
+    }
+
+    private int VisibleCount() =>
+        _tools is null ? 0 : _groups.Sum(g => Filtered(g.Id).Length);
+
+    private string Tf(string key, string fallback, object? arg) =>
+        string.Format(System.Text.RegularExpressions.Regex.Replace(
+            Loc.T(key, fallback) ?? fallback, @"\{[^{}]*\}", "{0}"), arg);
+
+    private bool DetectionMatch(JsonElement t)
+    {
+        if (_detection == "all") return true;
+        var detected = t.GetProperty("detected").GetBoolean();
+        var st = StatusOf(t.GetProperty("id").GetString() ?? "");
+        var installed = detected || (st?.Installed ?? false);
+        return _detection == "installed" ? installed : !installed;
     }
 
     private JsonElement[] Filtered(string cat)
@@ -63,7 +162,7 @@ else
             items = items.Where(t =>
                 t.GetProperty("name").GetString()!.Contains(_q, StringComparison.OrdinalIgnoreCase)
                 || t.GetProperty("installHint").GetString()!.Contains(_q, StringComparison.OrdinalIgnoreCase));
-        return items.ToArray();
+        return items.Where(DetectionMatch).ToArray();
     }
 
     private static string EnvBlock(JsonElement t) =>

@@ -11,10 +11,26 @@ namespace LLMRouter.Server.Endpoints;
 /// </summary>
 public static class CliToolsEndpoints
 {
+    private const string UnknownTool = "unknown_tool";
+
+    private static CliToolDef? FindTool(HttpContext ctx, string? id) =>
+        id is null ? null : CliToolService.Find(id);
+
+    private static string? Str(JsonObject? o, string key) =>
+        o?[key] is JsonValue v ? v.GetValue<string>() : null;
+
     public static void Map(WebApplication app)
     {
         var g = app.MapGroup("/api/cli-tools").RequireAuthorization();
+        MapStatus(g);
+        MapInfo(g);
+        MapBackups(g);
+        MapApply(g);
+        MapSettings(g);
+    }
 
+    private static void MapStatus(RouteGroupBuilder g)
+    {
         // GET /api/cli-tools/all-statuses — runtime + config status for every tool.
         g.MapGet("/all-statuses", (CliToolService svc) =>
         {
@@ -29,8 +45,8 @@ public static class CliToolsEndpoints
             var tool = ctx.Request.Query["tool"].FirstOrDefault();
             if (!string.IsNullOrEmpty(tool))
             {
-                var def = CliToolService.Find(tool);
-                if (def is null) return Results.NotFound(new { error = "unknown_tool" });
+                var def = FindTool(ctx, tool);
+                if (def is null) return Results.NotFound(new { error = UnknownTool });
                 return Results.Ok(new { tool = def.Id, status = svc.StatusFor(def) });
             }
             return Results.Ok(new
@@ -38,7 +54,10 @@ public static class CliToolsEndpoints
                 statuses = CliToolService.Tools.ToDictionary(t => t.Id, t => svc.StatusFor(t))
             });
         });
+    }
 
+    private static void MapInfo(RouteGroupBuilder g)
+    {
         // GET /api/cli-tools/detect — which tool binaries are on PATH.
         g.MapGet("/detect", (CliToolService svc) => Results.Ok(new
         {
@@ -103,7 +122,10 @@ public static class CliToolsEndpoints
             }
             return Results.Ok(new { logs });
         });
+    }
 
+    private static void MapBackups(RouteGroupBuilder g)
+    {
         // GET /api/cli-tools/backups — every .llmrouter.bak snapshot.
         g.MapGet("/backups", (CliToolService svc) => Results.Ok(new { backups = svc.ListBackups() }));
 
@@ -111,39 +133,43 @@ public static class CliToolsEndpoints
         g.MapPost("/backups/restore", async (HttpContext ctx, CliToolService svc) =>
         {
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
-            var backupPath = body?["backupPath"]?.GetValue<string>();
+            var backupPath = Str(body, "backupPath");
             if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
                 return Results.NotFound(new { error = "backup_not_found" });
-            var target = Path.Combine(
-                Path.GetDirectoryName(Path.GetDirectoryName(backupPath))!,
-                Path.GetFileNameWithoutExtension(backupPath));
             if (!backupPath.StartsWith(svc.ConfigHome, StringComparison.Ordinal))
                 return Results.BadRequest(new { error = "path_outside_config_home" });
             if (!CliToolService.WritesAllowed)
                 return Results.Json(new { error = "CLI config writes are disabled" }, statusCode: 403);
+            var target = Path.Combine(
+                Path.GetDirectoryName(Path.GetDirectoryName(backupPath))!,
+                Path.GetFileNameWithoutExtension(backupPath));
             File.Copy(backupPath, target, overwrite: true);
             return Results.Ok(new { ok = true, restoredTo = target });
         });
+    }
 
-        // POST /api/cli-tools/apply {toolId, baseUrl?, apiKey?, model?, dryRun?}
+    private static void MapApply(RouteGroupBuilder g)
+    {
+        // POST /api/cli-tools/apply {toolId, apiKey?, model?, dryRun?}
         g.MapPost("/apply", async (HttpContext ctx, CliToolService svc) =>
         {
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
-            var toolId = body?["toolId"]?.GetValue<string>();
-            var def = toolId is null ? null : CliToolService.Find(toolId);
-            if (def is null) return Results.BadRequest(new { error = "unknown_tool" });
+            var def = FindTool(ctx, Str(body, "toolId"));
+            if (def is null) return Results.BadRequest(new { error = UnknownTool });
             var (status, result) = svc.Apply(def,
-                body?["apiKey"]?.GetValue<string>(),
-                body?["model"]?.GetValue<string>(),
+                Str(body, "apiKey"), Str(body, "model"),
                 body?["dryRun"]?.GetValue<bool>() ?? false);
             return Results.Json(result, statusCode: status);
         });
+    }
 
+    private static void MapSettings(RouteGroupBuilder g)
+    {
         // GET/POST /api/cli-tools/{tool}-settings — port of the per-tool routes.
         g.MapGet("/{toolId}-settings", (string toolId, CliToolService svc) =>
         {
             var def = CliToolService.Find(toolId);
-            if (def is null) return Results.NotFound(new { error = "unknown_tool" });
+            if (def is null) return Results.NotFound(new { error = UnknownTool });
             return Results.Ok(svc.ReadSettings(def));
         });
 
@@ -151,13 +177,13 @@ public static class CliToolsEndpoints
             CliToolService svc, LlmRouterDbContext db) =>
         {
             var def = CliToolService.Find(toolId);
-            if (def is null) return Results.NotFound(new { error = "unknown_tool" });
+            if (def is null) return Results.NotFound(new { error = UnknownTool });
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
             var env = body?["env"] as JsonObject;
             if (env is null) return Results.BadRequest(new { error = "env object required" });
 
             // keyId resolves the real key from the DB (upstream #523/#526).
-            if (body?["keyId"]?.GetValue<string>() is { } keyId)
+            if (Str(body, "keyId") is { } keyId)
             {
                 var record = await db.ApiKeys.AsNoTracking()
                     .FirstOrDefaultAsync(k => k.Id == keyId && k.IsActive);

@@ -148,61 +148,321 @@
 }
 else
 {
-    @* SPEC-120: top banner + operational pill, upstream health page. *@
-    <div class="card card-p mt-6" style="border-left:3px solid @(_degraded ? "var(--amber,#f5a524)" : "var(--green,#3fb950)")">
+    @* SPEC-132: upstream /dashboard/health order — ConcurrencyQueuesCard, then
+       HealthSnapshot: header+actions, advanced diagnostics, db health, stat
+       cards, sessions/quota, degradation, provider health, rate limits, lockouts. *@
+
+    @* ConcurrencyQueuesCard *@
+    <div class="card card-p mt-6">
         <div class="flex between items-center">
             <div>
-                <div class="bold" style="font-size:16px">@Loc.T("health.ready", "LLMRouter is ready")</div>
-                <div class="muted sm">@Loc.T("health.readySub", "Gateway, database and providers status")</div>
+                <div class="bold">@Loc.T("health.queuesTitle", "Concurrency queues")</div>
+                <div class="muted sm">@Loc.T("health.queuesScope", "Live view of admission semaphores and combo queues")</div>
             </div>
-            <span class="chip @(_degraded ? "chip-amber" : "chip-green")">@(_degraded ? Loc.T("health.degraded", "Degraded") : Loc.T("health.operational", "All systems operational"))</span>
-        </div>
-    </div>
-
-    <div class="grid grid-4 mt-4">
-        <div class="card card-p">
-            <div class="muted sm">@Loc.T("health.uptime", "Uptime")</div>
-            <div class="bold" style="font-size:20px">@FmtUptime(_status)
-            </div>
-        </div>
-        <div class="card card-p">
-            <div class="muted sm">@Loc.T("health.version", "Version")</div>
-            <div class="bold" style="font-size:20px">@(_status.TryGetProperty("version", out var vv) ? vv.GetString() : "—")</div>
-        </div>
-        <div class="card card-p">
-            <div class="muted sm">@Loc.T("health.memory", "Memory RSS")</div>
-            <div class="bold" style="font-size:20px">@FmtBytes(_status.TryGetProperty("memoryRss", out var mr) ? mr.GetInt64() : 0)</div>
-        </div>
-        <div class="card card-p">
-            <div class="muted sm">@Loc.T("health.providers", "Providers")</div>
-            <div class="bold" style="font-size:20px">@(_status.TryGetProperty("providers", out var pv) ? pv.GetInt32() : 0)/@(_status.TryGetProperty("providersTotal", out var pt) ? pt.GetInt32() : 0)</div>
-        </div>
-    </div>
-
-    @* SPEC-120: advanced diagnostics — database card + auto-repair. *@
-    <div class="card card-p mt-4">
-        <div class="flex between">
-            <div class="bold">@Loc.T("health.advanced", "Advanced diagnostics")</div>
-            <button class="btn btn-sm" @onclick="AutoRepair" disabled="@_repairing">@(_repairing ? Loc.T("health.repairing", "Repairing…") : Loc.T("health.runAutoRepair", "Run Auto-Repair"))</button>
+            <span class="muted sm">@Tf("health.updatedAt", "updated {0}", _concTime)</span>
         </div>
         <div class="grid grid-2 mt-4">
             <div>
-                <div class="muted sm">@Loc.T("health.database", "Database")</div>
+                <div class="muted sm bold">@Loc.T("health.queuesCombo", "Combo queues")</div>
+                <div class="empty sm mt-2"><span class="material-symbols-outlined">inbox</span>@Loc.T("health.queuesEmpty", "No queued requests")</div>
+            </div>
+            <div>
+                <div class="muted sm bold">@Loc.T("health.queuesAdmission", "Admission")</div>
+                <table class="tbl mt-2">
+                    <thead><tr><th>@Loc.T("health.scope", "Scope")</th><th>Running</th><th>Queued</th><th>Limit</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td class="mono sm">admission</td>
+                            <td class="sm">@_concRunning</td>
+                            <td class="sm">@_concQueued</td>
+                            <td class="sm">@_concLimit</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    @* header actions row *@
+    <div class="flex between items-center mt-4" style="flex-wrap:wrap;gap:8px">
+        <span class="muted sm">@Tf("health.updatedAt", "updated {0}", _lastRefresh)</span>
+        <div class="flex gap-2" style="flex-wrap:wrap">
+            <button class="btn btn-sm" @onclick="RefreshAll" disabled="@_loading">@(_loading ? "…" : Loc.T("common.refresh", "Refresh"))</button>
+            <button class="btn btn-sm" @onclick="() => _showAdvanced = !_showAdvanced">@Loc.T("health.advanced", "Advanced diagnostics")</button>
+            <button class="btn btn-sm" @onclick="ResetHealth" disabled="@_resetting">@(_resetting ? "…" : Loc.T("health.resetAll", "Reset health"))</button>
+            <button class="btn btn-sm" @onclick="UnblockAll">@Loc.T("health.unblockAll", "Unblock all")</button>
+        </div>
+    </div>
+
+    @if (_showAdvanced)
+    {
+        @* TelemetryCard *@
+        <div class="card card-p mt-4">
+            <div class="bold">@Loc.T("health.telemetry", "Telemetry")</div>
+            <div class="grid grid-4 mt-2">
+                <div><div class="muted sm">@Loc.T("health.requests", "Requests")</div><div class="bold" style="font-size:18px">@Tel("requests")</div></div>
+                <div><div class="muted sm">@Loc.T("health.tokens", "Tokens")</div><div class="bold" style="font-size:18px">@Tel("tokens")</div></div>
+                <div><div class="muted sm">@Loc.T("health.cost", "Cost")</div><div class="bold" style="font-size:18px">$@Tel("cost")</div></div>
+                <div><div class="muted sm">@Loc.T("health.avgLatency", "Avg latency")</div><div class="bold" style="font-size:18px">@Tel("avgLatencyMs")ms</div></div>
+            </div>
+        </div>
+
+        @* ProviderHealthAutopilotCard *@
+        <div class="card card-p mt-4">
+            <div class="flex between">
+                <div class="bold">@Loc.T("health.autopilot", "Provider health autopilot")</div>
+                <button class="btn btn-sm" @onclick="AutopilotSweep" disabled="@_sweeping">@(_sweeping ? "…" : Loc.T("health.runSweep", "Run sweep"))</button>
+            </div>
+            <div class="flex gap-2 mt-2 items-center" style="flex-wrap:wrap">
+                <label class="sm flex gap-2 items-center"><input type="checkbox" @bind="_autoEnabled" /> @Loc.T("health.autopilotEnabled", "Enabled")</label>
+                <span class="muted sm">@Loc.T("health.failureThreshold", "Failure threshold")</span>
+                <input type="number" step="0.05" min="0.05" max="1" @bind="_autoThreshold" style="width:80px" />
+                <span class="muted sm">@Loc.T("health.minChecks", "Min checks")</span>
+                <input type="number" min="1" max="100" @bind="_autoMinChecks" style="width:70px" />
+                <span class="muted sm">@Loc.T("health.retestMin", "Retest (min)")</span>
+                <input type="number" min="1" max="1440" @bind="_autoRetest" style="width:80px" />
+                <button class="btn btn-sm" @onclick="AutopilotSave">@Loc.T("common.save", "Save")</button>
+            </div>
+            @if (_autoMsg is not null) { <div class="muted sm mt-2">@_autoMsg</div> }
+        </div>
+
+        @* ProviderHealthMatrixCard *@
+        <div class="card card-p mt-4">
+            <div class="bold">@Loc.T("health.matrix", "Provider health matrix")</div>
+            <table class="tbl mt-2">
+                <thead><tr><th>Provider</th><th>Connection</th><th>@Loc.T("health.lastChecks", "Last checks")</th><th>State</th></tr></thead>
+                <tbody>
+                    @foreach (var m in _matrix)
+                    {
+                        <tr>
+                            <td class="mono sm">@m.GetProperty("provider").GetString()</td>
+                            <td class="mono sm">@m.GetProperty("name").GetString()</td>
+                            <td>
+                                <span class="flex gap-2" style="gap:3px">
+                                    @foreach (var chk in m.GetProperty("checks").EnumerateArray().Take(10))
+                                    {
+                                        var okc = chk.GetProperty("status").GetString() is "ok" or "success" or "200";
+                                        <span title="@chk.GetProperty("at").GetString() — @chk.GetProperty("status").GetString() @chk.GetProperty("latencyMs")ms"
+                                              style="width:10px;height:10px;border-radius:3px;display:inline-block;background:@(okc ? "var(--green,#3fb950)" : "var(--red,#f85149)")"></span>
+                                    }
+                                </span>
+                            </td>
+                            <td><span class="chip @(m.GetProperty("healthy").GetBoolean() ? "chip-green" : "chip-red")">@(m.GetProperty("healthy").GetBoolean() ? "healthy" : "unhealthy")</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_matrix.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">grid_on</span>@Loc.T("health.noMatrix", "No connections")</div> }
+        </div>
+    }
+
+    @* database health *@
+    <div class="card card-p mt-4">
+        <div class="flex between">
+            <div>
+                <div class="bold">@Loc.T("health.databaseHealth", "Database health")</div>
+                <div class="muted sm">@Loc.T("health.databaseHealthDescription", "Integrity check, migrations and repair")</div>
+            </div>
+            <button class="btn btn-sm" @onclick="AutoRepair" disabled="@_repairing">@(_repairing ? Loc.T("health.repairing", "Repairing…") : Loc.T("health.runAutoRepair", "Repair"))</button>
+        </div>
+        <div class="grid grid-3 mt-4">
+            <div>
+                <div class="muted sm" style="text-transform:uppercase;font-size:11px">@Loc.T("health.status", "Status")</div>
                 <div class="flex gap-2 items-center mt-2">
                     <span class="chip @(_dbOk ? "chip-green" : "chip-red")">@(_dbOk ? "ok" : "error")</span>
                     <span class="muted sm mono">@_dbIntegrity</span>
                 </div>
             </div>
             <div>
-                <div class="muted sm">@Loc.T("health.migrations", "Migrations")</div>
+                <div class="muted sm" style="text-transform:uppercase;font-size:11px">@Loc.T("health.issues", "Migrations")</div>
                 <div class="sm mt-2">@_migApplied / @_migAvailable applied
                     @if (_migPending > 0) { <span class="chip chip-amber" style="margin-left:6px">@_migPending pending</span> }
                 </div>
             </div>
+            <div>
+                <div class="muted sm" style="text-transform:uppercase;font-size:11px">@Loc.T("health.repairs", "Repairs")</div>
+                <div class="sm mt-2">@(_repairMsg ?? "—")</div>
+            </div>
         </div>
-        @if (_repairMsg is not null) { <div class="muted sm mt-2">@_repairMsg</div> }
     </div>
 
+    @* stat cards *@
+    <div class="grid grid-4 mt-4">
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.uptime", "Uptime")</div>
+            <div class="bold" style="font-size:20px">@FmtUptime(SysProp("uptimeSeconds"))</div>
+        </div>
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.version", "Version")</div>
+            <div class="bold" style="font-size:20px">@SysStr("version")</div>
+            <div class="muted sm mono" style="font-size:11px">@SysStr("runtimeVersion")</div>
+        </div>
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.memory", "Memory RSS")</div>
+            <div class="bold" style="font-size:20px">@FmtBytes(SysMem("rss"))</div>
+            <div class="muted sm mono" style="font-size:11px">heap @FmtBytes(SysMem("heapUsed"))</div>
+        </div>
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("health.providers", "Providers")</div>
+            <div class="bold" style="font-size:20px">@SumProp("active")/@SumProp("configured")</div>
+            <div class="muted sm" style="font-size:11px">@Tf("health.monitoredProviders", "monitored {0}", SumProp("monitored"))</div>
+        </div>
+    </div>
+
+    @* sessions + quota monitors *@
+    <div class="grid grid-2 mt-4">
+        <div class="card card-p">
+            <div class="flex between"><div class="bold">@Loc.T("health.sessionActivity", "Session Activity")</div>
+                <span class="badge info">@_sessions.Count</span></div>
+            <table class="tbl mt-2">
+                <thead><tr><th>Key</th><th>Model</th><th>Messages</th><th>Last seen</th></tr></thead>
+                <tbody>
+                    @foreach (var ss in _sessions.Take(5))
+                    {
+                        <tr>
+                            <td class="mono sm">@ss.GetProperty("keyId").GetString()</td>
+                            <td class="mono sm">@ss.GetProperty("model").GetString()</td>
+                            <td>@ss.GetProperty("messageCount").GetInt32()</td>
+                            <td class="dim sm">@ss.GetProperty("lastSeenAt").GetString()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_sessions.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">forum</span>@Loc.T("health.noActiveSessionsTracked", "No active sessions tracked")</div> }
+        </div>
+        <div class="card card-p">
+            <div class="flex between"><div class="bold">@Loc.T("health.quotaMonitors", "Quota Monitors")</div>
+                <span class="badge info">@_qmActive</span></div>
+            <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
+                <span class="chip chip-green">@Tf("health.activeCount", "active {0}", _qmActive)</span>
+                <span class="chip chip-amber">@Tf("health.alerting", "alerting {0}", _qmAlerting)</span>
+                <span class="chip chip-red">@Tf("health.limitExhausted", "exhausted {0}", _qmExhausted)</span>
+            </div>
+            <table class="tbl mt-2">
+                <thead><tr><th>Provider</th><th>Window</th><th>Limits</th><th>State</th></tr></thead>
+                <tbody>
+                    @foreach (var qm in _qmMonitors.Take(6))
+                    {
+                        <tr>
+                            <td class="mono sm">@qm.GetProperty("provider").GetString()</td>
+                            <td class="sm">@qm.GetProperty("windowMinutes").GetInt32()m</td>
+                            <td class="sm">@qm.GetProperty("maxRequests").GetInt64() req / @qm.GetProperty("maxTokens").GetInt64() tok</td>
+                            <td><span class="chip @(qm.GetProperty("status").GetString() == "exhausted" ? "chip-red" : "chip-green")">@qm.GetProperty("status").GetString()</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_qmMonitors.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">speed</span>@Loc.T("health.noSessionQuotaMonitorsActive", "No quota monitors active")</div> }
+        </div>
+    </div>
+
+    @* graceful degradation *@
+    <div class="card card-p mt-4">
+        <div class="bold">@Loc.T("health.degradationStatus", "Graceful degradation")</div>
+        <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
+            <span class="chip @(_degraded ? "chip-amber" : "chip-green")">@(_degraded ? Loc.T("health.degraded", "Degraded") : Loc.T("health.operational", "Operational"))</span>
+            <span class="chip">@Tf("health.checkedCount", "checked {0}", _checked)</span>
+            <span class="chip @(_errors > 0 ? "chip-red" : "")">@Tf("health.errorsCount", "errors {0}", _errors)</span>
+            <span class="chip">@Tf("health.errorRate", "error rate {0:P0}", _errorRate)</span>
+        </div>
+    </div>
+
+    @* provider health (circuit breakers) *@
+    <div class="card card-p mt-4">
+        <div class="flex between items-center" style="flex-wrap:wrap;gap:8px">
+            <div class="bold">@Loc.T("health.providerHealth", "Provider health")</div>
+            <div class="flex gap-2 items-center">
+                <span class="muted sm" style="font-size:11px"><span style="color:var(--green,#3fb950)">●</span> healthy</span>
+                <span class="muted sm" style="font-size:11px"><span style="color:var(--amber,#f5a524)">●</span> recovering</span>
+                <span class="muted sm" style="font-size:11px"><span style="color:var(--red,#f85149)">●</span> down</span>
+            </div>
+        </div>
+        @foreach (var kv in _providerHealth)
+        {
+            var st = kv.Value.GetProperty("state").GetString() ?? "CLOSED";
+            var color = st == "OPEN" ? "var(--red,#f85149)" : st == "HALF_OPEN" ? "var(--amber,#f5a524)" : "var(--green,#3fb950)";
+            <div class="flex between items-center mt-2" style="padding:8px 0;border-top:1px solid var(--grid-line,rgba(255,255,255,.06))">
+                <div class="flex gap-2 items-center">
+                    <span style="width:8px;height:8px;border-radius:50%;background:@color;display:inline-block"></span>
+                    <span class="mono sm bold">@kv.Key</span>
+                    <span class="muted sm">@Tf("health.failures", "failures {0}", kv.Value.GetProperty("failures").GetInt32())</span>
+                    @if (kv.Value.TryGetProperty("retryAfter", out var ra) && ra.ValueKind == JsonValueKind.String)
+                    {
+                        <span class="muted sm">· @Tf("health.retryIn", "retry in {0}", ra.GetString())</span>
+                    }
+                    @if (kv.Value.TryGetProperty("openedAt", out var oa) && oa.ValueKind == JsonValueKind.String)
+                    {
+                        <span class="muted sm">· @Tf("health.lastFailure", "since {0}", oa.GetString())</span>
+                    }
+                </div>
+                <span class="chip @(st == "OPEN" ? "chip-red" : st == "HALF_OPEN" ? "chip-amber" : "chip-green")">@st.ToLowerInvariant()</span>
+            </div>
+        }
+        @if (_providerHealth.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">health_and_safety</span>@Loc.T("health.noCBData", "No circuit breaker data — all providers operational")</div> }
+    </div>
+
+    @* rate limit status *@
+    <div class="card card-p mt-4">
+        <div class="bold">@Loc.T("health.rateLimitStatus", "Rate limit status")</div>
+        <table class="tbl mt-2">
+            <thead><tr><th>@Loc.T("health.scope", "Scope")</th><th>RPM</th><th>TPM</th><th>Burst</th><th>Enabled</th></tr></thead>
+            <tbody>
+                @foreach (var kv in _rateLimits)
+                {
+                    <tr>
+                        <td class="mono sm">@kv.Key</td>
+                        <td class="sm">@kv.Value.GetProperty("rpm").GetInt32()</td>
+                        <td class="sm">@kv.Value.GetProperty("tpm").GetInt32()</td>
+                        <td class="sm">@kv.Value.GetProperty("burst").GetInt32()</td>
+                        <td><span class="badge @(kv.Value.GetProperty("enabled").GetBoolean() ? "ok" : "")">@(kv.Value.GetProperty("enabled").GetBoolean() ? "on" : "off")</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_rateLimits.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">speed</span>@Loc.T("health.noRateLimits", "No rate limits configured")</div> }
+        @if (_learned.Count > 0)
+        {
+            <div class="muted sm bold mt-4">@Loc.T("health.learnedFromHeaders", "Learned from provider headers")</div>
+            @foreach (var kv in _learned)
+            {
+                <div class="mt-2">
+                    <div class="mono sm bold">@kv.Key</div>
+                    @foreach (var w in kv.Value)
+                    {
+                        var pct = w.TryGetProperty("remainingPercentage", out var rp) && rp.ValueKind == JsonValueKind.Number ? rp.GetDouble() : (double?)null;
+                        <div class="flex between items-center mt-2" style="padding:4px 0">
+                            <span class="sm">@w.GetProperty("window").GetString()</span>
+                            <span class="flex gap-2 items-center">
+                                @if (pct.HasValue)
+                                {
+                                    <span style="width:80px;height:6px;border-radius:3px;background:var(--surface-2,#1c2230);display:inline-block">
+                                        <span style="width:@(Math.Clamp(pct.Value,0,100))%;height:6px;border-radius:3px;display:block;background:@(pct < 20 ? "var(--red,#f85149)" : "var(--green,#3fb950)")"></span>
+                                    </span>
+                                    <span class="muted sm mono" style="font-size:11px">@pct.Value.ToString("0")%</span>
+                                }
+                                <span class="chip @(w.GetProperty("exhausted").GetBoolean() ? "chip-red" : "chip-green")">@(w.GetProperty("exhausted").GetBoolean() ? "exhausted" : "ok")</span>
+                            </span>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @* active lockouts *@
+    <div class="card card-p mt-4">
+        <div class="bold">@Loc.T("health.activeLockouts", "Active lockouts")</div>
+        @if (_lockouts.Count > 0)
+        {
+            @foreach (var l in _lockouts)
+            {
+                <div class="mono sm mt-2" style="padding:6px 0;border-bottom:1px solid var(--grid-line,rgba(255,255,255,.06))">@l.GetString()</div>
+            }
+        }
+        else { <div class="empty sm"><span class="material-symbols-outlined">lock_open</span>@Loc.T("health.noLockouts", "No active lockouts")</div> }
+    </div>
+
+    @* connections table (kept from SPEC-120) *@
     <div class="card card-p mt-4">
         <table class="tbl">
             <thead><tr><th>Provider</th><th>Connection</th><th>Active</th><th>Last test</th><th>Cooldown</th><th>Error</th></tr></thead>
@@ -216,54 +476,13 @@ else
                         <td class="mono sm">@c.GetProperty("name").GetString()</td>
                         <td><span class="badge @(c.GetProperty("isActive").GetBoolean() ? "ok" : "")">@(c.GetProperty("isActive").GetBoolean() ? "on" : "off")</span></td>
                         <td><span class="badge @(ts == "ok" ? "ok" : ts == "never" ? "" : "err")">@ts</span></td>
-                        <td>@(cooling ? "🧊" : "—")</td>
+                        <td>@(cooling ? "cooling" : "—")</td>
                         <td class="dim sm" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">@(c.TryGetProperty("lastError", out var le) && le.ValueKind == JsonValueKind.String ? le.GetString() : "")</td>
                     </tr>
                 }
             </tbody>
         </table>
         @if (_conns.Count == 0) { <div class="empty"><span class="material-symbols-outlined">health_and_safety</span>No connections</div> }
-    </div>
-
-    @* SPEC-120: Session Activity + Quota Monitors sections. *@
-    <div class="card card-p mt-4">
-        <div class="flex between"><div class="bold">@Loc.T("health.sessionActivity", "Session Activity")</div></div>
-        <table class="tbl mt-2">
-            <thead><tr><th>Key</th><th>Model</th><th>Messages</th><th>Last seen</th></tr></thead>
-            <tbody>
-                @foreach (var ss in _sessions.Take(8))
-                {
-                    <tr>
-                        <td class="mono sm">@ss.GetProperty("keyId").GetString()</td>
-                        <td class="mono sm">@ss.GetProperty("model").GetString()</td>
-                        <td>@ss.GetProperty("messageCount").GetInt32()</td>
-                        <td class="dim sm">@ss.GetProperty("lastSeenAt").GetString()</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        @if (_sessions.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">forum</span>No recent sessions</div> }
-    </div>
-
-    <div class="card card-p mt-4">
-        <div class="flex between"><div class="bold">@Loc.T("health.quotaMonitors", "Quota Monitors")</div></div>
-        <table class="tbl mt-2">
-            <thead><tr><th>Connection</th><th>Daily</th><th>Monthly</th><th>State</th></tr></thead>
-            <tbody>
-                @foreach (var q in _quota)
-                {
-                    var exhausted = q.GetProperty("daily").GetProperty("exhausted").GetBoolean()
-                        || q.GetProperty("monthly").GetProperty("exhausted").GetBoolean();
-                    <tr>
-                        <td class="mono sm">@q.GetProperty("connectionId").GetString()</td>
-                        <td class="sm">@q.GetProperty("daily").GetProperty("used").GetInt64() / @q.GetProperty("daily").GetProperty("limit").GetInt64()</td>
-                        <td class="sm">@q.GetProperty("monthly").GetProperty("used").GetInt64() / @q.GetProperty("monthly").GetProperty("limit").GetInt64()</td>
-                        <td><span class="chip @(exhausted ? "chip-red" : "chip-green")">@(exhausted ? "exhausted" : "ok")</span></td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        @if (_quota.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">speed</span>No quota monitors — set daily/monthly limits on connections</div> }
     </div>
 }
 
@@ -279,15 +498,50 @@ else
     private string _mcProvider = "", _mcModel = "", _mcMinutes = "30", _chainName = "", _chainSteps = "";
     private string _polName = "", _polRule = "{}", _polPriority = "0", _tagType = "", _tagId = "", _tagValue = "";
     private JsonElement _status = JsonDocument.Parse("{}").RootElement;
-    private List<JsonElement> _quota = [];
     private bool _degraded, _dbOk = true, _repairing;
     private string _dbIntegrity = "", _repairMsg = "";
     private int _migApplied, _migAvailable, _migPending;
+    // SPEC-132: snapshot sections
+    private bool _showAdvanced, _loading, _resetting, _sweeping;
+    private string _lastRefresh = "", _concTime = "";
+    private int _concLimit, _concRunning, _concQueued;
+    private JsonElement _snap = JsonDocument.Parse("{}").RootElement;
+    private JsonElement _telemetry = JsonDocument.Parse("{}").RootElement;
+    private List<KeyValuePair<string, JsonElement>> _providerHealth = [];
+    private List<KeyValuePair<string, JsonElement>> _rateLimits = [];
+    private List<KeyValuePair<string, List<JsonElement>>> _learned = [];
+    private List<JsonElement> _lockouts = [];
+    private List<JsonElement> _matrix = [];
+    private List<JsonElement> _qmMonitors = [];
+    private int _qmActive, _qmAlerting, _qmExhausted, _checked, _errors;
+    private double _errorRate;
+    private bool _autoEnabled;
+    private double _autoThreshold = 0.5;
+    private int _autoMinChecks = 5, _autoRetest = 30;
+    private string _autoMsg = "";
 
-    private static string FmtUptime(JsonElement st)
+    private long SysProp(string p) =>
+        _snap.TryGetProperty("system", out var s) && s.TryGetProperty(p, out var v) && v.TryGetInt64(out var n) ? n : 0;
+    private string SysStr(string p) =>
+        _snap.TryGetProperty("system", out var s) && s.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "—";
+    private long SysMem(string p) =>
+        _snap.TryGetProperty("system", out var s) && s.TryGetProperty("memoryUsage", out var m) && m.TryGetProperty(p, out var v) && v.TryGetInt64(out var n) ? n : 0;
+    private int SumProp(string p) =>
+        _snap.TryGetProperty("providerSummary", out var s) && s.TryGetProperty(p, out var v) && v.TryGetInt32(out var n) ? n : 0;
+    // locales use upstream named placeholders ({time}/{count}); normalize any
+    // single-brace token to {0} before string.Format.
+    private string Tf(string key, string fallback, object? arg) =>
+        string.Format(System.Text.RegularExpressions.Regex.Replace(
+            Loc.T(key, fallback) ?? fallback, @"\{[^{}]*\}", "{0}"), arg);
+    private string Tel(string p) =>
+        _telemetry.ValueKind == JsonValueKind.Object && _telemetry.TryGetProperty(p, out var v)
+            ? v.ValueKind == JsonValueKind.Number ? v.GetDouble().ToString(v.GetDouble() % 1 == 0 ? "0" : "0.00") : v.ToString()
+            : "0";
+
+    private static string FmtUptime(long seconds)
     {
-        if (!st.TryGetProperty("uptimeSec", out var u)) return "—";
-        var t = TimeSpan.FromSeconds(u.GetInt32());
+        if (seconds <= 0) return "—";
+        var t = TimeSpan.FromSeconds(seconds);
         return t.Days > 0 ? $"{t.Days}d {t.Hours}h" : t.Hours > 0 ? $"{t.Hours}h {t.Minutes}m" : $"{t.Minutes}m {t.Seconds}s";
     }
     private static string FmtBytes(long b) =>
@@ -306,6 +560,47 @@ else
         await LoadStatus();
     }
 
+    private async Task ResetHealth()
+    {
+        _resetting = true;
+        try { await Api.DeleteAsync("api/monitoring/health"); }
+        catch (HttpRequestException) { }
+        _resetting = false;
+        await LoadStatus();
+    }
+
+    private async Task UnblockAll()
+    {
+        try { await Api.PostAsync("api/resilience/reset", new { }); }
+        catch (HttpRequestException) { }
+        await LoadStatus();
+    }
+
+    private async Task RefreshAll() => await LoadStatus();
+
+    private async Task AutopilotSave()
+    {
+        try
+        {
+            await Api.PutAsync("api/providers/health-autopilot",
+                new { enabled = _autoEnabled, failureThreshold = _autoThreshold, minChecks = _autoMinChecks, retestMin = _autoRetest });
+            _autoMsg = "saved";
+        }
+        catch (HttpRequestException ex) { _autoMsg = ex.Message; }
+    }
+
+    private async Task AutopilotSweep()
+    {
+        _sweeping = true; _autoMsg = "";
+        try
+        {
+            var r = await Api.PostAsync("api/providers/health-autopilot/actions", new { action = "sweep" });
+            _autoMsg = r.ToString();
+        }
+        catch (HttpRequestException ex) { _autoMsg = ex.Message; }
+        _sweeping = false;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         var r = await Api.GetAsync("api/health/connections");
@@ -318,11 +613,42 @@ else
 
     private async Task LoadStatus()
     {
+        _loading = true;
         try
         {
-            _status = await Api.GetAsync("api/omniroute/status");
-            var dg = await Api.GetAsync("api/health/degradation");
-            _degraded = dg.TryGetProperty("degraded", out var d) && d.GetBoolean();
+            _snap = await Api.GetAsync("api/monitoring/health");
+            _degraded = _snap.TryGetProperty("degraded", out var d) && d.GetBoolean();
+            _checked = _snap.TryGetProperty("checked_", out var ck) && ck.TryGetInt32(out var c) ? c : 0;
+            _errors = _snap.TryGetProperty("errors", out var er) && er.TryGetInt32(out var e) ? e : 0;
+            _errorRate = _snap.TryGetProperty("errorRate", out var ra) && ra.TryGetDouble(out var rv) ? rv : 0;
+            _providerHealth = _snap.TryGetProperty("providerHealth", out var ph) && ph.ValueKind == JsonValueKind.Object
+                ? ph.EnumerateObject().Select(p => new KeyValuePair<string, JsonElement>(p.Name, p.Value)).ToList() : [];
+            _rateLimits = _snap.TryGetProperty("rateLimitStatus", out var rl) && rl.ValueKind == JsonValueKind.Object
+                ? rl.EnumerateObject().Select(p => new KeyValuePair<string, JsonElement>(p.Name, p.Value)).ToList() : [];
+            _learned = _snap.TryGetProperty("learnedLimits", out var ll) && ll.ValueKind == JsonValueKind.Object
+                ? ll.EnumerateObject().Select(p => new KeyValuePair<string, List<JsonElement>>(p.Name,
+                    p.Value.ValueKind == JsonValueKind.Array ? p.Value.EnumerateArray().ToList() : [])).ToList() : [];
+            _lockouts = _snap.TryGetProperty("lockouts", out var lo) && lo.ValueKind == JsonValueKind.Array
+                ? lo.EnumerateArray().ToList() : [];
+            if (_snap.TryGetProperty("quotaMonitor", out var qm))
+            {
+                _qmActive = qm.TryGetProperty("active", out var qa) && qa.TryGetInt32(out var qav) ? qav : 0;
+                _qmAlerting = qm.TryGetProperty("alerting", out var ql) && ql.TryGetInt32(out var qlv) ? qlv : 0;
+                _qmExhausted = qm.TryGetProperty("exhausted", out var qe) && qe.TryGetInt32(out var qev) ? qev : 0;
+                _qmMonitors = qm.TryGetProperty("monitors", out var qmm) && qmm.ValueKind == JsonValueKind.Array
+                    ? qmm.EnumerateArray().ToList() : [];
+            }
+            _lastRefresh = DateTime.Now.ToString("HH:mm:ss");
+
+            var conc = await Api.GetAsync("api/admin/concurrency");
+            _concTime = conc.TryGetProperty("timestamp", out var ts2) ? ts2.GetString() ?? "" : "";
+            if (conc.TryGetProperty("semaphores", out var sem) && sem.TryGetProperty("admission", out var adm))
+            {
+                _concRunning = adm.TryGetProperty("running", out var rr2) ? rr2.GetInt32() : 0;
+                _concQueued = adm.TryGetProperty("queued", out var qq) ? qq.GetInt32() : 0;
+                _concLimit = adm.TryGetProperty("limit", out var ll2) ? ll2.GetInt32() : 0;
+            }
+
             var dbh = await Api.GetAsync("api/db/health");
             _dbOk = dbh.TryGetProperty("ok", out var ok) && ok.GetBoolean();
             _dbIntegrity = dbh.TryGetProperty("integrity", out var ig) ? ig.GetString() ?? "" : "";
@@ -330,10 +656,22 @@ else
             _migApplied = mig.GetProperty("applied").GetInt32();
             _migAvailable = mig.GetProperty("available").GetInt32();
             _migPending = mig.GetProperty("pending").GetArrayLength();
-            var q = await Api.GetAsync("api/quota");
-            _quota = q.GetProperty("quota").EnumerateArray().ToList();
+
+            _telemetry = await Api.GetAsync("api/telemetry/summary");
+            var ap = await Api.GetAsync("api/providers/health-autopilot");
+            if (ap.ValueKind == JsonValueKind.Object)
+            {
+                _autoEnabled = ap.TryGetProperty("enabled", out var ae) && ae.ValueKind == JsonValueKind.True;
+                _autoThreshold = ap.TryGetProperty("failureThreshold", out var at2) && at2.TryGetDouble(out var atv) ? atv : 0.5;
+                _autoMinChecks = ap.TryGetProperty("minChecks", out var mc2) && mc2.TryGetInt32(out var mcv) ? mcv : 5;
+                _autoRetest = ap.TryGetProperty("retestMin", out var rt) && rt.TryGetInt32(out var rtv) ? rtv : 30;
+            }
+            var mx = await Api.GetAsync("api/providers/health-matrix");
+            _matrix = mx.TryGetProperty("connections", out var mxc) && mxc.ValueKind == JsonValueKind.Array
+                ? mxc.EnumerateArray().ToList() : [];
         }
         catch (HttpRequestException) { }
+        _loading = false;
     }
 
     private async Task LoadExtras()

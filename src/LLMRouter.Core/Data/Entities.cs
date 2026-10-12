@@ -990,3 +990,70 @@ public class QuotaSnapshot
     public string? RawData { get; set; }
     public string CreatedAt { get; set; } = "";
 }
+
+/// <summary>SPEC-127: per-agent bridge state (enabled, dns, cert) — port of agentBridgeState.</summary>
+[Table("agentBridgeState")]
+public class AgentBridgeState
+{
+    [Key]
+    public string AgentId { get; set; } = "";
+    public bool Enabled { get; set; }
+    public bool DnsEnabled { get; set; }
+    public bool CertInstalled { get; set; }
+    public string? LastSeenAt { get; set; }
+    public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-127: user bypass hostname globs — port of agentBridgeBypass.</summary>
+[Table("agentBridgeBypass")]
+public class AgentBridgeBypass
+{
+    [Key]
+    public string Pattern { get; set; } = "";
+    public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-127: agent model mappings source→target — port of agentBridgeMappings.</summary>
+[Table("agentBridgeMappings")]
+public class AgentBridgeMapping
+{
+    [Key]
+    public long Id { get; set; }
+    public string AgentId { get; set; } = "";
+    public string SourceModel { get; set; } = "";
+    public string TargetModel { get; set; } = "";
+}
+
+/// <summary>SPEC-127: named traffic recording session — port of inspector_sessions (mig 082).</summary>
+[Table("inspector_sessions")]
+public class InspectorSession
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string? Name { get; set; }
+    public string StartedAt { get; set; } = "";
+    public string? EndedAt { get; set; }
+    public int RequestCount { get; set; }
+    public string? Profile { get; set; }
+}
+
+/// <summary>SPEC-127: per-session request snapshot — port of inspector_session_requests.</summary>
+[Table("inspector_session_requests")]
+public class InspectorSessionRequest
+{
+    public string SessionId { get; set; } = "";
+    public int Seq { get; set; }
+    public string Payload { get; set; } = "";
+}
+
+/// <summary>SPEC-127: user-added capture host — port of inspector_custom_hosts (mig 081).</summary>
+[Table("inspector_custom_hosts")]
+public class InspectorCustomHost
+{
+    [Key]
+    public string Host { get; set; } = "";
+    public string Kind { get; set; } = "custom";
+    public string? Label { get; set; }
+    public bool Enabled { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+}

@@ -58,6 +58,69 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("a2aTasks");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.AgentBridgeBypass", b =>
+                {
+                    b.Property<string>("Pattern")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Pattern");
+
+                    b.ToTable("agentBridgeBypass");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.AgentBridgeMapping", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceModel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetModel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("agentBridgeMappings");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.AgentBridgeState", b =>
+                {
+                    b.Property<string>("AgentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("CertInstalled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("DnsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AgentId");
+
+                    b.ToTable("agentBridgeState");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.ApiKey", b =>
                 {
                     b.Property<string>("Id")
@@ -740,6 +803,73 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("gamiItems");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.InspectorCustomHost", b =>
+                {
+                    b.Property<string>("Host")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Host");
+
+                    b.ToTable("inspector_custom_hosts");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.InspectorSession", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Profile")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RequestCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StartedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("inspector_sessions");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.InspectorSessionRequest", b =>
+                {
+                    b.Property<string>("SessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SessionId", "Seq");
+
+                    b.ToTable("inspector_session_requests");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.IssueAgentRun", b =>

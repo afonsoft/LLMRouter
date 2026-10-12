@@ -105,6 +105,8 @@ builder.Services.AddHttpClient("gami");
 builder.Services.AddHttpClient("logexport");
 builder.Services.AddSingleton<LLMRouter.Core.Routing.OneProxyState>();
 builder.Services.AddSingleton<LLMRouter.Server.Services.CliTools.CliToolService>();
+builder.Services.AddSingleton<LLMRouter.Server.Services.AgentBridge.AgentBridgeService>();
+builder.Services.AddSingleton<LLMRouter.Server.Services.TrafficInspector.TrafficInspectorService>();
 builder.Services.AddHttpClient("upstream").ConfigureHttpClient(c =>
 {
     c.Timeout = TimeSpan.FromMinutes(10);
@@ -235,6 +237,7 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseWebSockets();
 // .NET 10 static-asset fingerprinting: index.html references assets as
 // "name#{.[fingerprint]}.ext" — the browser drops everything after '#', so the
 // request arrives as "/_framework/name" (or "name.ext" that only exists
@@ -306,6 +309,8 @@ RelayEndpoints.Map(app);
 SessionPoolEndpoints.Map(app);
 CliDeviceEndpoints.Map(app);
 LLMRouter.Server.Endpoints.CliToolsEndpoints.Map(app);
+LLMRouter.Server.Endpoints.AgentBridgeEndpoints.Map(app);
+LLMRouter.Server.Endpoints.TrafficInspectorEndpoints.MapAndWire(app);
 VscodeEndpoints.Map(app);
 UserKeysEndpoints.Map(app);
 PublicCatalogEndpoints.Map(app);

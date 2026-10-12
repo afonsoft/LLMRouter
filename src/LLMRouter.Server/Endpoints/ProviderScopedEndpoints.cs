@@ -47,7 +47,17 @@ public static class ProviderScopedEndpoints
             g.MapMethods("/providers/{p}/voices", ["GET", "POST"], Voices);
             g.MapMethods("/providers/{p}/voices/{voiceId}", ["GET", "PUT", "DELETE"], VoiceItem);
             g.MapGet("/providers/suggested-models", SuggestedModels);
+            // CORS preflight on the scoped surface (upstream parity: every scoped
+            // route exports OPTIONS with the same two headers).
+            g.MapMethods("/providers/{p}/{*rest}", ["OPTIONS"], ScopedOptions);
         }
+    }
+
+    private static IResult ScopedOptions(HttpContext ctx)
+    {
+        ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
+        ctx.Response.Headers["Access-Control-Allow-Headers"] = "*";
+        return Results.Ok();
     }
 
     /// <summary>Resolve {p} to a registry entry (alias-aware) or an active custom connection.</summary>
@@ -79,6 +89,15 @@ public static class ProviderScopedEndpoints
     private static async Task ScopedCall(HttpContext ctx, string p, bool chat, string? upstreamPath = null)
     {
         var ct = ctx.RequestAborted;
+        // SPEC-128: upstream retirement gate — cgpt-web answers 410 verbatim.
+        if (p.Equals("cgpt-web", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Response.StatusCode = 410;
+            ctx.Response.ContentType = Json;
+            await ctx.Response.WriteAsync(JsonSerializer.Serialize(
+                new { error = new { message = "Provider is retired and unavailable.", type = "provider_error", code = "PROVIDER_RETIRED" } }, JsonOpts), ct);
+            return;
+        }
         var db = ctx.RequestServices.GetRequiredService<LlmRouterDbContext>();
         var registry = ctx.RequestServices.GetRequiredService<ProviderRegistry>();
         var (entry, alias) = await ResolveProvider(db, registry, p, ct);
@@ -102,11 +121,28 @@ public static class ProviderScopedEndpoints
     {
         var raw = await new StreamReader(ctx.Request.Body, Encoding.UTF8).ReadToEndAsync(ct);
         JsonNode? node = null;
-        try { node = JsonNode.Parse(raw); } catch (JsonException) { /* let downstream report malformed */ }
-        var bytes = node is JsonObject obj ? RewriteModel(obj, entry, p) : Encoding.UTF8.GetBytes(raw);
+        try { node = JsonNode.Parse(raw); }
+        catch (JsonException)
+        {
+            await BadRequest(ctx, "Invalid JSON body");
+            return false;
+        }
+        // SPEC-128: upstream route-level shape checks (verbatim messages).
+        if (node is not JsonObject obj)
+        {
+            await BadRequest(ctx, "Request body must be a JSON object");
+            return false;
+        }
+        var modelNode = obj[Model];
+        if (modelNode is not null && modelNode.GetValueKind() != JsonValueKind.String)
+        {
+            await BadRequest(ctx, "model must be a string");
+            return false;
+        }
+        var bytes = RewriteModel(obj, entry, p);
         if (bytes is null)
         {
-            var model = (node as JsonObject)?[Model]?.GetValue<string>() ?? string.Empty;
+            var model = modelNode!.GetValue<string>();
             await BadRequest(ctx,
                 $"Model \"{model}\" does not belong to provider \"{p}\". Expected prefix: {alias}/");
             return false;
@@ -245,7 +281,16 @@ public static class ProviderScopedEndpoints
 
     /// <summary>GET/POST /v1/providers/{p}/voices — Fish Audio voice models (upstream parity).</summary>
     private static async Task Voices(HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, string p)
-        => await FishAudioProxy(ctx, db, hf, p, "/model");
+    {
+        // Upstream: voice creation is multipart-only.
+        if (ctx.Request.Method == "POST"
+            && ctx.Request.ContentType?.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase) != true)
+        {
+            await BadRequest(ctx, "Fish Audio voice creation requires multipart/form-data");
+            return;
+        }
+        await FishAudioProxy(ctx, db, hf, p, "/model");
+    }
 
     /// <summary>GET/PUT/DELETE /v1/providers/{p}/voices/{voiceId}.</summary>
     private static async Task VoiceItem(HttpContext ctx, LlmRouterDbContext db, IHttpClientFactory hf, string p, string voiceId)

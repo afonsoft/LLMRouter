@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using LLMRouter.Core.Data;
 using LLMRouter.Core.Extras;
@@ -203,6 +204,10 @@ public static class UserKeysEndpoints
 
         async Task<(User? U, UserKey? Uk, IResult? Reject)> Self(HttpContext ctx, LlmRouterDbContext db)
         {
+            // SPEC-135: cookie session carrying a userId claim (email+password login) counts as the user
+            if (ctx.User.FindFirst("userId")?.Value is { Length: > 0 } uid
+                && await db.Users.FindAsync(uid) is { } cu)
+                return (cu, null, null);
             var auth = await GatewayEndpoints.AuthenticatedKey(ctx, db);
             if (!auth.Authed || auth.UserId is null)
                 return (null, null, Results.Json(new { error = new { message = "virtual key required", type = "forbidden" } }, JsonOpts, statusCode: 403));

@@ -104,6 +104,12 @@ try {
   if (portalBg !== 'rgb(11, 14, 20)') fail(`docs portal bg ${portalBg} != #0b0e14`);
   if (await page.$('.sidebar')) fail('docs page leaked the dashboard sidebar');
 
+  // 13. SPEC-135: /signup is a public page (auth-exempt) with the signup form
+  await page.goto(base + '/signup', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('input[type="email"]', { timeout: 60_000 });
+  const sgTxt = await page.evaluate(() => document.body.innerText);
+  if (!sgTxt.includes('Create account')) fail('signup page missing create-account form');
+
   console.log('E2E smoke OK');
 } catch (err) {
   fail(err.message);

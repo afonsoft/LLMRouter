@@ -15,6 +15,9 @@ public sealed class Api(HttpClient http)
     public async Task<JsonElement> PutAsync(string url, object body) =>
         (await (await http.PutAsJsonAsync(url, body)).Content.ReadFromJsonAsync<JsonElement>())!;
 
+    public async Task<JsonElement> PatchAsync(string url, object body) =>
+        (await (await http.PatchAsJsonAsync(url, body)).Content.ReadFromJsonAsync<JsonElement>())!;
+
     public async Task DeleteAsync(string url) => await http.DeleteAsync(url);
 
     public HttpClient Raw => http;

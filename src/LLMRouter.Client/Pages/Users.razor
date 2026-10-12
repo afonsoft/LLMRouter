@@ -1,0 +1,202 @@
+@page "/dashboard/users"
+@inject Api Api
+@inject Loc Loc
+
+@* SPEC-134: admin user management — users table w/ balance, create/edit/
+   deactivate, per-user vk-keys + credit ledger. *@
+<h1 class="page-title">@Loc.T("users.title", "Users")</h1>
+<p class="page-desc">@Loc.T("users.subtitle", "Accounts, roles, virtual keys and credit balances")</p>
+
+<div class="card card-p mt-4">
+    <div class="bold mb-2">@Loc.T("users.create", "Create user")</div>
+    <div class="flex gap-2" style="flex-wrap:wrap">
+        <input class="input" style="width:220px" placeholder="email" @bind="_newEmail" />
+        <input class="input" style="width:160px" placeholder="@Loc.T("users.name", "name")" @bind="_newName" />
+        <select class="input" style="width:120px" @bind="_newRole">
+            <option value="member">member</option>
+            <option value="operator">operator</option>
+            <option value="viewer">viewer</option>
+            <option value="admin">admin</option>
+        </select>
+        <input class="input" type="number" min="0" step="0.01" style="width:120px" placeholder="credit USD" @bind="_newCredit" />
+        <button class="btn btn-sm" @onclick="CreateUser" disabled="@_busy">@Loc.T("users.createBtn", "Create")</button>
+    </div>
+    @if (!string.IsNullOrEmpty(_msg)) { <p class="muted sm mt-2">@_msg</p> }
+</div>
+
+<div class="card card-p mt-4">
+    <table class="tbl">
+        <thead>
+            <tr>
+                <th>Email</th><th>@Loc.T("users.name", "Name")</th><th>Role</th>
+                <th>@Loc.T("users.balance", "Balance")</th><th>@Loc.T("users.status", "Status")</th>
+                <th>@Loc.T("users.created", "Created")</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (_users is not null)
+            {
+                @foreach (var u in _users)
+                {
+                    var uid = u.GetProperty("id").GetString()!;
+                    <tr>
+                        <td class="mono sm">@u.GetProperty("email").GetString()</td>
+                        <td class="sm">@u.GetProperty("name").GetString()</td>
+                        <td>
+                            <select class="input" style="padding:2px 6px;font-size:12px"
+                                    value="@u.GetProperty("role").GetString()"
+                                    @onchange="e => PatchRole(uid, e.Value?.ToString())">
+                                <option>admin</option><option>operator</option><option>member</option><option>viewer</option>
+                            </select>
+                        </td>
+                        <td class="mono sm">$@u.GetProperty("balance").GetDouble().ToString("0.00")</td>
+                        <td><span class="badge @(u.GetProperty("isActive").GetBoolean() ? "ok" : "warn")">@(u.GetProperty("isActive").GetBoolean() ? "active" : "inactive")</span></td>
+                        <td class="muted sm">@u.GetProperty("createdAt").GetString()</td>
+                        <td>
+                            <div class="flex gap-2">
+                                <button class="btn btn-sm" @onclick="() => ToggleDetail(uid)">@(Expanded(uid) ? "▾" : "▸")</button>
+                                <button class="btn btn-sm" @onclick="() => TopUp(uid)">+$</button>
+                                @if (u.GetProperty("isActive").GetBoolean())
+                                {
+                                    <button class="btn btn-sm" style="color:var(--red,#f85149)" @onclick="() => Deactivate(uid)">@Loc.T("users.deactivate", "Deactivate")</button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                    @if (Expanded(uid))
+                    {
+                        <tr><td colspan="7" style="background:var(--bg-subtle,#111520)">
+                            <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;padding:8px 4px">
+                                <div>
+                                    <div class="bold sm mb-2">Virtual keys</div>
+                                    @if (KeysOf(uid) is { } keys && keys.Count > 0)
+                                    {
+                                        @foreach (var k in keys)
+                                        {
+                                            var kid = k.GetProperty("id").GetString()!;
+                                            <div class="flex between items-center mt-2">
+                                                <span class="mono sm">@(k.GetProperty("name").GetString() ?? "key") · $@k.GetProperty("spendUsd").GetDouble().ToString("0.00")/@(k.GetProperty("budgetUsd").GetDouble() > 0 ? k.GetProperty("budgetUsd").GetDouble().ToString("0.00") : "∞")</span>
+                                                <span class="flex gap-2 items-center">
+                                                    <span class="badge @(k.GetProperty("isActive").GetBoolean() ? "ok" : "warn")">@(k.GetProperty("isActive").GetBoolean() ? "on" : "off")</span>
+                                                    @if (k.GetProperty("isActive").GetBoolean())
+                                                    {
+                                                        <button class="btn btn-sm" @onclick="() => RevokeKey(kid, uid)">revoke</button>
+                                                    }
+                                                </span>
+                                            </div>
+                                        }
+                                    }
+                                    else { <div class="muted sm">no keys</div> }
+                                    <button class="btn btn-sm mt-2" @onclick="() => CreateKey(uid)">+ @Loc.T("users.newKey", "New key")</button>
+                                    @if (_newKeys.TryGetValue(uid, out var nk)) { <div class="mono sm mt-2" style="word-break:break-all">@nk</div> }
+                                </div>
+                                <div>
+                                    <div class="bold sm mb-2">@Loc.T("users.ledger", "Ledger")</div>
+                                    @if (LedgerOf(uid) is { } leds && leds.Count > 0)
+                                    {
+                                        @foreach (var l in leds.Take(10))
+                                        {
+                                            <div class="flex between sm mt-2">
+                                                <span class="muted">@l.GetProperty("reason").GetString() · @l.GetProperty("createdAt").GetString()</span>
+                                                <span class="mono">@(l.GetProperty("delta").GetDouble() >= 0 ? "+" : "")@l.GetProperty("delta").GetDouble().ToString("0.00") → $@l.GetProperty("balanceAfter").GetDouble().ToString("0.00")</span>
+                                            </div>
+                                        }
+                                    }
+                                    else { <div class="muted sm">empty</div> }
+                                </div>
+                            </div>
+                        </td></tr>
+                    }
+                }
+            }
+        </tbody>
+    </table>
+    @if (_users is not null && _users.Count == 0) { <div class="empty sm"><span class="material-symbols-outlined">group</span>@Loc.T("users.empty", "No users yet")</div> }
+</div>
+
+@code {
+    private List<JsonElement>? _users;
+    private readonly HashSet<string> _expanded = [];
+    private readonly Dictionary<string, List<JsonElement>> _keys = new();
+    private readonly Dictionary<string, List<JsonElement>> _ledgers = new();
+    private readonly Dictionary<string, string> _newKeys = new();
+    private string _newEmail = "", _newName = "", _newRole = "member", _msg = "";
+    private double _newCredit;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var r = await Api.GetAsync("api/users");
+        _users = r.TryGetProperty("users", out var arr) ? arr.EnumerateArray().ToList() : [];
+    }
+
+    private async Task CreateUser()
+    {
+        _busy = true; _msg = "";
+        try
+        {
+            var u = await Api.PostAsync("api/users", new { email = _newEmail, name = _newName, role = _newRole });
+            var uid = u.GetProperty("id").GetString()!;
+            if (_newCredit > 0)
+                await Api.PostAsync("api/credit-ledger/topup", new { userId = uid, amount = _newCredit, reason = "topup" });
+            _newEmail = _newName = ""; _newCredit = 0;
+            await Load();
+        }
+        catch (HttpRequestException ex) { _msg = ex.Message; }
+        _busy = false;
+    }
+
+    private async Task PatchRole(string id, string? role)
+    {
+        if (role is null) return;
+        try { await Api.PatchAsync($"api/users/{id}", new { role }); }
+        catch (HttpRequestException ex) { _msg = ex.Message; }
+    }
+
+    private async Task Deactivate(string id)
+    {
+        try { await Api.DeleteAsync($"api/users/{id}"); await Load(); }
+        catch (HttpRequestException ex) { _msg = ex.Message; }
+    }
+
+    private async Task TopUp(string id)
+    {
+        try { await Api.PostAsync("api/credit-ledger/topup", new { userId = id, amount = 10.0, reason = "topup" }); await Load(); }
+        catch (HttpRequestException ex) { _msg = ex.Message; }
+    }
+
+    private async Task ToggleDetail(string id)
+    {
+        if (!_expanded.Add(id)) { _expanded.Remove(id); return; }
+        if (!_keys.ContainsKey(id))
+        {
+            var k = await Api.GetAsync($"api/user-keys?userId={id}");
+            _keys[id] = k.TryGetProperty("keys", out var arr) ? arr.EnumerateArray().ToList() : [];
+        }
+        if (!_ledgers.ContainsKey(id))
+        {
+            var l = await Api.GetAsync($"api/credit-ledger?userId={id}&limit=10");
+            _ledgers[id] = l.TryGetProperty("entries", out var arr) ? arr.EnumerateArray().ToList() : [];
+        }
+    }
+
+    private bool Expanded(string id) => _expanded.Contains(id);
+    private List<JsonElement>? KeysOf(string id) => _keys.GetValueOrDefault(id);
+    private List<JsonElement>? LedgerOf(string id) => _ledgers.GetValueOrDefault(id);
+
+    private async Task CreateKey(string userId)
+    {
+        var k = await Api.PostAsync("api/user-keys", new { userId, name = "ui" });
+        if (k.TryGetProperty("key", out var kv)) _newKeys[userId] = kv.GetString() ?? "";
+        _keys.Remove(userId); _expanded.Remove(userId);
+        await ToggleDetail(userId);
+    }
+
+    private async Task RevokeKey(string keyId, string userId)
+    {
+        try { await Api.DeleteAsync($"api/user-keys/{keyId}"); _keys.Remove(userId); _expanded.Remove(userId); await ToggleDetail(userId); }
+        catch (HttpRequestException ex) { _msg = ex.Message; }
+    }
+}

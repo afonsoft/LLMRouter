@@ -336,6 +336,7 @@ app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();
 app.MapOAuthImportEndpoints();
+app.MapProviderAuthEndpoints();
 app.MapProtocolEndpoints();
 app.MapDocsEndpoints();
 app.MapInspectorEndpoints();

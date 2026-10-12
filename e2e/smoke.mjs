@@ -86,7 +86,7 @@ try {
   await page.waitForSelector('.btn', { timeout: 60_000 });
   const btnCss = await page.$eval('.btn:not(.btn-sm):not(.btn-xs):not(.btn-lg)', (e) => {
     const cs = getComputedStyle(e);
-    return { height: parseFloat(cs.height), fontSize: cs.fontSize };
+    return { height: Number.parseFloat(cs.height), fontSize: cs.fontSize };
   });
   if (Math.abs(btnCss.height - 36) > 1) fail(`.btn height ${btnCss.height} != 36`);
   if (btnCss.fontSize !== '14px') fail(`.btn font ${btnCss.fontSize} != 14px`);

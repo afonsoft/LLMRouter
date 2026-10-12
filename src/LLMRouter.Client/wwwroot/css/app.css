@@ -687,6 +687,7 @@ pre.code {
 .docs-mark {
     width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center;
     justify-content: center; font-weight: 700; font-size: 14px; color: #fff;
+    background-color: #c93d4e;
     background: linear-gradient(135deg, #e54d5e, #c93d4e);
 }
 .docs-brand-name { color: #e6e6ef; font-weight: 600; font-size: 14px; }
@@ -712,6 +713,8 @@ pre.code {
 .docs-dashbtn {
     display: inline-flex; align-items: center; height: 38px; padding: 0 16px;
     border-radius: 8px; font-size: 14px; font-weight: 500; text-decoration: none;
-    color: #fff; background: linear-gradient(135deg, #e54d5e, #c93d4e);
+    color: #fff;
+    background-color: #c93d4e;
+    background: linear-gradient(135deg, #e54d5e, #c93d4e);
 }
 .docs-body { padding: 24px 28px; max-width: 1280px; margin: 0 auto; }

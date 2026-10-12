@@ -71,6 +71,10 @@ public class LlmRouterDbContext : DbContext
     public DbSet<RadarItem> RadarItems => Set<RadarItem>();
     /// <summary>SPEC-056: itens de gamification.</summary>
     public DbSet<GamiItem> GamiItems => Set<GamiItem>();
+    /// <summary>SPEC-129: XP/level per api key (upstream user_levels).</summary>
+    public DbSet<UserLevel> UserLevels => Set<UserLevel>();
+    /// <summary>SPEC-129: scoped leaderboard scores (upstream leaderboard).</summary>
+    public DbSet<LeaderboardScore> LeaderboardScores => Set<LeaderboardScore>();
     /// <summary>SPEC-065: execuções do issue-agent.</summary>
     public DbSet<IssueAgentRun> IssueAgentRuns => Set<IssueAgentRun>();
     /// <summary>SPEC-098: webhooks (kv-blob partition).</summary>
@@ -81,6 +85,7 @@ public class LlmRouterDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<KvEntry>().HasKey(e => new { e.Scope, e.Key });
+        mb.Entity<LeaderboardScore>().HasKey(e => new { e.ApiKeyId, e.Scope });
         mb.Entity<ApiKey>().HasIndex(e => e.Key).IsUnique();
         mb.Entity<RelayToken>().HasIndex(e => e.Token).IsUnique();
         mb.Entity<Combo>().HasIndex(e => e.Name).IsUnique();

@@ -783,8 +783,15 @@ public static partial class MgmtBatchEndpoints
             IHttpClientFactory hf) =>
         {
             var providers = registry.Providers.Values.Where(p => p.BaseUrl is not null).ToList();
-            var probes = providers.Select(p =>
-                ProbeProvider(ctx, hf, p, p.Models?.FirstOrDefault()?.Id ?? "default"));
+            // Bound the fan-out: ~290 providers × 10s probes unbounded can pin the
+            // threadpool for minutes under load; 64-way keeps worst case ~5 waves.
+            using var gate = new SemaphoreSlim(64);
+            var probes = providers.Select(async p =>
+            {
+                await gate.WaitAsync();
+                try { return await ProbeProvider(ctx, hf, p, p.Models?.FirstOrDefault()?.Id ?? "default"); }
+                finally { gate.Release(); }
+            });
             var results = await Task.WhenAll(probes);
             return Results.Json(new { results }, JsonOpts);
         });

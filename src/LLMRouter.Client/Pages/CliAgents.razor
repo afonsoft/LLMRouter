@@ -116,7 +116,7 @@ else
                         kv.Value.TryGetProperty("commandPath", out var cp) && cp.ValueKind == JsonValueKind.String ? cp.GetString() : null));
             }
         }
-        catch (HttpRequestException) { }
+        catch (HttpRequestException) { /* statuses are optional chrome */ }
     }
 
     private ToolStatus? StatusOf(string id) =>
@@ -134,7 +134,7 @@ else
             var r = await Api.GetAsync("api/cli-tools");
             _tools = r.TryGetProperty("tools", out var arr) ? arr.EnumerateArray().ToArray() : [];
         }
-        catch (HttpRequestException) { }
+        catch (HttpRequestException) { /* detect is best-effort */ }
         _detecting = false;
     }
 
@@ -142,8 +142,9 @@ else
         _tools is null ? 0 : _groups.Sum(g => Filtered(g.Id).Length);
 
     private string Tf(string key, string fallback, object? arg) =>
-        string.Format(System.Text.RegularExpressions.Regex.Replace(
-            Loc.T(key, fallback) ?? fallback, @"\{[^{}]*\}", "{0}"), arg);
+        string.Format(Placeholder.Replace(Loc.T(key, fallback) ?? fallback, "{0}"), arg);
+    private static readonly System.Text.RegularExpressions.Regex Placeholder =
+        new(@"\{[^{}]*\}", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
 
     private bool DetectionMatch(JsonElement t)
     {

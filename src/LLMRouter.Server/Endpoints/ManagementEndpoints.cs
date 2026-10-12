@@ -718,7 +718,7 @@ public static class ManagementEndpoints
             else
                 ov[key] = body.Clone();
             root[PricingService.OverridesKey] = JsonSerializer.SerializeToElement(ov);
-            var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var row = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
             row.Data = JsonSerializer.Serialize(root);
             await db.SaveChangesAsync();
             return Results.Json(new { ok = true, key });
@@ -755,7 +755,7 @@ public static class ManagementEndpoints
                 ? sd.EnumerateObject().ToDictionary(k => k.Name, k => k.Value.Clone())
                 : new Dictionary<string, JsonElement>();
             root["monthlyBudget"] = body.TryGetProperty("budget", out var b) ? b.Clone() : JsonSerializer.SerializeToElement(0);
-            var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var row = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
             row.Data = JsonSerializer.Serialize(root);
             await db.SaveChangesAsync();
             return Results.Json(new { ok = true });
@@ -1077,8 +1077,7 @@ public static class ManagementEndpoints
         g.MapPut("/settings", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var s = await db.Settings.FirstOrDefaultAsync()
-                ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var s = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
             var d = AuthEndpoints.Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
             foreach (var kv in b.EnumerateObject())
                 d[kv.Name] = kv.Value.Clone();
@@ -1103,8 +1102,7 @@ public static class ManagementEndpoints
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             var patch = b.TryGetProperty("retention", out var rp) && rp.ValueKind == JsonValueKind.Object ? rp : b;
-            var s = await db.Settings.FirstOrDefaultAsync()
-                ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var s = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
             var d = AuthEndpoints.Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
             var cur = d.TryGetValue("retention", out var cr) && cr.ValueKind == JsonValueKind.Object
                 ? cr.Deserialize<Dictionary<string, JsonElement>>() ?? [] : [];
@@ -1367,8 +1365,7 @@ public static class ManagementEndpoints
         g.MapPost("/token-saver/filters", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
-            var row = await db.Settings.FindAsync(1)
-                ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+            var row = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
             var data = JsonNode.Parse(row.Data)!.AsObject();
             data["tokenSaver"] ??= new JsonObject();
             var ts = data["tokenSaver"]!.AsObject();

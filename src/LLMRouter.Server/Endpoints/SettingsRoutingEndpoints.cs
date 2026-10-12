@@ -23,8 +23,7 @@ public static class SettingsRoutingEndpoints
 
     private static async Task SaveSection(LlmRouterDbContext db, string key, JsonNode? value)
     {
-        var s = await db.Settings.FirstOrDefaultAsync()
-            ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+        var s = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
         var d = AuthEndpoints.Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
         d[key] = JsonSerializer.SerializeToElement(value);
         s.Data = JsonSerializer.Serialize(d);

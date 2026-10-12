@@ -195,7 +195,7 @@ public sealed class TrafficInspectorService : IAsyncDisposable
     {
         await using var s = _scopes.CreateAsyncScope();
         var db = s.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
-        var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
+        var row = await Core.Extras.Extras.GetOrCreateSettingsAsync(db);
         var doc = System.Text.Json.Nodes.JsonNode.Parse(row.Data ?? "{}")?.AsObject()
             ?? new System.Text.Json.Nodes.JsonObject();
         if (doc["mitm"] is not System.Text.Json.Nodes.JsonObject mitm)

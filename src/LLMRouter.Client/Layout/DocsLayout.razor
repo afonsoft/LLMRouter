@@ -1,0 +1,44 @@
+@inherits LayoutComponentBase
+@inject Loc Loc
+
+@* SPEC-131: standalone dark docs portal — mirrors upstream fumadocs DocsLayout
+   (defaultTheme dark, own top nav: brand + Home/Dashboard links + GitHub + language). *@
+<div class="docs-portal">
+    <nav class="docs-topnav">
+        <a href="/docs" class="docs-brand">
+            <span class="docs-mark">L</span>
+            <span class="docs-brand-name">LLMRouter</span>
+            <span class="docs-brand-sep">/</span>
+            <span class="docs-brand-sub">@Loc.T("docs.navTitle", "Docs")</span>
+        </a>
+        <div class="docs-navlinks">
+            <a href="/docs" class="docs-navlink">@Loc.T("docs.navHome", "Home")</a>
+            <a href="https://github.com/afonsoft/LLMRouter" target="_blank" rel="noopener" class="docs-navlink" title="GitHub">
+                <span class="material-symbols-outlined" style="font-size:18px">open_in_new</span>
+            </a>
+            <div class="docs-lang-wrap">
+                <button class="docs-iconbtn" @onclick="() => _langOpen = !_langOpen" title="Language">
+                    <span class="material-symbols-outlined" style="font-size:18px">language</span>
+                </button>
+                @if (_langOpen)
+                {
+                    <div class="menu docs-lang-menu">
+                        @foreach (var l in Loc.Languages)
+                        {
+                            <button class="menu-item @(Loc.Lang == l ? "active" : "")" @onclick="async () => { await Loc.SetAsync(l); _langOpen = false; }">
+                                @LangName(l)
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+            <a href="/dashboard" class="docs-dashbtn">@Loc.T("docs.navDashboard", "Dashboard")</a>
+        </div>
+    </nav>
+    <div class="docs-body">@Body</div>
+</div>
+
+@code {
+    private bool _langOpen;
+    private static string LangName(string l) => l switch { "en" => "English", "pt-BR" => "Português (BR)", "es" => "Español", _ => l };
+}

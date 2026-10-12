@@ -41,8 +41,21 @@ public static class AdminOpsEndpoints
         var g = app.MapGroup("/api").RequireAuthorization();
 
         // ---- global upstream concurrency cap
+        // SPEC-132: upstream /api/admin/concurrency contract — comboQueues +
+        // semaphores so the ConcurrencyQueuesCard renders the same sections.
         g.MapGet("/admin/concurrency", () => Results.Json(new
         {
+            timestamp = DateTime.UtcNow.ToString("o"),
+            comboQueues = new { },
+            semaphores = new
+            {
+                admission = new
+                {
+                    limit = ConcurrencyGate.Limit,
+                    running = ConcurrencyGate.InFlight,
+                    queued = 0,
+                },
+            },
             limit = ConcurrencyGate.Limit,
             inFlight = ConcurrencyGate.InFlight,
         }, JsonOpts));
@@ -285,16 +298,104 @@ public static class AdminOpsEndpoints
             var engines = data["engines"] ?? new JsonObject();
             return Results.Json(new { engines }, JsonOpts);
         });
+        // SPEC-132: upstream /api/monitoring/health contract — system, provider
+        // health (breakers), summary counts, rate limits, learned limits,
+        // lockouts, sessions and quota monitors in one payload (page polls it).
         g.MapGet("/monitoring/health", async (LlmRouterDbContext db) =>
         {
             var recent = await db.UsageHistory.OrderByDescending(u => u.Timestamp).Take(200).ToListAsync();
             var errors = recent.Count(r => !(r.Status is "200" or "ok" or "success"));
+
+            var proc = System.Diagnostics.Process.GetCurrentProcess();
+            var version = typeof(AdminOpsEndpoints).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+
+            var breakers = Core.Resilience.ProviderBreaker.Snapshot();
+            var providerHealth = breakers.ToDictionary(
+                b => b.ProviderId,
+                b => new { state = b.State, failures = b.Failures, openedAt = b.OpenedAt, retryAfter = b.RetryAfter });
+
+            var conns = await db.ProviderConnections.ToListAsync();
+            var providerSummary = new
+            {
+                configured = conns.Count,
+                active = conns.Count(c => c.IsActive),
+                monitored = conns.Count(c => c.IsActive) + breakers.Count,
+            };
+
+            var rateRows = await db.RateLimits.ToListAsync();
+            var rateLimitStatus = rateRows.ToDictionary(
+                r => $"{r.Scope}:{r.ScopeValue}",
+                r => new { r.Scope, r.ScopeValue, r.Rpm, r.Tpm, r.Burst, r.Enabled, r.UpdatedAt });
+            var learned = await db.QuotaSnapshots
+                .OrderByDescending(s => s.CreatedAt).Take(200).ToListAsync();
+            var learnedLimits = learned
+                .GroupBy(s => s.Provider)
+                .ToDictionary(g2 => g2.Key, g2 => g2.Select(s => new
+                {
+                    window = s.WindowKey,
+                    remainingPercentage = s.RemainingPercentage,
+                    exhausted = s.IsExhausted != 0,
+                    nextResetAt = s.NextResetAt,
+                    at = s.CreatedAt,
+                }).Take(10).ToList());
+
+            var windows = await db.QuotaWindows.ToListAsync();
+            var monitors = new List<object>();
+            var exhausted = 0;
+            foreach (var w in windows)
+            {
+                var ex = await Core.Routing.QuotaWindows.ExceededAsync(db, w.Provider);
+                if (ex) exhausted++;
+                monitors.Add(new
+                {
+                    w.Id, w.Provider, w.Name, w.WindowMinutes, w.MaxTokens, w.MaxRequests,
+                    status = ex ? "exhausted" : "ok",
+                });
+            }
+
+            var lockouts = Core.Resilience.ModelLockout.Snapshot();
+            var cooldowns = Core.Resilience.CooldownTracker.Snapshot();
+
             return Results.Json(new
             {
-                checked_ = recent.Count, errors,
+                checked_ = recent.Count,
+                errors,
                 errorRate = recent.Count > 0 ? (double)errors / recent.Count : 0,
                 degraded = recent.Count >= 10 && errors * 2 > recent.Count,
+                system = new
+                {
+                    uptimeSeconds = (long)(DateTime.UtcNow - Started).TotalSeconds,
+                    version,
+                    runtimeVersion = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                    platform = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+                    memoryUsage = new { rss = proc.WorkingSet64, heapUsed = GC.GetTotalMemory(false) },
+                },
+                providerHealth,
+                providerSummary,
+                rateLimitStatus,
+                learnedLimits,
+                lockouts,
+                sessions = new { activeCount = 0, stickyBound = 0, byApiKey = 0, top = Array.Empty<object>() },
+                quotaMonitor = new
+                {
+                    active = monitors.Count,
+                    alerting = exhausted,
+                    exhausted,
+                    errorsCount = 0,
+                    providers = windows.Select(w => w.Provider).Distinct().Count(),
+                    monitors,
+                },
+                cooldowns = cooldowns.Select(c => new { c.ConnectionId, c.Failures, c.Cooling, c.CooldownUntil }),
             }, JsonOpts);
+        });
+
+        // Upstream DELETE /api/monitoring/health — reset all health state.
+        g.MapDelete("/monitoring/health", () =>
+        {
+            Core.Resilience.ProviderBreaker.ClearAll();
+            Core.Resilience.ModelLockout.ClearAll();
+            Core.Resilience.CooldownTracker.ClearAll();
+            return Results.Json(new { ok = true });
         });
         g.MapGet("/health/degradation", async (LlmRouterDbContext db) =>
         {

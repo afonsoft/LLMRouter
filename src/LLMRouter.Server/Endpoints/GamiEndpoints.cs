@@ -38,6 +38,14 @@ public static class GamiEndpoints
 
         g.MapGet("/badges/{actor}", async (LlmRouterDbContext db, string actor) => Results.Json(await GamiCore.EarnedAsync(db, actor), json));
         g.MapGet("/notifications/{actor}", async (LlmRouterDbContext db, string actor, int limit = 50) => Results.Json(await GamiCore.NotificationsAsync(db, actor, limit), json));
+
+        // SPEC-129: upstream GET /api/gamification/level?apiKeyId= (aggregate when absent)
+        g.MapGet("/level", async (LlmRouterDbContext db, string? apiKeyId, CancellationToken ct) =>
+            Results.Json(await GamiCore.LevelAsync(db, apiKeyId, ct), json));
+
+        // SPEC-129: upstream GET /api/gamification/badges/earned?apiKeyId= (distinct when absent)
+        g.MapGet("/badges/earned", async (LlmRouterDbContext db, string? apiKeyId, CancellationToken ct) =>
+            Results.Json(await GamiCore.EarnedBadgesAsync(db, apiKeyId, ct), json));
     }
 
     static void MapInvites(RouteGroupBuilder g, JsonSerializerOptions json)
@@ -65,10 +73,40 @@ public static class GamiEndpoints
         {
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(req.Body);
             var url = b.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+            var key = b.TryGetProperty("apiKey", out var k) ? k.GetString() : null;
             if (string.IsNullOrWhiteSpace(url)) return Results.BadRequest(new { error = "url" });
-            await GamiCore.ServerAddAsync(db, url);
+            await GamiCore.ServerAddAsync(db, url, key);
             await Extras.AuditAsync(db, "gami.server.add", url);
             return Results.Json(new { ok = true }, json);
+        });
+
+        // SPEC-129: federation surface — remote peers auth via Bearer (pbkdf2 keyHash)
+        g.MapGet("/federation/leaderboard", async (HttpContext ctx, LlmRouterDbContext db, CancellationToken ct) =>
+        {
+            if (ctx.Request.Headers.Authorization.FirstOrDefault() is not { } auth || !auth.StartsWith("Bearer "))
+                return Results.Json(new { error = "Missing authorization" }, json, statusCode: 401);
+            if (await GamiCore.FederationAuthAsync(db, auth, ct) is null)
+                return Results.Json(new { error = "Invalid or unauthorized token" }, json, statusCode: 403);
+            var scope = ctx.Request.Query["scope"].FirstOrDefault() ?? "global";
+            var raw = ctx.Request.Query["limit"].FirstOrDefault();
+            var limit = raw is null ? 100 : (int.TryParse(raw, out var n) ? n : -1);
+            if (limit < 1 || limit > GamiCore.LeaderboardMaxLimit)
+                return Results.Json(new { error = "'limit' must be an integer between 1 and 200" }, json, statusCode: 400);
+            return Results.Json(new { entries = await GamiCore.TopNAsync(db, scope, limit, 0, ct) }, json);
+        });
+        g.MapPost("/federation/score", async (HttpContext ctx, LlmRouterDbContext db, CancellationToken ct) =>
+        {
+            if (ctx.Request.Headers.Authorization.FirstOrDefault() is not { } auth || !auth.StartsWith("Bearer "))
+                return Results.Json(new { error = "Missing authorization" }, json, statusCode: 401);
+            if (await GamiCore.FederationAuthAsync(db, auth, ct) is null)
+                return Results.Json(new { error = "Invalid or unauthorized token" }, json, statusCode: 403);
+            var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body, json, ct);
+            var apiKeyId = b.TryGetProperty("apiKeyId", out var k) ? k.GetString() ?? "" : "";
+            var scope = b.TryGetProperty("scope", out var s) ? s.GetString() ?? "global" : "global";
+            var points = b.TryGetProperty("points", out var p) && p.TryGetInt64(out var v) ? v : 0;
+            if (string.IsNullOrWhiteSpace(apiKeyId)) return Results.BadRequest(new { error = "apiKeyId" });
+            await GamiCore.UpdateScoreAsync(db, apiKeyId, scope, points, ct);
+            return Results.Json(new { success = true }, json);
         });
         g.MapPost("/rotate", async (LlmRouterDbContext db) =>
         {

@@ -41,6 +41,9 @@ namespace LLMRouter.Core.Data.Migrations
                     b.Property<string>("Result")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Skill")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("StartedAt")
                         .HasColumnType("TEXT");
 
@@ -866,6 +869,26 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasKey("Scope", "Key");
 
                     b.ToTable("kv");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.LeaderboardScore", b =>
+                {
+                    b.Property<string>("ApiKeyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Score")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ApiKeyId", "Scope");
+
+                    b.ToTable("leaderboard");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.LogExportDestination", b =>
@@ -1887,6 +1910,26 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("userKeys");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.UserLevel", b =>
+                {
+                    b.Property<string>("ApiKeyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CurrentLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TotalXp")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ApiKeyId");
+
+                    b.ToTable("userLevels");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.VscodeToken", b =>

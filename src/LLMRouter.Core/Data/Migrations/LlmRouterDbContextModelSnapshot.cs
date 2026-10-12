@@ -802,6 +802,73 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("gamiItems");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.InspectorCustomHost", b =>
+                {
+                    b.Property<string>("Host")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Host");
+
+                    b.ToTable("inspector_custom_hosts");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.InspectorSession", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Profile")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RequestCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StartedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("inspector_sessions");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.InspectorSessionRequest", b =>
+                {
+                    b.Property<string>("SessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SessionId", "Seq");
+
+                    b.ToTable("inspector_session_requests");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.IssueAgentRun", b =>
                 {
                     b.Property<long>("Id")

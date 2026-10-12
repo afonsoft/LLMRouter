@@ -80,10 +80,14 @@ public class LlmRouterDbContext : DbContext
     public DbSet<AgentBridgeState> AgentBridgeStates => Set<AgentBridgeState>();
     public DbSet<AgentBridgeBypass> AgentBridgeBypass => Set<AgentBridgeBypass>();
     public DbSet<AgentBridgeMapping> AgentBridgeMappings => Set<AgentBridgeMapping>();
+    public DbSet<InspectorSession> InspectorSessions => Set<InspectorSession>();
+    public DbSet<InspectorSessionRequest> InspectorSessionRequests => Set<InspectorSessionRequest>();
+    public DbSet<InspectorCustomHost> InspectorCustomHosts => Set<InspectorCustomHost>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
         mb.Entity<KvEntry>().HasKey(e => new { e.Scope, e.Key });
+        mb.Entity<InspectorSessionRequest>().HasKey(e => new { e.SessionId, e.Seq });
         mb.Entity<ApiKey>().HasIndex(e => e.Key).IsUnique();
         mb.Entity<RelayToken>().HasIndex(e => e.Token).IsUnique();
         mb.Entity<Combo>().HasIndex(e => e.Name).IsUnique();

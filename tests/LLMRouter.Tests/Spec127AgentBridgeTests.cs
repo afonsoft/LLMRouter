@@ -171,9 +171,18 @@ public class Spec127AgentBridgeTests : IDisposable
         var http = $"POST /v1/chat/completions HTTP/1.1\r\nHost: api.anthropic.com\r\nContent-Type: application/json\r\nContent-Length: {Encoding.UTF8.GetByteCount(reqBody)}\r\n\r\n{reqBody}";
         await tls.WriteAsync(Encoding.UTF8.GetBytes(http));
 
+        var sb = new StringBuilder();
         var resp = new byte[8192];
-        var rn = await tls.ReadAsync(resp);
-        var respText = Encoding.UTF8.GetString(resp, 0, rn);
+        using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
+        {
+            while (!sb.ToString().Contains("\"got\"") && !cts.IsCancellationRequested)
+            {
+                var rn = await tls.ReadAsync(resp, cts.Token);
+                if (rn <= 0) break;
+                sb.Append(Encoding.UTF8.GetString(resp, 0, rn));
+            }
+        }
+        var respText = sb.ToString();
         respText.ShouldContain("200");
         respText.ShouldContain("\"got\":true");
         respText.ShouldContain("sk-vk-internal");   // injected internal key

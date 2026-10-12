@@ -77,6 +77,9 @@ public class LlmRouterDbContext : DbContext
     public DbSet<Webhook> Webhooks => Set<Webhook>();
     /// <summary>SPEC-098: entregas de webhook (kv-blob partition).</summary>
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
+    public DbSet<AgentBridgeState> AgentBridgeStates => Set<AgentBridgeState>();
+    public DbSet<AgentBridgeBypass> AgentBridgeBypass => Set<AgentBridgeBypass>();
+    public DbSet<AgentBridgeMapping> AgentBridgeMappings => Set<AgentBridgeMapping>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

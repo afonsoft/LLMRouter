@@ -43,6 +43,12 @@ public class UsageDepthTests : WebAppTestBase
             Id = "cx1", Provider = "codex-main", AuthType = "apikey", Name = "cx", IsActive = true,
             Data = "{}", CreatedAt = "x", UpdatedAt = "x",
         });
+        db.ProxyLogs.Add(new ProxyLog
+        {
+            Id = "pl1", Timestamp = "2026-10-10 12:00:00", Status = "success",
+            Proxy = """{"id":"px-1","type":"byProxy","host":"127.0.0.1","port":8080,"name":"edge"}""",
+            Level = "provider", Provider = "openai", LatencyMs = 12,
+        });
         await db.SaveChangesAsync();
         return db;
     }

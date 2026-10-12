@@ -315,6 +315,20 @@ public sealed class UsageWriter : BackgroundService
         await DrainAsync(db);
     }
 
+    /// <summary>
+    /// Synchronously drains both channels on the caller's thread (own scope +
+    /// context). Channel reads are destructive, so this can safely run beside
+    /// the background worker — a row is applied exactly once by whichever side
+    /// dequeues it. Deterministic flush for graceful shutdown and tests.
+    /// </summary>
+    public async Task FlushAsync()
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<LlmRouterDbContext>();
+        db.SuppressCacheBust = true;
+        await DrainAsync(db);
+    }
+
     /// <summary>Shutdown: flush whatever remains within the drain budget.</summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {

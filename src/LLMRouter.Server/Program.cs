@@ -333,6 +333,7 @@ DetailEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();
+app.MapOAuthImportEndpoints();
 app.MapProtocolEndpoints();
 app.MapDocsEndpoints();
 app.MapInspectorEndpoints();

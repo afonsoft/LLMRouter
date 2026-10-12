@@ -13,7 +13,7 @@ public static class CliToolsEndpoints
 {
     private const string UnknownTool = "unknown_tool";
 
-    private static CliToolDef? FindTool(HttpContext ctx, string? id) =>
+    private static CliToolDef? FindTool(string? id) =>
         id is null ? null : CliToolService.Find(id);
 
     private static string? Str(JsonObject? o, string key) =>
@@ -45,7 +45,7 @@ public static class CliToolsEndpoints
             var tool = ctx.Request.Query["tool"].FirstOrDefault();
             if (!string.IsNullOrEmpty(tool))
             {
-                var def = FindTool(ctx, tool);
+                var def = FindTool(tool);
                 if (def is null) return Results.NotFound(new { error = UnknownTool });
                 return Results.Ok(new { tool = def.Id, status = svc.StatusFor(def) });
             }
@@ -105,22 +105,7 @@ public static class CliToolsEndpoints
         g.MapGet("/logs", (HttpContext ctx, CliToolService svc) =>
         {
             var lines = int.TryParse(ctx.Request.Query["lines"], out var n) ? Math.Clamp(n, 1, 500) : 100;
-            var logs = new List<object>();
-            if (Directory.Exists(svc.ConfigHome))
-            {
-                foreach (var tool in CliToolService.Tools)
-                {
-                    var dir = Path.GetDirectoryName(svc.ConfigPathFor(tool))!;
-                    if (!Directory.Exists(dir)) continue;
-                    foreach (var f in Directory.EnumerateFiles(dir, "*.log"))
-                    {
-                        var tail = ReadTail(f, lines);
-                        if (tail is not null)
-                            logs.Add(new { tool = tool.Id, file = f, lines = tail });
-                    }
-                }
-            }
-            return Results.Ok(new { logs });
+            return Results.Ok(new { logs = CollectLogs(svc, lines) });
         });
     }
 
@@ -154,7 +139,7 @@ public static class CliToolsEndpoints
         g.MapPost("/apply", async (HttpContext ctx, CliToolService svc) =>
         {
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
-            var def = FindTool(ctx, Str(body, "toolId"));
+            var def = FindTool(Str(body, "toolId"));
             if (def is null) return Results.BadRequest(new { error = UnknownTool });
             var (status, result) = svc.Apply(def,
                 Str(body, "apiKey"), Str(body, "model"),
@@ -173,29 +158,49 @@ public static class CliToolsEndpoints
             return Results.Ok(svc.ReadSettings(def));
         });
 
-        g.MapPost("/{toolId}-settings", async (string toolId, HttpContext ctx,
-            CliToolService svc, LlmRouterDbContext db) =>
-        {
-            var def = CliToolService.Find(toolId);
-            if (def is null) return Results.NotFound(new { error = UnknownTool });
-            var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
-            var env = body?["env"] as JsonObject;
-            if (env is null) return Results.BadRequest(new { error = "env object required" });
+        g.MapPost("/{toolId}-settings", ApplySettingsAsync);
+    }
 
-            // keyId resolves the real key from the DB (upstream #523/#526).
-            if (Str(body, "keyId") is { } keyId)
+    private static async Task<IResult> ApplySettingsAsync(string toolId, HttpContext ctx,
+        CliToolService svc, LlmRouterDbContext db)
+    {
+        var def = CliToolService.Find(toolId);
+        if (def is null) return Results.NotFound(new { error = UnknownTool });
+        var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
+        var env = body?["env"] as JsonObject;
+        if (env is null) return Results.BadRequest(new { error = "env object required" });
+
+        // keyId resolves the real key from the DB (upstream #523/#526).
+        if (Str(body, "keyId") is { } keyId)
+        {
+            var record = await db.ApiKeys.AsNoTracking()
+                .FirstOrDefaultAsync(k => k.Id == keyId && k.IsActive);
+            if (record?.Key is { } realKey)
             {
-                var record = await db.ApiKeys.AsNoTracking()
-                    .FirstOrDefaultAsync(k => k.Id == keyId && k.IsActive);
-                if (record?.Key is { } realKey)
-                {
-                    foreach (var varName in def.EnvTemplate.Skip(1))
-                        env[varName] = realKey;
-                }
+                foreach (var varName in def.EnvTemplate.Skip(1))
+                    env[varName] = realKey;
             }
-            var (status, result) = svc.ApplyEnv(def, env);
-            return Results.Json(result, statusCode: status);
-        });
+        }
+        var (status, result) = svc.ApplyEnv(def, env);
+        return Results.Json(result, statusCode: status);
+    }
+
+    private static List<object> CollectLogs(CliToolService svc, int lines)
+    {
+        var logs = new List<object>();
+        if (!Directory.Exists(svc.ConfigHome)) return logs;
+        foreach (var tool in CliToolService.Tools)
+        {
+            var dir = Path.GetDirectoryName(svc.ConfigPathFor(tool))!;
+            if (!Directory.Exists(dir)) continue;
+            foreach (var f in Directory.EnumerateFiles(dir, "*.log"))
+            {
+                var tail = ReadTail(f, lines);
+                if (tail is not null)
+                    logs.Add(new { tool = tool.Id, file = f, lines = tail });
+            }
+        }
+        return logs;
     }
 
     private static string[]? ReadTail(string path, int lines)

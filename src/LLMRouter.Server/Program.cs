@@ -310,15 +310,7 @@ SessionPoolEndpoints.Map(app);
 CliDeviceEndpoints.Map(app);
 LLMRouter.Server.Endpoints.CliToolsEndpoints.Map(app);
 LLMRouter.Server.Endpoints.AgentBridgeEndpoints.Map(app);
-LLMRouter.Server.Endpoints.TrafficInspectorEndpoints.Map(app);
-{
-    var ti = app.Services.GetRequiredService<LLMRouter.Server.Services.TrafficInspector.TrafficInspectorService>();
-    var ab = app.Services.GetRequiredService<LLMRouter.Server.Services.AgentBridge.AgentBridgeService>();
-    ab.Proxy.SetCapture(r =>
-    {
-        if (ti.Buffer.Get(r.Id) is null) ti.Buffer.Push(r); else ti.Buffer.Update(r.Id, r);
-    });
-}
+LLMRouter.Server.Endpoints.TrafficInspectorEndpoints.MapAndWire(app);
 VscodeEndpoints.Map(app);
 UserKeysEndpoints.Map(app);
 PublicCatalogEndpoints.Map(app);

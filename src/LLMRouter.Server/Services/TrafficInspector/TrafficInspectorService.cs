@@ -159,7 +159,6 @@ public sealed class TrafficInspectorService : IAsyncDisposable
     {
         if (action == "stop")
         {
-            var port = HttpProxy.Running ? HttpProxy.Port : (int?)null;
             await HttpProxy.Stop();
             return new { ok = true, running = false, port = (int?)null };
         }
@@ -199,8 +198,11 @@ public sealed class TrafficInspectorService : IAsyncDisposable
         var row = await db.Settings.FindAsync(1) ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
         var doc = System.Text.Json.Nodes.JsonNode.Parse(row.Data ?? "{}")?.AsObject()
             ?? new System.Text.Json.Nodes.JsonObject();
-        var mitm = doc["mitm"] as System.Text.Json.Nodes.JsonObject
-            ?? (System.Text.Json.Nodes.JsonObject)(doc["mitm"] = new System.Text.Json.Nodes.JsonObject())!;
+        if (doc["mitm"] is not System.Text.Json.Nodes.JsonObject mitm)
+        {
+            mitm = new System.Text.Json.Nodes.JsonObject();
+            doc["mitm"] = mitm;
+        }
         mitm["tlsIntercept"] = enabled;
         row.Data = doc.ToJsonString();
         await db.SaveChangesAsync();

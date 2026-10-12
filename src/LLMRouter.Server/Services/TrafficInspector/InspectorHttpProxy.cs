@@ -80,21 +80,7 @@ public sealed class InspectorHttpProxy : IAsyncDisposable
 
         if (parts[0].Equals("CONNECT", StringComparison.OrdinalIgnoreCase))
         {
-            var authority = parts[1].Split(' ')[0];
-            var host = authority.Split(':')[0];
-            var port = authority.Contains(':') && int.TryParse(authority.Split(':')[1], out var p) ? p : 443;
-            await stream.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray(), ct);
-            _buffer.Push(new InterceptedRequest
-            {
-                Id = Guid.NewGuid().ToString(),
-                Source = "http-proxy",
-                Timestamp = DateTime.UtcNow.ToString("o"),
-                Method = "CONNECT", Host = host, Path = $":{port}",
-                RequestHeaders = InspectorModel.SanitizeHeaders(headers),
-                RequestSize = head.Length, ResponseSize = 0, Status = 200,
-                Note = HopNote,
-            });
-            await Relay(stream, host, port, ct);
+            await HandleConnect(stream, parts[1], headers, head.Length, ct);
             return;
         }
 
@@ -117,6 +103,26 @@ public sealed class InspectorHttpProxy : IAsyncDisposable
         await ForwardPlain(stream, parts, headers, body, head.Length, ct);
     }
 
+    /// <summary>CONNECT: acknowledge, record an opaque-tunnel entry, then raw relay.</summary>
+    private async Task HandleConnect(NetworkStream stream, string authority, Dictionary<string, string> headers, int headBytes, CancellationToken ct)
+    {
+        var authorityHost = authority.Split(' ')[0];
+        var host = authorityHost.Split(':')[0];
+        var port = authorityHost.Contains(':') && int.TryParse(authorityHost.Split(':')[1], out var p) ? p : 443;
+        await stream.WriteAsync("HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray(), ct);
+        _buffer.Push(new InterceptedRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            Source = "http-proxy",
+            Timestamp = DateTime.UtcNow.ToString("o"),
+            Method = "CONNECT", Host = host, Path = $":{port}",
+            RequestHeaders = InspectorModel.SanitizeHeaders(headers),
+            RequestSize = headBytes, ResponseSize = 0, Status = 200,
+            Note = HopNote,
+        });
+        await Relay(stream, host, port, ct);
+    }
+
     /// <summary>Non-CONNECT: forward to http://{host}{path} and capture the full exchange.</summary>
     private async Task ForwardPlain(NetworkStream stream, string[] parts,
         Dictionary<string, string> headers, byte[]? body, int headBytes, CancellationToken ct)
@@ -126,7 +132,10 @@ public sealed class InspectorHttpProxy : IAsyncDisposable
         var rawHost = hostHeader.Split(':')[0];
         var path = rawPath.StartsWith("http", StringComparison.OrdinalIgnoreCase)
             ? new Uri(rawPath).PathAndQuery : rawPath;
-        var url = $"http://{hostHeader}{path}";
+        var hostParts = hostHeader.Split(':');
+        var url = new UriBuilder("http", hostParts[0],
+            hostParts.Length > 1 && int.TryParse(hostParts[1], out var hp) ? hp : 80, path)
+            .Uri.ToString(); // NOSONAR — forward-proxy semantics are http by definition
         var started = System.Diagnostics.Stopwatch.StartNew();
         var entry = new InterceptedRequest
         {

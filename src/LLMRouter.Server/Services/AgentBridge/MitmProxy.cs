@@ -179,6 +179,8 @@ public sealed class MitmProxy : IAsyncDisposable
         }
     }
 
+    private const string ModelKey = "model";
+
     /// <summary>Intercept HTTP/1.1 requests inside a terminated TLS stream.</summary>
     private async Task InterceptHttp(BufferedReader reader, SslStream tls, MitmTarget target, string host, CancellationToken ct)
     {
@@ -198,37 +200,11 @@ public sealed class MitmProxy : IAsyncDisposable
             var headers = ParseHeaders(headText);
             var body = await ReadBody(reader, headers, ct);
 
-            var entry = new TrafficInspector.InterceptedRequest
-            {
-                Id = Guid.NewGuid().ToString(),
-                Source = "agent-bridge",
-                Agent = target.Name,
-                Timestamp = DateTime.UtcNow.ToString("o"),
-                Method = method, Host = host, Path = path,
-                RequestHeaders = TrafficInspector.InspectorModel.SanitizeHeaders(headers),
-                RequestBody = body is null ? null
-                    : TrafficInspector.MaskSecrets.Mask(Encoding.UTF8.GetString(body)),
-                RequestSize = read.Value.head.Length + (body?.Length ?? 0),
-                Status = "in-flight",
-            };
+            var entry = NewEntry(target, host, method, path, headers, body, read.Value.head.Length);
             _capture?.Invoke(entry);
             var started = System.Diagnostics.Stopwatch.StartNew();
 
-            // Model mapping (upstream handler contract: source_model → target_model).
-            if (mappings.Count > 0 && body is not null)
-            {
-                var mapped = TryMapModel(body, mappings);
-                if (!ReferenceEquals(mapped, body))
-                {
-                    try
-                    {
-                        entry.SourceModel = (System.Text.Json.Nodes.JsonNode.Parse(body) as JsonObject)?["model"]?.GetValue<string>();
-                        entry.MappedModel = (System.Text.Json.Nodes.JsonNode.Parse(mapped!) as JsonObject)?["model"]?.GetValue<string>();
-                    }
-                    catch (System.Text.Json.JsonException) { /* mapping bookkeeping is best-effort */ }
-                    body = mapped;
-                }
-            }
+            body = ApplyMapping(mappings, body, entry);
 
             int status; List<KeyValuePair<string, string>> respHeaders; byte[] respBody;
             try { (status, respHeaders, respBody) = await Forward(method, path, headers, body, apiKey, ct); }
@@ -240,18 +216,56 @@ public sealed class MitmProxy : IAsyncDisposable
                 _capture?.Invoke(entry);
                 throw;
             }
-            entry.Status = status;
-            entry.ResponseHeaders = TrafficInspector.InspectorModel.SanitizeHeaders(respHeaders);
-            entry.ResponseBody = TrafficInspector.MaskSecrets.Mask(Encoding.UTF8.GetString(respBody));
-            entry.ResponseSize = respBody.Length;
-            entry.UpstreamLatencyMs = started.ElapsedMilliseconds;
-            entry.TotalLatencyMs = started.ElapsedMilliseconds;
-            _capture?.Invoke(entry);
+            CompleteEntry(entry, status, respHeaders, respBody, started);
             await WriteResponse(tls, status, respHeaders, respBody, ct);
             if (!headers.TryGetValue("connection", out var conn) ||
                 !conn.Equals("keep-alive", StringComparison.OrdinalIgnoreCase) && conn?.Equals("close", StringComparison.OrdinalIgnoreCase) == true)
                 return;
         }
+    }
+
+    private TrafficInspector.InterceptedRequest NewEntry(MitmTarget target, string host, string method,
+        string path, Dictionary<string, string> headers, byte[]? body, int headBytes)
+        => new()
+        {
+            Id = Guid.NewGuid().ToString(),
+            Source = "agent-bridge",
+            Agent = target.Name,
+            Timestamp = DateTime.UtcNow.ToString("o"),
+            Method = method, Host = host, Path = path,
+            RequestHeaders = TrafficInspector.InspectorModel.SanitizeHeaders(headers),
+            RequestBody = body is null ? null
+                : TrafficInspector.MaskSecrets.Mask(Encoding.UTF8.GetString(body)),
+            RequestSize = headBytes + (body?.Length ?? 0),
+            Status = "in-flight",
+        };
+
+    /// <summary>Model mapping (upstream handler contract: source_model → target_model).</summary>
+    private static byte[]? ApplyMapping(IReadOnlyDictionary<string, string> mappings, byte[]? body,
+        TrafficInspector.InterceptedRequest entry)
+    {
+        if (mappings.Count == 0 || body is null) return body;
+        var mapped = TryMapModel(body, mappings);
+        if (ReferenceEquals(mapped, body)) return body;
+        try
+        {
+            entry.SourceModel = (JsonNode.Parse(body) as JsonObject)?[ModelKey]?.GetValue<string>();
+            entry.MappedModel = (JsonNode.Parse(mapped!) as JsonObject)?[ModelKey]?.GetValue<string>();
+        }
+        catch (JsonException) { /* mapping bookkeeping is best-effort */ }
+        return mapped;
+    }
+
+    private void CompleteEntry(TrafficInspector.InterceptedRequest entry, int status,
+        List<KeyValuePair<string, string>> respHeaders, byte[] respBody, System.Diagnostics.Stopwatch started)
+    {
+        entry.Status = status;
+        entry.ResponseHeaders = TrafficInspector.InspectorModel.SanitizeHeaders(respHeaders);
+        entry.ResponseBody = TrafficInspector.MaskSecrets.Mask(Encoding.UTF8.GetString(respBody));
+        entry.ResponseSize = respBody.Length;
+        entry.UpstreamLatencyMs = started.ElapsedMilliseconds;
+        entry.TotalLatencyMs = started.ElapsedMilliseconds;
+        _capture?.Invoke(entry);
     }
 
     private async Task InterceptPlainHttp(BufferedReader reader, NetworkStream stream, string headText, CancellationToken ct)
@@ -309,10 +323,10 @@ public sealed class MitmProxy : IAsyncDisposable
         try
         {
             var node = JsonNode.Parse(body) as JsonObject;
-            if (node?["model"]?.GetValue<string>() is { } src &&
+            if (node?[ModelKey]?.GetValue<string>() is { } src &&
                 mappings.TryGetValue(src, out var dst))
             {
-                node["model"] = dst;
+                node[ModelKey] = dst;
                 return Encoding.UTF8.GetBytes(node.ToJsonString());
             }
         }

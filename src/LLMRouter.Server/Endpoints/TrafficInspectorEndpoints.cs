@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -19,6 +18,7 @@ public static class TrafficInspectorEndpoints
     private const string InternalTokenEnv = "LLMR_INSPECTOR_INTERNAL_INGEST_TOKEN";
     private const int HttpProxyDefaultPort = 9080;
     private const string ReplaySourceHeader = "x-llmrouter-source";
+    private const string Base = "/api/tools/traffic-inspector";
 
     private static readonly string InternalToken
         = Environment.GetEnvironmentVariable(InternalTokenEnv) is { Length: >= 16 } t
@@ -26,9 +26,30 @@ public static class TrafficInspectorEndpoints
 
     public static void Map(WebApplication app)
     {
-        var g = app.MapGroup("/api/tools/traffic-inspector");
+        var g = app.MapGroup(Base);
+        MapRequests(g);
+        MapWs(app);
+        MapSessions(g);
+        MapExport(g);
+        MapCaptureModes(g);
+        MapHosts(g);
+        MapInternalIngest(g);
+    }
 
-        // GET requests (+ filters profile|host|agent|status|source|sessionId)
+    /// <summary>Map routes + wire the agent-bridge capture sink into the shared buffer.</summary>
+    public static void MapAndWire(WebApplication app)
+    {
+        Map(app);
+        var ti = app.Services.GetRequiredService<TrafficInspectorService>();
+        var ab = app.Services.GetRequiredService<Services.AgentBridge.AgentBridgeService>();
+        ab.Proxy.SetCapture(r =>
+        {
+            if (ti.Buffer.Get(r.Id) is null) ti.Buffer.Push(r); else ti.Buffer.Update(r.Id, r);
+        });
+    }
+
+    private static void MapRequests(RouteGroupBuilder g)
+    {
         g.MapGet("/requests", (HttpContext ctx, TrafficInspectorService svc) =>
         {
             var q = ctx.Request.Query;
@@ -41,16 +62,13 @@ public static class TrafficInspectorEndpoints
                 q["sessionId"].Count > 0 ? q["sessionId"].ToString() : null);
             return Results.Ok(new { requests = svc.Buffer.List(filters) });
         });
-        // DELETE requests → 204 clear
         g.MapDelete("/requests", (TrafficInspectorService svc) =>
         {
             svc.Buffer.Clear();
             return Results.NoContent();
         });
-        // GET requests/{id}
         g.MapGet("/requests/{id}", (string id, TrafficInspectorService svc) =>
             svc.Buffer.Get(id) is { } r ? Results.Ok(r) : Results.NotFound());
-        // PUT requests/{id}/annotation {annotation|note} ≤10k
         g.MapPut("/requests/{id}/annotation", async (string id, HttpContext ctx, TrafficInspectorService svc) =>
         {
             var req = svc.Buffer.Get(id);
@@ -63,11 +81,13 @@ public static class TrafficInspectorEndpoints
             svc.Buffer.Update(id, req);
             return Results.Ok(new { ok = true });
         });
-        // POST requests/{id}/replay
         g.MapPost("/requests/{id}/replay", async (string id, TrafficInspectorService svc) =>
             await Replay(id, svc));
-        // WS ws → {type:"snapshot"} then live events
-        app.Map("/api/tools/traffic-inspector/ws", async (HttpContext ctx, TrafficInspectorService svc) =>
+    }
+
+    private static void MapWs(WebApplication app)
+    {
+        app.Map(Base + "/ws", async (HttpContext ctx, TrafficInspectorService svc) =>
         {
             if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = 400; return; }
             using var ws = await ctx.WebSockets.AcceptWebSocketAsync();
@@ -88,7 +108,10 @@ public static class TrafficInspectorEndpoints
             catch (OperationCanceledException) { /* client disconnected */ }
             finally { unsub(); }
         });
-        // sessions
+    }
+
+    private static void MapSessions(RouteGroupBuilder g)
+    {
         g.MapGet("/sessions", async (TrafficInspectorService svc) => Results.Ok(new { sessions = await svc.ListSessions() }));
         g.MapPost("/sessions", async (HttpContext ctx, TrafficInspectorService svc) =>
         {
@@ -111,7 +134,7 @@ public static class TrafficInspectorEndpoints
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
             var action = body?["action"]?.GetValue<string>();
             if (action is not ("stop" or "rename")) return Results.BadRequest(new { error = "action must be stop|rename" });
-            return await svc.PatchSession(id, action, body?["name"]?.GetValue<string>()) is { } s
+            return await svc.PatchSession(id, action, body!["name"]?.GetValue<string>()) is { } s
                 ? Results.Ok(s) : Results.NotFound();
         });
         g.MapDelete("/sessions/{id}", async (string id, TrafficInspectorService svc) =>
@@ -133,13 +156,19 @@ public static class TrafficInspectorEndpoints
             ctx.Response.Headers.ContentDisposition = $"attachment; filename=\"{(session.Name ?? "traffic")}.har\"";
             return Results.Json(HarExport.ToHar(reqs));
         });
-        // export.har (buffer, filtered)
+    }
+
+    private static void MapExport(RouteGroupBuilder g)
+    {
         g.MapGet("/export.har", (HttpContext ctx, TrafficInspectorService svc) =>
         {
             ctx.Response.Headers.ContentDisposition = "attachment; filename=\"traffic.har\"";
             return Results.Json(HarExport.ToHar(svc.Buffer.List()));
         });
-        // capture-modes
+    }
+
+    private static void MapCaptureModes(RouteGroupBuilder g)
+    {
         g.MapGet("/capture-modes", async (HttpContext ctx, TrafficInspectorService svc,
             IServiceScopeFactory scopes) =>
         {
@@ -159,7 +188,7 @@ public static class TrafficInspectorEndpoints
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
             var action = body?["action"]?.GetValue<string>();
             if (action is not ("start" or "stop")) return Results.BadRequest(new { error = "action must be start|stop" });
-            var port = body?["port"]?.GetValue<int>() ?? HttpProxyDefaultPort;
+            var port = body!["port"]?.GetValue<int>() ?? HttpProxyDefaultPort;
             var result = await svc.HttpProxyAction(action, port);
             return action == "start" ? Results.Json(result, statusCode: 201) : Results.Ok(result);
         });
@@ -168,7 +197,7 @@ public static class TrafficInspectorEndpoints
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
             var action = body?["action"]?.GetValue<string>();
             if (action is not ("apply" or "revert")) return Results.BadRequest(new { error = "action must be apply|revert" });
-            var r = await svc.SystemProxyAction(action, body?["port"]?.GetValue<int>(), body?["guardMinutes"]?.GetValue<int>());
+            var r = await svc.SystemProxyAction(action, body!["port"]?.GetValue<int>(), body["guardMinutes"]?.GetValue<int>());
             return Results.Ok(r);
         });
         g.MapPost("/capture-modes/tls-intercept", async (HttpContext ctx, TrafficInspectorService svc) =>
@@ -177,14 +206,17 @@ public static class TrafficInspectorEndpoints
             var enabled = body?["enabled"]?.GetValue<bool>() ?? false;
             return Results.Ok(await svc.SetTlsIntercept(enabled));
         });
-        // hosts
+    }
+
+    private static void MapHosts(RouteGroupBuilder g)
+    {
         g.MapGet("/hosts", async (TrafficInspectorService svc) => Results.Ok(new { hosts = await svc.ListHosts() }));
         g.MapPost("/hosts", async (HttpContext ctx, TrafficInspectorService svc) =>
         {
             var body = await ctx.Request.ReadFromJsonAsync<JsonObject>();
             var host = body?["host"]?.GetValue<string>();
             if (string.IsNullOrEmpty(host)) return Results.BadRequest(new { error = "host required" });
-            await svc.AddHost(host, body?["kind"]?.GetValue<string>() ?? "custom", body?["label"]?.GetValue<string>());
+            await svc.AddHost(host, body!["kind"]?.GetValue<string>() ?? "custom", body["label"]?.GetValue<string>());
             return Results.Json(new { ok = true }, statusCode: 201);
         });
         g.MapPatch("/hosts/{host}", async (string host, HttpContext ctx, TrafficInspectorService svc) =>
@@ -198,15 +230,16 @@ public static class TrafficInspectorEndpoints
             await svc.RemoveHost(host);
             return Results.NoContent();
         });
-        // internal ingest (loopback Bearer)
+    }
+
+    private static void MapInternalIngest(RouteGroupBuilder g)
+    {
         g.MapPost("/internal/ingest", async (HttpContext ctx, TrafficInspectorService svc) =>
         {
             var auth = ctx.Request.Headers.Authorization.ToString();
             var token = auth.StartsWith("Bearer ", StringComparison.Ordinal) ? auth[7..] : "";
-            var exp = Convert.FromBase64String(Convert.ToBase64String(
-                System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(InternalToken))));
-            var got = Convert.FromBase64String(Convert.ToBase64String(
-                System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token))));
+            var exp = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(InternalToken));
+            var got = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(token));
             if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(exp, got))
                 return Results.Unauthorized();
             var body = await ctx.Request.ReadFromJsonAsync<InterceptedRequest>();
@@ -226,7 +259,8 @@ public static class TrafficInspectorEndpoints
     {
         var req = svc.Buffer.Get(id);
         if (req is null) return Results.NotFound();
-        var baseUrl = Environment.GetEnvironmentVariable("LLMROUTER_BASE_URL") ?? "http://127.0.0.1:5000";
+        var defaultBase = new UriBuilder("http", "127.0.0.1", 5000).Uri.ToString().TrimEnd('/');
+        var baseUrl = Environment.GetEnvironmentVariable("LLMROUTER_BASE_URL") ?? defaultBase;
         var url = $"{baseUrl.TrimEnd('/')}{req.Path}";
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
         var msg = new HttpRequestMessage(new HttpMethod(req.Method), url);

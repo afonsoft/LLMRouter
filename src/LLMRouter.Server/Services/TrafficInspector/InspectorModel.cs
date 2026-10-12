@@ -111,37 +111,41 @@ public static partial class InspectorModel
     ];
     private static readonly string[] LlmBodyKeys = ["messages", "contents", "prompt", "input", "model"];
 
+    private static readonly string[] AgentUas =
+        ["codex", "claude", "gemini", "antigravity", "kiro", "copilot", "cursor"];
+
+    private const string ErrorStatus = "error";
+    private const string InFlightStatus = "in-flight";
+
+    private static bool IsLlmHost(string host)
+        => LlmHosts.Any(h => host == h) || LlmHostSuffixes.Any(s => host.EndsWith(s, StringComparison.Ordinal));
+
+    private static bool IsLlmPath(string path)
+        => LlmPathPatterns.Any(p => path.Contains(p, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Parses the JSON body; returns "llm" on an LLM shape, "app" on other JSON, null otherwise.</summary>
+    private static string? BodySignal(string? body)
+    {
+        if (body is null) return null;
+        try
+        {
+            if (JsonNode.Parse(body) is not JsonObject parsed) return null;
+            return LlmBodyKeys.Any(k => parsed.ContainsKey(k)) ? "llm" : "app";
+        }
+        catch (JsonException) { return null; /* non-JSON body — cannot detect */ }
+    }
+
     /// <summary>detectKind port — llm / app / unknown.</summary>
     public static string DetectKind(InterceptedRequest req)
     {
-        var host = req.Host.ToLowerInvariant();
-        if (LlmHosts.Any(h => host == h) || LlmHostSuffixes.Any(s => host.EndsWith(s, StringComparison.Ordinal)))
+        if (IsLlmHost(req.Host.ToLowerInvariant()) || IsLlmPath(req.Path))
             return "llm";
-        if (LlmPathPatterns.Any(p => req.Path.Contains(p, StringComparison.OrdinalIgnoreCase)))
-            return "llm";
-        var bodySignalFired = false;
-        if (req.RequestBody is not null)
-        {
-            try
-            {
-                if (JsonNode.Parse(req.RequestBody) is JsonObject body)
-                {
-                    if (LlmBodyKeys.Any(k => body.ContainsKey(k))) return "llm";
-                    bodySignalFired = true;
-                }
-            }
-            catch (JsonException) { /* non-JSON body — cannot detect */ }
-        }
+        var signal = BodySignal(req.RequestBody);
+        if (signal == "llm") return "llm";
         var ua = req.RequestHeaders.TryGetValue("user-agent", out var u) ? u : "";
-        if (ua.Contains("codex", StringComparison.OrdinalIgnoreCase)
-            || ua.Contains("claude", StringComparison.OrdinalIgnoreCase)
-            || ua.Contains("gemini", StringComparison.OrdinalIgnoreCase)
-            || ua.Contains("antigravity", StringComparison.OrdinalIgnoreCase)
-            || ua.Contains("kiro", StringComparison.OrdinalIgnoreCase)
-            || ua.Contains("copilot", StringComparison.OrdinalIgnoreCase)
-            || ua.Contains("cursor", StringComparison.OrdinalIgnoreCase))
+        if (AgentUas.Any(a => ua.Contains(a, StringComparison.OrdinalIgnoreCase)))
             return "llm";
-        return bodySignalFired ? "app" : "unknown";
+        return signal ?? "unknown";
     }
 
     /// <summary>computeContextKey port — 12-hex SHA-256 of the system prompt.</summary>
@@ -162,33 +166,40 @@ public static partial class InspectorModel
         catch (JsonException) { return null; }
         if (body is null) return null;
 
-        if (body["system"] is { } sysNode)
-        {
-            if (sysNode is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0) return s;
-            if (sysNode is JsonArray arr)
-            {
-                var parts = arr.Select(TextOfPart).Where(t => t is not null).ToList();
-                if (parts.Count > 0) return string.Join("\n", parts);
-            }
-        }
-        if (body["messages"] is JsonArray messages && messages.Count > 0 &&
-            messages[0] is JsonObject first &&
-            first["role"]?.GetValue<string>() == "system")
-        {
-            var content = first["content"];
-            if (content is JsonValue cv && cv.TryGetValue<string>(out var cs)) return cs;
-            if (content is JsonArray ca)
-            {
-                var parts = ca.Select(TextOfPart).Where(t => t is not null).ToList();
-                if (parts.Count > 0) return string.Join("\n", parts);
-            }
-        }
-        if (body["systemInstruction"] is JsonObject si && si["parts"] is JsonArray sparts)
-        {
-            var parts = sparts.Select(TextOfPart).Where(t => t is not null).ToList();
-            if (parts.Count > 0) return string.Join("\n", parts);
-        }
+        return SystemOfAnthropic(body) ?? SystemOfOpenAi(body) ?? SystemOfGemini(body);
+    }
+
+    /// <summary>Anthropic top-level `system`: string | array of {text}.</summary>
+    private static string? SystemOfAnthropic(JsonObject body)
+    {
+        if (body["system"] is not { } sysNode) return null;
+        if (sysNode is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0) return s;
+        if (sysNode is JsonArray arr) return JoinTextParts(arr);
         return null;
+    }
+
+    /// <summary>OpenAI `messages[0].role == system`: string | array of {text}.</summary>
+    private static string? SystemOfOpenAi(JsonObject body)
+    {
+        if (body["messages"] is not JsonArray messages || messages.Count == 0) return null;
+        if (messages[0] is not JsonObject first || first["role"]?.GetValue<string>() != "system") return null;
+        var content = first["content"];
+        if (content is JsonValue cv && cv.TryGetValue<string>(out var cs)) return cs;
+        if (content is JsonArray ca) return JoinTextParts(ca);
+        return null;
+    }
+
+    /// <summary>Gemini `systemInstruction.parts[].text`.</summary>
+    private static string? SystemOfGemini(JsonObject body)
+    {
+        if (body["systemInstruction"] is not JsonObject si || si["parts"] is not JsonArray parts) return null;
+        return JoinTextParts(parts);
+    }
+
+    private static string? JoinTextParts(JsonArray arr)
+    {
+        var parts = arr.Select(TextOfPart).Where(t => t is not null).ToList();
+        return parts.Count > 0 ? string.Join("\n", parts) : null;
     }
 
     private static string? TextOfPart(JsonNode? p)
@@ -206,10 +217,10 @@ public static partial class InspectorModel
     /// <summary>Status bucket for filtering — port of statusBucket.</summary>
     public static string StatusBucket(object status) => status switch
     {
-        string s when s == "error" => "error",
-        string s when s == "in-flight" => "in-flight",
-        JsonElement je when je.ValueKind == JsonValueKind.String && je.GetString() == "error" => "error",
-        JsonElement je when je.ValueKind == JsonValueKind.String => "in-flight",
+        string s when s == ErrorStatus => ErrorStatus,
+        string s when s == InFlightStatus => InFlightStatus,
+        JsonElement je when je.ValueKind == JsonValueKind.String && je.GetString() == ErrorStatus => ErrorStatus,
+        JsonElement je when je.ValueKind == JsonValueKind.String => InFlightStatus,
         _ when NumericStatus(status) is { } n => n switch
         {
             >= 200 and < 300 => "2xx",

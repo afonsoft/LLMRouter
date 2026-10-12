@@ -168,7 +168,7 @@ public static class SidebarData
         new("help", "helpSection", "Help",
             Items: [
             new("docs", "/docs", "docs", "menu_book", Subtitle: "docsSubtitle"),
-            new("issues", "https://github.com/diegosouzapw/OmniRoute/issues", "issues", "bug_report", Subtitle: "issuesSubtitle"),
+            new("issues", "https://github.com/afonsoft/LLMRouter/issues", "issues", "bug_report", Subtitle: "issuesSubtitle"),
             new("changelog", "/dashboard/changelog", "changelog", "campaign", Subtitle: "changelogSubtitle")
             ]
         ),

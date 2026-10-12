@@ -1,21 +1,22 @@
 @page "/docs"
 @page "/docs/{*Slug}"
+@layout Layout.DocsLayout
 @inject Api Api
 @inject Loc Loc
 @inject IJSRuntime JS
 
 <style>
-    .docs-layout { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
+    .docs-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
     .docs-sidebar { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding-right: 4px; }
     .docs-back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted, #a1a1aa); font-size: 13px; text-decoration: none; margin-bottom: 14px; }
     .docs-back:hover { color: var(--fg, #e4e4e7); }
     .docs-cat { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted, #a1a1aa); margin: 16px 0 6px; font-weight: 600; }
-    .doc-link { display: block; padding: 5px 10px; border-left: 2px solid transparent; color: var(--muted, #a1a1aa); font-size: 13.5px; text-decoration: none; border-radius: 0 6px 6px 0; }
+    .doc-link { display: block; padding: 11px 10px; border-left: 2px solid transparent; color: var(--muted, #a1a1aa); font-size: 15px; font-weight: 500; text-decoration: none; border-radius: 0 6px 6px 0; }
     .doc-link:hover { color: var(--fg, #e4e4e7); background: var(--surface-2, #1c2230); }
     .doc-link.active { color: var(--accent, #f4a7c3); border-left-color: var(--accent, #f4a7c3); background: var(--surface-2, #1c2230); }
     .docs-home { max-width: 860px; margin: 0 auto; padding: 24px 12px; }
     .docs-hero { text-align: center; margin: 32px 0 48px; }
-    .docs-hero h1 { font-size: 34px; font-weight: 700; margin: 0 0 12px; }
+    .docs-hero h1 { font-size: 36px; font-weight: 700; margin: 0 0 12px; }
     .docs-hero .desc { font-size: 16px; color: var(--muted, #a1a1aa); margin-bottom: 14px; }
     .docs-hero kbd { padding: 2px 7px; background: var(--surface-2, #1c2230); border: 1px solid var(--grid-line, rgba(255,255,255,.06)); border-radius: 5px; font-family: ui-monospace, monospace; font-size: 12px; }
     .docs-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 40px; }

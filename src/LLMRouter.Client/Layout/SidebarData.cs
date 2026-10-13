@@ -29,6 +29,7 @@ public static class SidebarData
             new("relay", "/dashboard/relay", "relay", "podcasts", Label: "Relay", Subtitle: "relaySubtitle", SubtitleFallback: "Per-client access tokens"),
             new("session-pools", "/dashboard/session-pools", "sessionPools", "group_work", Label: "Session pools", Subtitle: "sessionPoolsSubtitle", SubtitleFallback: "Warm upstream sessions"),
             new("costs-quota-share", "/dashboard/costs/quota-share", "costsQuotaShare", "pie_chart", Subtitle: "costsQuotaShareSubtitle"),
+            new("billing", "/account/billing", "billing", "credit_card", Label: "Billing", Subtitle: "billingSubtitle", SubtitleFallback: "Credits & payments"),
             new("proxy", "/dashboard/system/proxy", "proxy", "dns", Subtitle: "proxySubtitle")
             ],
             Groups: [

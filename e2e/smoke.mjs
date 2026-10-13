@@ -111,6 +111,11 @@ try {
   if (!usersTxt.includes('Create user') || !usersTxt.includes('Balance'))
     fail('users page missing create form or balance column');
 
+  // 14. SPEC-135: /signup is a public page (auth-exempt) with the signup form
+  await page.goto(base + '/signup', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('input[type="email"]', { timeout: 60_000 });
+  const sgTxt = await page.evaluate(() => document.body.innerText);
+  if (!sgTxt.includes('Create account')) fail('signup page missing create-account form');
   console.log('E2E smoke OK');
 } catch (err) {
   fail(err.message);

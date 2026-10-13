@@ -145,12 +145,14 @@ public static class PublicCatalogEndpoints
                 return Results.Json(new { error = "email já cadastrado" }, JsonOpts, statusCode: 409);
 
             lock (q) { q.Enqueue(now); }
+            var password = b.TryGetProperty("password", out var pw) ? pw.GetString() : null;
             var u = new User
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
                 Email = email,
                 Name = b.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
                 Role = "member", CreatedAt = Now(),
+                PasswordHash = !string.IsNullOrEmpty(password) ? AuthEndpoints.HashPassword(password) : null,
             };
             db.Users.Add(u);
             var k = new UserKey

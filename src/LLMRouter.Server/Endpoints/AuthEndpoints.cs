@@ -29,6 +29,30 @@ public static class AuthEndpoints
         {
             var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             var password = body.TryGetProperty("password", out var p) ? p.GetString() : null;
+            var email = body.TryGetProperty("email", out var em) ? em.GetString()?.Trim() : null;
+
+            // SPEC-135: user login — email+password against User.PasswordHash (pbkdf2, same format)
+            if (!string.IsNullOrEmpty(email))
+            {
+                var u = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Email == email && x.IsActive);
+                if (u?.PasswordHash is not null && VerifyPassword(u.PasswordHash, password))
+                {
+                    var claims = new[]
+                    {
+                        new Claim(ClaimTypes.Name, u.Email),
+                        new Claim("userId", u.Id),
+                        new Claim(ClaimTypes.Role, u.Role),
+                    };
+                    await ctx.SignInAsync("cookie", new ClaimsPrincipal(new ClaimsIdentity(claims, "cookie")));
+                    await Core.Extras.AuditLog.RecordAsync(db, u.Email, "auth.login.user", u.Id, null,
+                        ctx.Connection.RemoteIpAddress?.ToString());
+                    return Results.Json(new { success = true, userId = u.Id, role = u.Role });
+                }
+                await Core.Extras.AuditLog.RecordAsync(db, email, "auth.login.fail",
+                    ip: ctx.Connection.RemoteIpAddress?.ToString());
+                return Results.Json(new { success = false, error = "Invalid email or password" }, statusCode: 401);
+            }
+
             var s = await db.Settings.FirstOrDefaultAsync();
             var data = Parse(s?.Data);
             var requireLogin = GetBool(data, "requireLogin", true);
@@ -73,27 +97,36 @@ public static class AuthEndpoints
             if (string.IsNullOrEmpty(newPw)) return Results.BadRequest(new { error = "newPassword required" });
             var s = await db.Settings.FirstOrDefaultAsync() ?? db.Settings.Add(new SettingRow { Id = 1, Data = "{}" }).Entity;
             var d = Parse(s.Data).Deserialize<Dictionary<string, JsonElement>>() ?? [];
-            var salt = RandomNumberGenerator.GetBytes(16);
-            var hash = Rfc2898DeriveBytes.Pbkdf2(newPw, salt, Iterations, HashAlgorithmName.SHA256, 32);
-            d["adminPasswordHash"] = JsonSerializer.SerializeToElement(
-                $"pbkdf2${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}");
+            d["adminPasswordHash"] = JsonSerializer.SerializeToElement(HashPassword(newPw));
             s.Data = JsonSerializer.Serialize(d);
             await db.SaveChangesAsync();
             return Results.Json(new { success = true });
         });
     }
 
-    internal static bool CheckPassword(JsonElement data, string? password)
+    internal static string HashPassword(string password)
     {
-        if (!data.TryGetProperty("adminPasswordHash", out var h) || h.ValueKind != JsonValueKind.String)
-            return !string.IsNullOrEmpty(password); // first-run: any non-empty password becomes the credential
-        var parts = h.GetString()!.Split('$');
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, HashAlgorithmName.SHA256, 32);
+        return $"pbkdf2${Iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+    }
+
+    internal static bool VerifyPassword(string encoded, string? password)
+    {
+        var parts = encoded.Split('$');
         if (parts.Length != 4 || parts[0] != "pbkdf2") return false;
         if (!int.TryParse(parts[1], out var iters)) return false;
         var salt = Convert.FromBase64String(parts[2]);
         var expected = Convert.FromBase64String(parts[3]);
         var actual = Rfc2898DeriveBytes.Pbkdf2(password ?? "", salt, iters, HashAlgorithmName.SHA256, expected.Length);
         return CryptographicOperations.FixedTimeEquals(actual, expected);
+    }
+
+    internal static bool CheckPassword(JsonElement data, string? password)
+    {
+        if (!data.TryGetProperty("adminPasswordHash", out var h) || h.ValueKind != JsonValueKind.String)
+            return !string.IsNullOrEmpty(password); // first-run: any non-empty password becomes the credential
+        return VerifyPassword(h.GetString()!, password);
     }
 
     internal static JsonElement Parse(string? json)

@@ -237,6 +237,22 @@ public static class UserKeysEndpoints
             return Results.Json(new { usage = rows }, JsonOpts);
         });
 
+        // SPEC-141: CSV export of the user's own generations (same 500-row window)
+        self.MapGet("/me/usage.csv", async (int? days, HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var (u, _, reject) = await Self(ctx, db);
+            if (reject is not null) return reject;
+            var since = DateTime.UtcNow.AddDays(-Math.Clamp(days ?? 30, 1, 365)).ToString("O");
+            var rows = await db.UsageHistory.AsNoTracking()
+                .Where(r => r.UserId == u!.Id && string.Compare(r.Timestamp, since) > 0)
+                .OrderByDescending(r => r.Id).Take(500).ToListAsync();
+            var sb = new System.Text.StringBuilder("timestamp,model,provider,prompt_tokens,completion_tokens,cost_usd,status,latency_ms\n");
+            foreach (var r in rows)
+                sb.AppendLine($"{r.Timestamp},{Esc(r.Model)},{Esc(r.Provider)},{r.PromptTokens},{r.CompletionTokens},{r.Cost:F6},{r.Status},{r.LatencyMs}");
+            return Results.Text(sb.ToString(), "text/csv");
+            static string Esc(string? s) => s is null ? "" : $"\"{s.Replace("\"", "\"\"")}\"";
+        });
+
         self.MapGet("/me/ledger", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
             var (u, _, reject) = await Self(ctx, db);

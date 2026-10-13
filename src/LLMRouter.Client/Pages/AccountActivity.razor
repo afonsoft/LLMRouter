@@ -1,0 +1,93 @@
+@page "/account/activity"
+@inject Api Api
+@inject Loc Loc
+
+@* SPEC-141: user-scoped activity — OpenRouter Activity for the account holder:
+   headline spend/requests/tokens cards, per-model breakdown bars,
+   generations table, CSV export. Data: GET /api/account/me/usage?days=. *@
+<h1 class="page-title">@Loc.T("accountActivity.title", "Activity")</h1>
+<p class="page-desc">@Loc.T("accountActivity.subtitle", "Your usage and spend")</p>
+
+<div class="flex gap-2 mt-4" style="align-items:center">
+    <select class="input" style="width:auto" @bind="_days" @bind:after="Load">
+        <option value="7">7d</option><option value="30">30d</option><option value="365">all</option>
+    </select>
+    <a class="btn btn-sm" href="api/account/me/usage.csv?days=@_days" download>@Loc.T("accountActivity.export", "Export CSV")</a>
+</div>
+
+@if (_rows is not null)
+{
+    <div class="flex gap-3 mt-4" style="flex-wrap:wrap">
+        <div class="card card-p" style="min-width:150px"><div class="muted xs">@Loc.T("accountActivity.spend", "Spend")</div><div class="bold" style="font-size:20px">$@_spend.ToString("0.00")</div></div>
+        <div class="card card-p" style="min-width:150px"><div class="muted xs">@Loc.T("accountActivity.requests", "Requests")</div><div class="bold" style="font-size:20px">@_rows.Count</div></div>
+        <div class="card card-p" style="min-width:150px"><div class="muted xs">@Loc.T("accountActivity.tokens", "Tokens")</div><div class="bold" style="font-size:20px">@_tokens.ToString("N0")</div></div>
+    </div>
+
+    @if (_byModel.Count > 0)
+    {
+        <div class="card card-p mt-4">
+            <div class="bold sm mb-2">@Loc.T("accountActivity.byModel", "Spend by model")</div>
+            @foreach (var m in _byModel)
+            {
+                <div class="flex gap-2" style="align-items:center;margin:4px 0">
+                    <span class="mono sm" style="width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@m.Key</span>
+                    <div style="flex:1;height:10px;background:var(--surface-2);border-radius:5px;overflow:hidden">
+                        <div style="height:100%;width:@((m.Value / _byModel[0].Value * 100).ToString("0"))%;background:var(--primary)"></div>
+                    </div>
+                    <span class="mono sm">$@m.Value.ToString("0.00")</span>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="card card-p mt-4">
+        <div class="bold sm mb-2">@Loc.T("accountActivity.generations", "Generations")</div>
+        <table class="tbl">
+            <thead><tr><th>@Loc.T("accountActivity.when", "When")</th><th>Model</th><th>Provider</th><th>Tokens</th><th>Cost</th><th>Status</th><th>Latency</th></tr></thead>
+            <tbody>
+                @foreach (var r in _rows.Take(200))
+                {
+                    var pt = r.TryGetProperty("promptTokens", out var p1) ? p1.GetInt32() : 0;
+                    var ct = r.TryGetProperty("completionTokens", out var p2) ? p2.GetInt32() : 0;
+                    <tr>
+                        <td class="muted sm">@r.GetProperty("timestamp").GetString()?[..16]</td>
+                        <td class="mono sm">@r.GetProperty("model").GetString()</td>
+                        <td class="sm">@r.GetProperty("provider").GetString()</td>
+                        <td class="mono sm">@(pt + ct)</td>
+                        <td class="mono sm">$@r.GetProperty("cost").GetDouble().ToString("0.0000")</td>
+                        <td class="sm"><span class="chip @(r.GetProperty("status").GetString() == "200" ? "chip-ok" : "")">@r.GetProperty("status").GetString()</span></td>
+                        <td class="mono sm">@r.GetProperty("latencyMs").GetInt64()ms</td>
+                    </tr>
+                }
+                @if (_rows.Count == 0) { <tr><td colspan="7" class="muted sm">@Loc.T("accountActivity.empty", "No usage in this range.")</td></tr> }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<JsonElement>? _rows;
+    private int _days = 30;
+    private double _spend;
+    private long _tokens;
+    private List<KeyValuePair<string, double>> _byModel = [];
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            var r = await Api.GetAsync($"api/account/me/usage?days={_days}");
+            _rows = r.TryGetProperty("usage", out var a) ? a.EnumerateArray().ToList() : [];
+            _spend = _rows.Sum(x => x.TryGetProperty("cost", out var c) ? c.GetDouble() : 0);
+            _tokens = _rows.Sum(x => (x.TryGetProperty("promptTokens", out var p) ? p.GetInt32() : 0)
+                + (x.TryGetProperty("completionTokens", out var c2) ? c2.GetInt32() : 0));
+            _byModel = _rows.GroupBy(x => x.GetProperty("model").GetString() ?? "?")
+                .Select(gp => new KeyValuePair<string, double>(gp.Key,
+                    gp.Sum(x => x.TryGetProperty("cost", out var c) ? c.GetDouble() : 0)))
+                .OrderByDescending(kv => kv.Value).Take(8).ToList();
+        }
+        catch (HttpRequestException) { _rows = []; }
+    }
+}

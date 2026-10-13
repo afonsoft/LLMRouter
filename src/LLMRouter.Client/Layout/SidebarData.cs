@@ -31,6 +31,7 @@ public static class SidebarData
             new("costs-quota-share", "/dashboard/costs/quota-share", "costsQuotaShare", "pie_chart", Subtitle: "costsQuotaShareSubtitle"),
             new("billing", "/account/billing", "billing", "credit_card", Label: "Billing", Subtitle: "billingSubtitle", SubtitleFallback: "Credits & payments"),
             new("account-keys", "/account/keys", "apiKeys", "key", Label: "API Keys", Subtitle: "accountKeysSubtitle", SubtitleFallback: "Your gateway keys"),
+            new("account-activity", "/account/activity", "activity", "monitoring", Label: "Activity", Subtitle: "accountActivitySubtitle", SubtitleFallback: "Your usage & spend"),
             new("proxy", "/dashboard/system/proxy", "proxy", "dns", Subtitle: "proxySubtitle")
             ],
             Groups: [

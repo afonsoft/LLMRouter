@@ -132,7 +132,7 @@ public sealed class MercadoPagoPaymentProvider(JsonElement cfg, double brlPerUsd
         // MP notifies {type:"payment", data:{id}} — verify x-signature when configured, then fetch status
         var ev = JsonSerializer.Deserialize<JsonElement>(payload);
         var paymentId = ev.TryGetProperty("data", out var d) && d.TryGetProperty("id", out var di)
-            ? di.GetString() ?? di.GetRawText() : "";
+            ? (di.ValueKind == JsonValueKind.String ? di.GetString() ?? "" : di.GetRawText()) : "";
         if (paymentId == "") return ("", false);
         using var msg = new HttpRequestMessage(HttpMethod.Get, $"https://api.mercadopago.com/v1/payments/{paymentId}");
         msg.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);

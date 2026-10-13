@@ -127,7 +127,7 @@ public class PaymentTests
         var p = new MercadoPagoPaymentProvider(
             JsonDocument.Parse("""{"enabled":true,"accessToken":"tok"}""").RootElement, 5.0);
         var (extId, paid) = await p.ParseWebhookAsync(
-            """{"type":"payment","data":{"id":"999"}}""", "", new HttpClient(h));
+            """{"type":"payment","data":{"id":999}}""", "", new HttpClient(h));  // MP sends numeric data.id
         Assert.Equal("tx123", extId);
         Assert.True(paid);
         Assert.Contains("/v1/payments/999", h.Last!.RequestUri!.ToString());

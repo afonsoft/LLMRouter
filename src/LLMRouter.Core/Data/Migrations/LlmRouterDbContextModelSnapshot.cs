@@ -1141,6 +1141,49 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("modelCooldowns");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.PaymentTransaction", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("AmountUsd")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("CheckoutUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SettledAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("paymentTransactions");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.PlaygroundPreset", b =>
                 {
                     b.Property<string>("Id")

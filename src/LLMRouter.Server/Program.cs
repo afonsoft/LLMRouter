@@ -313,6 +313,7 @@ LLMRouter.Server.Endpoints.AgentBridgeEndpoints.Map(app);
 LLMRouter.Server.Endpoints.TrafficInspectorEndpoints.MapAndWire(app);
 VscodeEndpoints.Map(app);
 UserKeysEndpoints.Map(app);
+PaymentEndpoints.Map(app);
 PublicCatalogEndpoints.Map(app);
 EvalsEndpoints.Map(app);
 A2aEndpoints.Map(app);

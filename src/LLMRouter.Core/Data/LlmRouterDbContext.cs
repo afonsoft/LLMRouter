@@ -63,6 +63,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<UserKey> UserKeys => Set<UserKey>();
     /// <summary>SPEC-111: ledger de crédito append-only por usuário.</summary>
     public DbSet<CreditLedgerRow> CreditLedger => Set<CreditLedgerRow>();
+    /// <summary>SPEC-136: transações de pagamento (checkout → webhook → topup).</summary>
+    public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
     /// <summary>SPEC-057: trilha de chamadas MCP.</summary>
     public DbSet<McpToolCall> McpToolCalls => Set<McpToolCall>();
     /// <summary>SPEC-058: histórico de execuções de skills.</summary>

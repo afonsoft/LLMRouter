@@ -919,6 +919,32 @@ public class CreditLedgerRow
 }
 
 /// <summary>
+/// SPEC-136: payment transaction — one row per checkout created with a
+/// provider (stripe | mercadopago | pagseguro). Settled exactly once via
+/// webhook/callback, then a creditLedger topup row is written referencing it.
+/// </summary>
+[Table("paymentTransactions")]
+public class PaymentTransaction
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string UserId { get; set; } = "";
+    /// <summary>stripe | mercadopago | pagseguro.</summary>
+    public string Provider { get; set; } = "";
+    /// <summary>Provider-side id (checkout session / preference / order) — idempotency key.</summary>
+    public string ExternalId { get; set; } = "";
+    public double AmountUsd { get; set; }
+    /// <summary>ISO currency charged (usd | brl).</summary>
+    public string Currency { get; set; } = "usd";
+    /// <summary>pending | paid | failed | refunded.</summary>
+    public string Status { get; set; } = "pending";
+    /// <summary>Hosted checkout URL the user is redirected to.</summary>
+    public string? CheckoutUrl { get; set; }
+    public string CreatedAt { get; set; } = "";
+    public string? SettledAt { get; set; }
+}
+
+/// <summary>
 /// SPEC-116 (slice 3): per-request proxy journal — mirrors upstream proxy_logs.
 /// One row per upstream send (or provider test), tagged by the proxy layer that
 /// carried it (direct | global oneproxy | provider pool | provider-test).

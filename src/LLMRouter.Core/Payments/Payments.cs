@@ -136,9 +136,14 @@ public sealed class MercadoPagoPaymentProvider(JsonElement cfg, double brlPerUsd
         if (paymentId == "") return ("", false);
         using var msg = new HttpRequestMessage(HttpMethod.Get, $"https://api.mercadopago.com/v1/payments/{paymentId}");
         msg.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);
-        var pay = await (await http.SendAsync(msg, ct)).Content.ReadFromJsonAsync<JsonElement>(ct);
-        var extRef = pay.TryGetProperty("external_reference", out var er) ? er.GetString() ?? "" : "";
-        var approved = pay.TryGetProperty("status", out var st) && st.GetString() == "approved";
+        JsonElement pay;
+        try { pay = await (await http.SendAsync(msg, ct)).Content.ReadFromJsonAsync<JsonElement>(ct); }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        { throw new InvalidOperationException("mercadopago verification failed"); }
+        var extRef = pay.TryGetProperty("external_reference", out var er)
+            ? (er.ValueKind == JsonValueKind.String ? er.GetString() ?? "" : er.GetRawText()) : "";
+        var approved = pay.TryGetProperty("status", out var st)
+            && st.ValueKind == JsonValueKind.String && st.GetString() == "approved";
         return (extRef, approved);
     }
 }
@@ -190,9 +195,13 @@ public sealed class PagSeguroPaymentProvider(JsonElement cfg, double brlPerUsd) 
         var baseUrl = cfg.TryGetProperty("baseUrl", out var bu) ? bu.GetString() ?? "https://api.pagseguro.com" : "https://api.pagseguro.com";
         using var msg = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/orders/{orderId}");
         msg.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);
-        var ord = await (await http.SendAsync(msg, ct)).Content.ReadFromJsonAsync<JsonElement>(ct);
+        JsonElement ord;
+        try { ord = await (await http.SendAsync(msg, ct)).Content.ReadFromJsonAsync<JsonElement>(ct); }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        { throw new InvalidOperationException("pagseguro verification failed"); }
         var paid = ord.TryGetProperty("charges", out var ch) && ch.GetArrayLength() > 0
-            && ch[0].TryGetProperty("status", out var st) && st.GetString() == "PAID";
+            && ch[0].TryGetProperty("status", out var st)
+            && st.ValueKind == JsonValueKind.String && st.GetString() == "PAID";
         return (orderId, paid);
     }
 }

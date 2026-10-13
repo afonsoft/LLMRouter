@@ -116,6 +116,13 @@ try {
   await page.waitForSelector('input[type="email"]', { timeout: 60_000 });
   const sgTxt = await page.evaluate(() => document.body.innerText);
   if (!sgTxt.includes('Create account')) fail('signup page missing create-account form');
+
+  // 15. SPEC-138: /account/keys renders OpenRouter-style keys table + create form
+  await page.goto(base + '/account/keys', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.page-title', { timeout: 60_000 });
+  const akTxt = await page.evaluate(() => document.body.innerText);
+  if (!/api keys/i.test(akTxt) || !akTxt.includes('Credit limit'))
+    fail('account keys page missing title or limit field');
   console.log('E2E smoke OK');
 } catch (err) {
   fail(err.message);

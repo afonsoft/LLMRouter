@@ -1,0 +1,148 @@
+@page "/account/keys"
+@inject Api Api
+@inject Loc Loc
+
+@* SPEC-138: self-serve API keys — OpenRouter "API Keys" screen.
+   Create named keys w/ credit limit + period, see masked key + spend,
+   edit limit inline, disable/enable. Full key shown once after create. *@
+<h1 class="page-title">@Loc.T("accountKeys.title", "API Keys")</h1>
+<p class="page-desc">@Loc.T("accountKeys.subtitle", "Create keys, set spending limits and track usage")</p>
+
+@{
+    @if (_newKey is not null)
+    {
+        <div class="card card-p mt-4" style="border-color:var(--green,#3fb950)">
+            <div class="muted sm">@Loc.T("accountKeys.created", "Key created — copy it now, it won't be shown again")</div>
+            <code class="mono" style="font-size:15px;user-select:all">@_newKey</code>
+        </div>
+    }
+
+    <div class="card card-p mt-4">
+        <div class="bold sm mb-2">@Loc.T("accountKeys.create", "Create key")</div>
+        <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+            <div><div class="muted xs mb-1">@Loc.T("accountKeys.name", "Name")</div>
+                <input class="input" placeholder="my-app" @bind="_name" /></div>
+            <div><div class="muted xs mb-1">@Loc.T("accountKeys.limit", "Credit limit (USD)")</div>
+                <input class="input" type="number" min="0" step="1" style="width:120px" @bind="_limit" /></div>
+            <div><div class="muted xs mb-1">@Loc.T("accountKeys.period", "Limit period")</div>
+                <select class="input" @bind="_period">
+                    <option value="none">@Loc.T("accountKeys.periodNone", "No reset")</option>
+                    <option value="daily">daily</option>
+                    <option value="weekly">weekly</option>
+                    <option value="monthly">monthly</option>
+                </select></div>
+            <div><div class="muted xs mb-1">@Loc.T("accountKeys.models", "Allowed models (csv, empty = all)")</div>
+                <input class="input" style="width:220px" placeholder="openai/gpt-4o, google/*" @bind="_models" /></div>
+            <button class="btn" @onclick="Create" disabled="@_busy">@Loc.T("accountKeys.createBtn", "Create")</button>
+        </div>
+    </div>
+
+    <div class="card card-p mt-4">
+        <table class="tbl">
+            <thead><tr>
+                <th>@Loc.T("accountKeys.name", "Name")</th><th>@Loc.T("accountKeys.key", "Key")</th>
+                <th>@Loc.T("accountKeys.limit", "Limit")</th><th>@Loc.T("accountKeys.usage", "Usage")</th>
+                <th>@Loc.T("accountKeys.status", "Status")</th><th>@Loc.T("accountKeys.created", "Created")</th><th></th>
+            </tr></thead>
+            <tbody>
+                @if (_keys is { Count: > 0 })
+                {
+                    @foreach (var k in _keys)
+                    {
+                        var id = k.GetProperty("id").GetString()!;
+                        var active = k.GetProperty("isActive").GetBoolean();
+                        var budget = k.GetProperty("budgetUsd").GetDouble();
+                        <tr style="@(active ? "" : "opacity:.55")">
+                            <td class="sm">@(k.GetProperty("name").GetString() ?? "—")</td>
+                            <td class="mono sm">@k.GetProperty("key").GetString()</td>
+                            <td class="mono sm">
+                                @if (_edit == id)
+                                {
+                                    <input class="input" type="number" min="0" step="1" style="width:90px;height:24px;font-size:12px" @bind="_editLimit" />
+                                    <select class="input" style="height:24px;font-size:12px" @bind="_editPeriod">
+                                        <option value="none">—</option><option>daily</option><option>weekly</option><option>monthly</option>
+                                    </select>
+                                    <button class="btn btn-sm" @onclick="() => SaveLimit(id)">✓</button>
+                                    <button class="btn btn-sm" @onclick="() => _edit = null">✕</button>
+                                }
+                                else
+                                {
+                                    @(budget > 0 ? $"${budget:0.00} / {k.GetProperty("budgetPeriod").GetString()}" : "∞")
+                                    <button class="btn btn-sm" style="margin-left:6px" @onclick="() => StartEdit(k)">@Loc.T("accountKeys.edit", "Edit")</button>
+                                }
+                            </td>
+                            <td class="mono sm">$@k.GetProperty("spendUsd").GetDouble().ToString("0.00")</td>
+                            <td class="sm"><span class="chip @(active ? "chip-ok" : "")">@(active ? "active" : "disabled")</span></td>
+                            <td class="muted sm">@k.GetProperty("createdAt").GetString()?[..10]</td>
+                            <td><button class="btn btn-sm" @onclick="() => Toggle(k)">@(active ? Loc.T("accountKeys.disable", "Disable") : Loc.T("accountKeys.enable", "Enable"))</button></td>
+                        </tr>
+                    }
+                }
+                else if (_err is not null) { <tr><td colspan="7" class="muted sm">@_err</td></tr> }
+                else { <tr><td colspan="7" class="muted sm">@Loc.T("accountKeys.empty", "No keys yet — create one above.")</td></tr> }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<JsonElement>? _keys;
+    private string? _err, _newKey, _name, _period = "none", _models, _edit;
+    private double _limit, _editLimit;
+    private string _editPeriod = "none";
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/account/me/keys");
+            _keys = r.TryGetProperty("keys", out var a) ? a.EnumerateArray().ToList() : [];
+        }
+        catch (HttpRequestException) { _err = "accountKeys.unavailable"; }
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        try
+        {
+            var allow = string.IsNullOrWhiteSpace(_models) ? Array.Empty<string>()
+                : _models.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var r = await Api.PostAsync("api/account/me/keys",
+                new { name = _name, budgetUsd = _limit, budgetPeriod = _period, modelsAllow = allow });
+            _newKey = r.GetProperty("key").GetString();
+            _name = null; _limit = 0;
+            await Load();
+        }
+        catch (HttpRequestException) { _err = "accountKeys.createFailed"; }
+        _busy = false;
+    }
+
+    private void StartEdit(JsonElement k)
+    {
+        _edit = k.GetProperty("id").GetString();
+        _editLimit = k.GetProperty("budgetUsd").GetDouble();
+        _editPeriod = k.GetProperty("budgetPeriod").GetString() ?? "none";
+    }
+
+    private async Task SaveLimit(string id)
+    {
+        await Api.PatchAsync($"api/account/me/keys/{id}", new { budgetUsd = _editLimit, budgetPeriod = _editPeriod });
+        _edit = null;
+        await Load();
+    }
+
+    private async Task Toggle(JsonElement k)
+    {
+        var id = k.GetProperty("id").GetString()!;
+        var active = k.GetProperty("isActive").GetBoolean();
+        if (active)
+            await Api.DeleteAsync($"api/account/me/keys/{id}");
+        else
+            await Api.PatchAsync($"api/account/me/keys/{id}", new { isActive = true });
+        await Load();
+    }
+}

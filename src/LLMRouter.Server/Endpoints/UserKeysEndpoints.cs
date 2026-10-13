@@ -285,6 +285,11 @@ public static class UserKeysEndpoints
             var b = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body);
             if (b.TryGetProperty("name", out var n)) k.Name = n.GetString();
             if (b.TryGetProperty("modelsAllow", out var ma)) k.ModelsAllow = ma.GetRawText();
+            // SPEC-138: OpenRouter-style "edit limit" — budget fields are mutable
+            if (b.TryGetProperty("budgetUsd", out var bud) && bud.ValueKind == JsonValueKind.Number)
+                k.BudgetUsd = Math.Max(0, bud.GetDouble());
+            if (b.TryGetProperty("budgetPeriod", out var bper) && bper.ValueKind == JsonValueKind.String)
+                k.BudgetPeriod = bper.GetString() is { Length: > 0 } p ? p : k.BudgetPeriod;
             if (b.TryGetProperty("isActive", out var a)) k.IsActive = a.GetBoolean();
             await db.SaveChangesAsync();
             Core.Gateway.HotReads.InvalidateUserKey(k.Key);

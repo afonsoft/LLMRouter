@@ -30,6 +30,13 @@ public sealed class AuthState(HttpClient http)
         return Authenticated;
     }
 
+    public async Task<bool> LoginAsync(string email, string password)
+    {
+        var resp = await http.PostAsJsonAsync("api/auth/login", new { email, password });
+        Authenticated = resp.IsSuccessStatusCode;
+        return Authenticated;
+    }
+
     public async Task RawChangePassword(string newPassword) =>
         await http.PostAsJsonAsync("api/auth/change-password", new { newPassword });
 

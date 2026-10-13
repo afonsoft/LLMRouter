@@ -1,0 +1,124 @@
+@page "/account/billing"
+@inject Api Api
+@inject NavigationManager Nav
+@inject Loc Loc
+
+@* SPEC-135: self-serve billing — balance, Add credits (checkout SPEC-136/137),
+   key spend/budget, ledger history. Works for user logins (userId claim) or vk. *@
+<h1 class="page-title">@Loc.T("billing.title", "Credits & Billing")</h1>
+<p class="page-desc">@Loc.T("billing.subtitle", "Balance, top-ups and transaction history")</p>
+
+@if (_me is null && _err is null)
+{
+    <p class="muted sm mt-4">Loading…</p>
+}
+else if (_err is not null)
+{
+    <div class="card card-p mt-4">
+        <p class="sm">@_err</p>
+        <p class="muted sm mt-2">@Loc.T("billing.needLogin", "Sign in with your account email to see billing.")</p>
+    </div>
+}
+else
+{
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+        <div class="card card-p">
+            <div class="muted sm">@Loc.T("billing.balance", "Credit balance")</div>
+            <div class="mono" style="font-size:28px;font-weight:600">$@_me.Value.GetProperty("user").GetProperty("balance").GetDouble().ToString("0.00")</div>
+            <div class="muted sm mt-2">@_me.Value.GetProperty("user").GetProperty("email").GetString()</div>
+            @if (_providers is { Count: > 0 })
+            {
+                <div class="flex gap-2 mt-4" style="align-items:center;flex-wrap:wrap">
+                    <select class="input" style="width:auto;height:28px;font-size:12px" @bind="_provider">
+                        @foreach (var p in _providers) { <option value="@p.GetString()">@p.GetString()</option> }
+                    </select>
+                    @foreach (var amt in new[] { 10, 25, 50, 100 })
+                    {
+                        <button class="btn btn-sm" @onclick="() => Checkout(amt)" disabled="@_busy">+$@amt</button>
+                    }
+                </div>
+            }
+            else if (_payMsg is null)
+            {
+                <p class="muted sm mt-4">@Loc.T("billing.noProviders", "No payment provider configured yet.")</p>
+            }
+            @if (!string.IsNullOrEmpty(_payMsg)) { <p class="muted sm mt-2">@_payMsg</p> }
+        </div>
+        <div class="card card-p">
+            <div class="bold sm mb-2">@Loc.T("billing.keys", "API keys")</div>
+            @if (_keys is { Count: > 0 })
+            {
+                @foreach (var k in _keys)
+                {
+                    <div class="flex between sm mt-2">
+                        <span class="mono">@(k.GetProperty("name").GetString() ?? "key")</span>
+                        <span class="muted">$@k.GetProperty("spendUsd").GetDouble().ToString("0.00") / @(k.GetProperty("budgetUsd").GetDouble() > 0 ? "$" + k.GetProperty("budgetUsd").GetDouble().ToString("0.00") : "∞")</span>
+                    </div>
+                }
+            }
+            else { <div class="muted sm">no keys</div> }
+        </div>
+    </div>
+
+    <div class="card card-p mt-4">
+        <div class="bold sm mb-2">@Loc.T("billing.history", "Transaction history")</div>
+        <table class="tbl">
+            <thead><tr><th>@Loc.T("billing.reason", "Reason")</th><th>@Loc.T("billing.amount", "Amount")</th><th>@Loc.T("billing.balanceAfter", "Balance")</th><th>@Loc.T("billing.when", "When")</th></tr></thead>
+            <tbody>
+                @if (_ledger is { Count: > 0 })
+                {
+                    @foreach (var l in _ledger)
+                    {
+                        var d = l.GetProperty("delta").GetDouble();
+                        <tr>
+                            <td class="sm">@l.GetProperty("reason").GetString()</td>
+                            <td class="mono sm" style="color:@(d >= 0 ? "var(--green,#3fb950)" : "var(--red,#f85149)")">@(d >= 0 ? "+" : "")@d.ToString("0.00")</td>
+                            <td class="mono sm">$@l.GetProperty("balanceAfter").GetDouble().ToString("0.00")</td>
+                            <td class="muted sm">@l.GetProperty("createdAt").GetString()</td>
+                        </tr>
+                    }
+                }
+                else { <tr><td colspan="4" class="muted sm">—</td></tr> }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private JsonElement? _me;
+    private List<JsonElement>? _ledger, _keys, _providers;
+    private string? _err, _payMsg, _provider;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var me = await Api.GetAsync("api/account/me");
+            _me = me;
+            var led = await Api.GetAsync("api/account/me/ledger");
+            _ledger = led.TryGetProperty("entries", out var e) ? e.EnumerateArray().ToList() : [];
+            var k = await Api.GetAsync("api/account/me/keys");
+            _keys = k.TryGetProperty("keys", out var arr) ? arr.EnumerateArray().ToList() : [];
+            var p = await Api.GetAsync("api/payments/providers");
+            _providers = p.TryGetProperty("providers", out var pa) ? pa.EnumerateArray().ToList() : [];
+            _provider = _providers is { Count: > 0 } ? _providers[0].GetString() : null;
+        }
+        catch (HttpRequestException) { _err = "billing.unavailable"; }
+    }
+
+    private async Task Checkout(int amount)
+    {
+        _busy = true; _payMsg = null;
+        try
+        {
+            var r = await Api.PostAsync("api/payments/checkout", new { provider = _provider ?? "auto", amountUsd = (double)amount });
+            if (r.TryGetProperty("checkoutUrl", out var url) && !string.IsNullOrEmpty(url.GetString()))
+                Nav.NavigateTo(url.GetString()!, true);
+            else
+                _payMsg = "payments.notConfigured";
+        }
+        catch (HttpRequestException) { _payMsg = Loc.T("billing.noPayments", "No payment provider configured yet — ask the admin to enable Stripe, Mercado Pago or PagSeguro."); }
+        _busy = false;
+    }
+}

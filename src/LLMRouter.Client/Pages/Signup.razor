@@ -1,0 +1,77 @@
+@page "/signup"
+@layout Layout.AuthLayout
+@inject Api Api
+@inject NavigationManager Nav
+@inject Loc Loc
+
+@* SPEC-135: public self-serve signup — creates User + first vk- key.
+   Disabled unless settings.signup.enabled. *@
+<h1 style="font-size:21px;font-weight:700;margin:0 0 4px">@Loc.T("signup.title", "Create account")</h1>
+<p class="muted sm" style="margin:0 0 24px">@Loc.T("signup.subtitle", "Get your API key in seconds")</p>
+
+@if (_key is not null)
+{
+    <p class="sm text2" style="margin-bottom:14px">@Loc.T("signup.done", "Account created. This is your API key — store it now, it won't be shown again.")</p>
+    <div class="mono sm" style="word-break:break-all;background:var(--bg-subtle,#111520);padding:10px;border-radius:8px;margin-bottom:16px">@_key</div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center" @onclick='() => Nav.NavigateTo("/login", true)'>
+        @Loc.T("signup.toLogin", "Sign in")
+    </button>
+}
+else
+{
+    <EditForm Model="_m" OnValidSubmit="DoSignup">
+        <div style="text-align:left;margin-bottom:14px">
+            <label class="lbl">Email</label>
+            <input class="input" type="email" @bind="_m.Email" autofocus />
+        </div>
+        <div style="text-align:left;margin-bottom:14px">
+            <label class="lbl">@Loc.T("signup.name", "Name")</label>
+            <input class="input" @bind="_m.Name" />
+        </div>
+        <div style="text-align:left;margin-bottom:14px">
+            <label class="lbl">@Loc.T("signup.password", "Password")</label>
+            <input class="input" type="password" @bind="_m.Password" />
+        </div>
+        <div style="text-align:left;margin-bottom:14px">
+            <label class="lbl">@Loc.T("signup.confirm", "Confirm password")</label>
+            <input class="input" type="password" @bind="_m.Confirm" />
+        </div>
+        @if (_error is not null) { <p class="sm" style="color:var(--error);margin-bottom:10px">@_error</p> }
+        <button class="btn btn-primary" style="width:100%;justify-content:center" type="submit" disabled="@_busy">
+            @(_busy ? "…" : Loc.T("signup.create", "Create account"))
+        </button>
+        <p class="muted sm" style="margin:14px 0 0;text-align:center">
+            <a href="/login" style="color:var(--accent)">@Loc.T("signup.haveAccount", "Already have an account? Sign in")</a>
+        </p>
+    </EditForm>
+}
+
+@code {
+    private SignupModel _m = new();
+    private string? _error, _key;
+    private bool _busy;
+
+    private sealed class SignupModel
+    {
+        public string Email { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string Confirm { get; set; } = "";
+    }
+
+    private async Task DoSignup()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_m.Email) || !_m.Email.Contains('@')) { _error = "Invalid email"; return; }
+        if (_m.Password.Length < 4) { _error = "Password too short"; return; }
+        if (_m.Password != _m.Confirm) { _error = "Passwords do not match"; return; }
+        _busy = true;
+        try
+        {
+            var r = await Api.PostAsync("api/signup", new { email = _m.Email.Trim(), name = _m.Name, password = _m.Password });
+            _key = r.GetProperty("key").GetString();
+        }
+        catch (HttpRequestException) { _error = "Signup unavailable or email already registered"; }
+        _busy = false;
+    }
+}

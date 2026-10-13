@@ -13,8 +13,12 @@
 }
 <EditForm Model="_model" OnValidSubmit="DoLogin">
     <div style="text-align:left;margin-bottom:14px">
+        <label class="lbl">Email <span class="muted">(@Loc.T("login.adminHint", "empty = admin"))</span></label>
+        <input class="input" type="email" @bind="_model.Email" autofocus />
+    </div>
+    <div style="text-align:left;margin-bottom:14px">
         <label class="lbl">@Loc.T("login.password", "Password")</label>
-        <input class="input" type="password" @bind="_model.Password" autofocus />
+        <input class="input" type="password" @bind="_model.Password" />
     </div>
     @if (!Auth.SetupComplete)
     {
@@ -30,6 +34,9 @@
     <button class="btn btn-primary" style="width:100%;justify-content:center" type="submit" disabled="@_busy">
         @(_busy ? "…" : Loc.T(Auth.SetupComplete ? "login.signIn" : "login.createAccount", Auth.SetupComplete ? "Sign in" : "Create account"))
     </button>
+    <p class="muted sm" style="margin:14px 0 0;text-align:center">
+        <a href="/signup" style="color:var(--accent)">@Loc.T("login.needAccount", "Need an account? Sign up")</a>
+    </p>
 </EditForm>
 
 @code {
@@ -37,11 +44,19 @@
     private string? _error;
     private bool _busy;
 
-    private sealed class LoginModel { public string Password { get; set; } = ""; public string Confirm { get; set; } = ""; }
+    private sealed class LoginModel { public string Email { get; set; } = ""; public string Password { get; set; } = ""; public string Confirm { get; set; } = ""; }
 
     private async Task DoLogin()
     {
         _error = null;
+        // SPEC-135: email present → user login (User.PasswordHash); empty → admin password path
+        if (!string.IsNullOrWhiteSpace(_model.Email))
+        {
+            _busy = true;
+            if (!await Auth.LoginAsync(_model.Email.Trim(), _model.Password)) { _error = "Invalid email or password"; _busy = false; return; }
+            Nav.NavigateTo("/home", true);
+            return;
+        }
         if (!Auth.SetupComplete)
         {
             if (_model.Password.Length < 4) { _error = "Password too short"; return; }

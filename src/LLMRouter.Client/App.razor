@@ -42,7 +42,7 @@ else
         var path = "/" + (routeData.PageType.GetCustomAttributes(typeof(Microsoft.AspNetCore.Components.RouteAttribute), true)
             .FirstOrDefault() is Microsoft.AspNetCore.Components.RouteAttribute ra
                 ? ra.Template.TrimStart('/') : "");
-        if (path == "/login") return false;
+        if (path is "/login" or "/signup") return false;
         return Auth.RequireLogin;
     }
 }

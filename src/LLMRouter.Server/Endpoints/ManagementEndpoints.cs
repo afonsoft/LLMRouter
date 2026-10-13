@@ -351,16 +351,49 @@ public static class ManagementEndpoints
             LLMRouter.Core.Resilience.CooldownTracker.Configure(th, bs, ms);
         }
 
-        static object ComboDto(Combo c) => new
+        // SPEC-139: pricing = admin resale price {"input","output"} USD/1M
+        // (null = charge real cost); suggestedPricing = mean of member models'
+        // catalog prices — the default the admin sees when editing.
+        static object? SuggestPrice(Combo c, JsonElement sd, ProviderRegistry reg)
+        {
+            List<string>? models;
+            try { models = JsonSerializer.Deserialize<List<string>>(c.Models); }
+            catch (JsonException) { return null; }
+            if (models is not { Count: > 0 }) return null;
+            var ins = new List<double>(); var outs = new List<double>();
+            foreach (var m in models)
+            {
+                var slash = m.IndexOf('/');
+                if (slash <= 0) continue;
+                var p = Core.Usage.PricingService.GetPrice(sd, reg, m[..slash], m[(slash + 1)..]);
+                if (p is { } t) { ins.Add(t.input); outs.Add(t.output); }
+            }
+            if (ins.Count == 0) return null;
+            return new { input = Math.Round(ins.Average(), 4), output = Math.Round(outs.Average(), 4) };
+        }
+        static object ComboDto(Combo c, JsonElement sd, ProviderRegistry reg) => new
         {
             c.Id, c.Name, c.Kind, c.StickyLimit, c.CreatedAt, c.UpdatedAt,
             models = JsonDocument.Parse(c.Models).RootElement.Clone(),
+            pricing = c.PricingJson is not null && Core.Gateway.GatewayEngine.PricingJsonParses(c.PricingJson, out var pr)
+                ? (object)new { pr.input, pr.output } : null,
+            suggestedPricing = SuggestPrice(c, sd, reg),
         };
-        g.MapGet("/combos", async (LlmRouterDbContext db) =>
+        // shared "pricing" body field → PricingJson (null property clears it)
+        static string? PricingFromBody(JsonElement b)
+        {
+            if (!b.TryGetProperty("pricing", out var p)) return "__unset__";
+            if (p.ValueKind == JsonValueKind.Null) return "__clr__";
+            var raw = p.GetRawText();
+            return Core.Gateway.GatewayEngine.PricingJsonParses(raw, out _) ? raw : "__bad__";
+        }
+        g.MapGet("/combos", async (HttpContext ctx, LlmRouterDbContext db) =>
         {
             var all = await db.Combos.ToListAsync();
             // SPEC-069: honor persisted comboOrder (settings.data.comboOrder)
-            var sd = JsonNode.Parse((await db.Settings.FirstOrDefaultAsync())?.Data ?? "{}")?.AsObject();
+            var sdRaw = (await db.Settings.FirstOrDefaultAsync())?.Data ?? "{}";
+            var sd = JsonNode.Parse(sdRaw)?.AsObject();
+            var sdata = JsonDocument.Parse(sdRaw).RootElement;
             var ord = sd?["comboOrder"] as JsonArray;
             if (ord is not null)
             {
@@ -368,7 +401,8 @@ public static class ManagementEndpoints
                     .Where(t => t.Item1 is not null).ToDictionary(t => t.Item1!, t => t.i);
                 all = all.OrderBy(c => rank.TryGetValue(c.Id, out var r) ? r : int.MaxValue).ToList();
             }
-            return Results.Json(new { combos = all.Select(ComboDto) }, JsonOpts);
+            var reg = ctx.RequestServices.GetRequiredService<ProviderRegistry>();
+            return Results.Json(new { combos = all.Select(c => ComboDto(c, sdata, reg)) }, JsonOpts);
         });
 
         g.MapPost("/combos", async (HttpContext ctx, LlmRouterDbContext db, ProviderRegistry r) =>
@@ -412,6 +446,7 @@ public static class ManagementEndpoints
                 AllowedProviders = b.TryGetProperty("allowedProviders", out var ap) ? ap.GetRawText() : null,
                 AllowedFamilies = b.TryGetProperty("allowedModelFamilies", out var af) ? af.GetRawText() : null,
                 Tiers = b.TryGetProperty("tiers", out var t) ? t.GetRawText() : null,
+                PricingJson = PricingFromBody(b) is { } pv && pv != "__unset__" && pv != "__bad__" && pv != "__clr__" ? pv : null,
                 CreatedAt = Now(), UpdatedAt = Now(),
             };
             db.Combos.Add(c);
@@ -434,6 +469,14 @@ public static class ManagementEndpoints
             if (b.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number)
                 c.StickyLimit = Math.Max(1, sl.GetInt32());
             if (b.TryGetProperty("models", out var m)) c.Models = m.GetRawText();
+            // SPEC-139: pricing {"input","output"} USD/1M; explicit null clears
+            // (combo then charges real upstream cost again)
+            if (PricingFromBody(b) is { } pv && pv != "__unset__")
+            {
+                if (pv == "__bad__")
+                    return Results.Json(new { error = "pricing must be {\"input\":n,\"output\":n} or null" }, JsonOpts, statusCode: 400);
+                c.PricingJson = pv == "__clr__" ? null : pv;
+            }
             // strategy change resets the rotation cursor
             ComboPlanner.ResetRotation(c.Name);
             c.UpdatedAt = Now();

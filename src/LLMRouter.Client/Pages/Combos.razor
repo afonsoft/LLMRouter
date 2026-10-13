@@ -248,6 +248,24 @@ else
                         <input class="input" type="number" min="1" @bind="_editing.StickyLimit" />
                     </div>
                 }
+                @* SPEC-139: admin combo pricing — default suggested from member
+                   models' catalog prices; null = charge real upstream cost. *@
+                <div class="mt-4">
+                    <label class="lbl">@Loc.T("combos.price", "Price per 1M tokens (USD) — charged to users")</label>
+                    <div class="flex gap-2" style="align-items:center">
+                        <input class="input" type="number" min="0" step="0.0001" style="width:110px" placeholder="input" @bind="_editing.PriceIn" />
+                        <span class="muted sm">in</span>
+                        <input class="input" type="number" min="0" step="0.0001" style="width:110px" placeholder="output" @bind="_editing.PriceOut" />
+                        <span class="muted sm">out</span>
+                        @if (_editing.SuggestedIn is not null)
+                        {
+                            <button class="btn btn-sm" @onclick="() => { _editing!.PriceIn = _editing.SuggestedIn; _editing.PriceOut = _editing.SuggestedOut; }">
+                                @Loc.T("combos.useSuggested", "suggested") $@_editing.SuggestedIn / $@_editing.SuggestedOut
+                            </button>
+                        }
+                    </div>
+                    <p class="dim sm mt-1">@Loc.T("combos.priceHint", "Empty = charge real upstream cost.")</p>
+                </div>
                 <div class="mt-4">
                     <label class="lbl">@Loc.T("combos.models", "Models (provider/model, one per line, in order)")</label>
                     <textarea class="input mono" rows="6" @bind="_modelsText" placeholder="openai/gpt-4o&#10;anthropic/claude-sonnet-4"></textarea>
@@ -283,6 +301,8 @@ else
         public string? Id; public string Name = ""; public string Kind = "fallback";
         public int StickyLimit = 1;
         public List<string> ModelsList = [];
+        public double? PriceIn; public double? PriceOut;
+        public double? SuggestedIn; public double? SuggestedOut;
     }
     private sealed class AliasVm { public string Name = ""; public string Target = ""; }
     private sealed class MappingVm { public string Model = ""; public string Combo = ""; }
@@ -350,6 +370,9 @@ else
             StickyLimit = c.TryGetProperty("stickyLimit", out var sl) && sl.ValueKind == JsonValueKind.Number ? sl.GetInt32() : 1,
             ModelsList = c.TryGetProperty("models", out var m)
                 ? JsonSerializer.Deserialize<List<string>>(m.GetRawText()) ?? [] : [],
+            PriceIn = TryNum(c, "pricing", "input"), PriceOut = TryNum(c, "pricing", "output"),
+            SuggestedIn = TryNum(c, "suggestedPricing", "input"),
+            SuggestedOut = TryNum(c, "suggestedPricing", "output"),
         }).ToList();
         var cd = await Api.GetAsync("api/settings/combo-defaults");
         _defaultCombo = cd.TryGetProperty("defaultCombo", out var dcv) ? dcv.GetString() ?? "" : "";
@@ -380,12 +403,20 @@ else
     }
 
     private void NewCombo() { _editing = new ComboVm { Kind = "fallback" }; _modelsText = ""; }
+    private static double? TryNum(JsonElement c, string prop, string key) =>
+        c.TryGetProperty(prop, out var p) && p.ValueKind == JsonValueKind.Object
+            && p.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number
+            ? v.GetDouble() : null;
+
     private void Edit(ComboVm c) { _editing = c; _modelsText = string.Join("\n", c.ModelsList); }
 
     private async Task Save()
     {
         var models = _modelsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        var payload = new { name = _editing!.Name, kind = _editing.Kind, stickyLimit = _editing.StickyLimit, models };
+        // SPEC-139: only send pricing when both fields set or explicitly cleared
+        object? pricing = _editing!.PriceIn is { } pi && _editing.PriceOut is { } po
+            ? new { input = pi, output = po } : null;
+        var payload = new { name = _editing!.Name, kind = _editing.Kind, stickyLimit = _editing.StickyLimit, models, pricing };
         if (_editing!.Id is null)
             await Api.PostAsync("api/combos", payload);
         else

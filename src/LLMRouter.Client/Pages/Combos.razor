@@ -80,7 +80,7 @@
         <div class="flex gap-2 mt-2 items-end">
             <div class="col">
                 <label class="muted sm">@Loc.T("combos.defaultCombo", "Default combo (empty model)")</label>
-                <select @bind="_defaultCombo">
+                <select class="input" @bind="_defaultCombo">
                     <option value="">—</option>
                     @foreach (var c in _combos) { <option value="@c.Name">@c.Name</option> }
                 </select>

@@ -104,3 +104,74 @@ public class ComboOpsTests : IDisposable
         d.GetProperty("handoffModel").GetString().ShouldBe("openai/gpt-4o");
     }
 }
+
+public class ComboPricingTests : IDisposable
+{
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"llmr-test-{Guid.NewGuid():N}.db");
+    private readonly WebApplicationFactory<Program> _factory;
+
+    public ComboPricingTests()
+    {
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, c) =>
+                c.AddInMemoryCollection(new Dictionary<string, string?> { ["Db:Path"] = _dbPath })));
+    }
+
+    public void Dispose()
+    {
+        _factory.Dispose();
+        foreach (var f in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
+            try { File.Delete(f); } catch { }
+    }
+
+    private HttpClient LoginClient()
+    {
+        var c = _factory.CreateClient();
+        c.PostAsJsonAsync("/api/auth/login", new { password = "test1234" }).Result
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+        return c;
+    }
+
+    private static string NewId(HttpClient c)
+    {
+        var r = c.PostAsJsonAsync("/api/combos",
+            new { name = $"pc-{Guid.NewGuid():N}"[..14], kind = "fallback", models = new[] { "x/y" } }).Result;
+        r.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return r.Content.ReadFromJsonAsync<JsonElement>().Result
+            .GetProperty("combo").GetProperty("id").GetString()!;
+    }
+
+    [Fact]
+    public async Task Pricing_RoundTrips_AndClears()
+    {
+        var c = LoginClient(); var id = NewId(c);
+        var put = await c.PutAsJsonAsync($"/api/combos/{id}", new { pricing = new { input = 3.0, output = 9.0 } });
+        put.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var combo = (await (await c.GetAsync("/api/combos")).Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("combos").EnumerateArray().First(x => x.GetProperty("id").GetString() == id);
+        combo.GetProperty("pricing").GetProperty("input").GetDouble().ShouldBe(3.0);
+        combo.GetProperty("pricing").GetProperty("output").GetDouble().ShouldBe(9.0);
+        (await c.PutAsJsonAsync($"/api/combos/{id}", new { pricing = (object?)null })).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var cleared = (await (await c.GetAsync("/api/combos")).Content.ReadFromJsonAsync<JsonElement>())
+            .GetProperty("combos").EnumerateArray().First(x => x.GetProperty("id").GetString() == id);
+        cleared.GetProperty("pricing").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Pricing_RejectsBadShape()
+    {
+        var c = LoginClient(); var id = NewId(c);
+        var bad = await c.PutAsJsonAsync($"/api/combos/{id}", new { pricing = new { input = "x" } });
+        ((int)bad.StatusCode).ShouldBe(400);
+    }
+
+    [Fact]
+    public void PricingJsonParses_Validates()
+    {
+        LLMRouter.Core.Gateway.GatewayEngine.PricingJsonParses("{\"input\":1.5,\"output\":2}", out var p)
+            .ShouldBeTrue();
+        p.input.ShouldBe(1.5); p.output.ShouldBe(2.0);
+        LLMRouter.Core.Gateway.GatewayEngine.PricingJsonParses("{\"input\":\"x\"}", out _).ShouldBeFalse();
+        LLMRouter.Core.Gateway.GatewayEngine.PricingJsonParses("not-json", out _).ShouldBeFalse();
+    }
+}

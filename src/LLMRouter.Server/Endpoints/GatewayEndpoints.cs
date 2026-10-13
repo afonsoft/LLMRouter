@@ -378,7 +378,7 @@ public static class GatewayEndpoints
                         await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                             target.Connection.Id, apiKey, kind ?? path, 0, 0,
                             "499", "stream aborted mid-response", sw.ElapsedMilliseconds,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
                         return;
                     }
                 }
@@ -387,7 +387,7 @@ public static class GatewayEndpoints
                     target.Connection.Id, apiKey, kind ?? path, 0, 0,
                     ((int)resp.StatusCode).ToString(), null, sw.ElapsedMilliseconds,
                     reportedCostUsd: reportedCost,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
                 return;
             }
             catch (Exception) when (target != targets[^1]) { /* best-effort: failure is non-fatal */ }
@@ -961,7 +961,7 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, 0, 0,
                         ((int)resp.StatusCode).ToString(), errBody[..Math.Min(500, errBody.Length)], sw.ElapsedMilliseconds,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
                     return;
                 }
 
@@ -992,7 +992,7 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
                 }
                 else
                 {
@@ -1019,7 +1019,7 @@ public static class GatewayEndpoints
                             await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                                 target.Connection.Id, apiKey, inbound, 0, 0, "400",
                                 "guardrails.content_filter", sw.ElapsedMilliseconds, savedDetail,
-                                userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                                userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, comboName: target.ComboName);
                             return;
                         }
                     }
@@ -1067,7 +1067,7 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
                 }
                 return;
             }
@@ -1095,7 +1095,7 @@ public static class GatewayEndpoints
             Core.Gateway.ErrorSanitizer.SanitizeMessage(lastError?.Message ?? "All upstream targets failed."));
         await engine.LogUsageAsync(model, model, null, apiKey, inbound, 0, 0, "502",
             lastError?.Message, sw.ElapsedMilliseconds,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, comboName: model);
     }
 
     /// <summary>SPEC-020: remember the serving model for lkgp / cache-optimized.</summary>
@@ -1149,7 +1149,7 @@ public static class GatewayEndpoints
         ctx.Response.ContentType = "application/json";
         await ctx.Response.WriteAsync(final.ToJsonString(JsonOpts), ctx.RequestAborted);
         await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "200", null, ms,
-            userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+            userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, comboName: model);
     }
 
     /// <summary>
@@ -1178,7 +1178,7 @@ public static class GatewayEndpoints
             ctx.Response.StatusCode = 502;
             await WriteError(ctx, inbound, "upstream_unavailable", "Fusion panel: all members failed.");
             await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds,
-                userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, comboName: model);
             return;
         }
         var joined = string.Join("\n\n---\n\n",
@@ -1246,7 +1246,7 @@ public static class GatewayEndpoints
                 await WriteError(ctx, inbound, "upstream_unavailable",
                     $"Pipeline stage '{member}' failed.");
                 await engine.LogUsageAsync("combo", model, null, apiKey, inbound, 0, 0, "502", null, sw.ElapsedMilliseconds,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, comboName: model);
                 return;
             }
             currentText = r.Text;

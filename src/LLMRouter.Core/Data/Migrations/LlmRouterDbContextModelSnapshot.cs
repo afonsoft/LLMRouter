@@ -364,6 +364,9 @@ namespace LLMRouter.Core.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PricingJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("StickyLimit")
                         .HasColumnType("INTEGER");
 

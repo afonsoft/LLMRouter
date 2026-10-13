@@ -52,3 +52,11 @@ All config lives in the DB, `settings.data.payments` (edit via
 sqlite3 llmr.db "INSERT INTO paymentTransactions VALUES('tx1','<userId>','stripe','cs_test',25,'usd','pending',NULL,datetime('now'),NULL)"
 # then POST a signed checkout.session.completed payload to /api/payments/webhooks/stripe
 ```
+
+## Combo pricing (SPEC-139)
+
+Na tela de combos o admin define **Price per 1M tokens (USD)** — `{"input","output"}`.
+O campo mostra um valor sugerido = média das tarifas dos modelos do combo
+(catalog overrides → synced → registry). `pricing=null` volta a cobrar o custo
+real. Com preço definido, `LogUsageAsync` cobra do usuário o preço DO COMBO
+(vence reportedCost e ComputeCost) e o ledger debita esse valor — margem de revenda.

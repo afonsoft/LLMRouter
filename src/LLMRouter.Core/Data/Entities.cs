@@ -100,6 +100,9 @@ public class Combo
     public string? AllowedFamilies { get; set; }
     /// <summary>SPEC-082: JSON array of composite tier definitions.</summary>
     public string? Tiers { get; set; }
+    /// <summary>SPEC-139: {"input":x,"output":y} USD/1M tok — resale price charged
+    /// to the user instead of real upstream cost. Null = charge real cost.</summary>
+    public string? PricingJson { get; set; }
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
 }

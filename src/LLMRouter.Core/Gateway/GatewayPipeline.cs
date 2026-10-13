@@ -293,13 +293,31 @@ public sealed class GatewayEngine(
         return map;
     }
 
+    /// <summary>SPEC-139: parse a combo's {"input":x,"output":y} USD/1M pricing JSON.</summary>
+    public static bool PricingJsonParses(string json, out (double input, double output) price)
+    {
+        price = default;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var e = doc.RootElement;
+            if (e.ValueKind != JsonValueKind.Object ||
+                !e.TryGetProperty("input", out var i) || i.ValueKind != JsonValueKind.Number ||
+                !e.TryGetProperty("output", out var o) || o.ValueKind != JsonValueKind.Number)
+                return false;
+            price = (Math.Max(0, i.GetDouble()), Math.Max(0, o.GetDouble()));
+            return true;
+        }
+        catch (JsonException) { return false; }
+    }
+
     /// <summary>Record a completed (or failed) request.</summary>
     public async Task LogUsageAsync(
         string provider, string model, string? connectionId, string apiKey,
         string endpoint, int promptTokens, int completionTokens,
         string status, string? error, long latencyMs, JsonElement? detail = null,
         double? reportedCostUsd = null, string? userId = null, string? userKeyId = null,
-        ProxyLogInfo? plog = null)
+        ProxyLogInfo? plog = null, string? comboName = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
         var sdata = await HotReads.SettingsDataAsync(db);
@@ -309,6 +327,13 @@ public sealed class GatewayEngine(
         var cost = reportedCostUsd ?? Usage.PricingService.ComputeCost(
             sdata, registry,
             provider, model, promptTokens, completionTokens) ?? 0;
+
+        // SPEC-139: a combo with admin-set pricing charges ITS price (resale),
+        // not the upstream cost — wins over both reported and computed cost.
+        if (comboName is not null &&
+            await db.Combos.FirstOrDefaultAsync(c => c.Name == comboName) is { PricingJson: { } pj } combo &&
+            PricingJsonParses(pj, out var pr))
+            cost = (promptTokens * pr.input + completionTokens * pr.output) / 1_000_000d;
 
         // SPEC-101: every logged request feeds the scrapeable meter source.
         GatewayMetrics.RecordRequest(new GatewayMetrics.RequestMetric(

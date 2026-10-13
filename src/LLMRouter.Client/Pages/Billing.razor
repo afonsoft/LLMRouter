@@ -26,12 +26,22 @@ else
             <div class="muted sm">@Loc.T("billing.balance", "Credit balance")</div>
             <div class="mono" style="font-size:28px;font-weight:600">$@_me.Value.GetProperty("user").GetProperty("balance").GetDouble().ToString("0.00")</div>
             <div class="muted sm mt-2">@_me.Value.GetProperty("user").GetProperty("email").GetString()</div>
-            <div class="flex gap-2 mt-4" style="flex-wrap:wrap">
-                @foreach (var amt in new[] { 10, 25, 50, 100 })
-                {
-                    <button class="btn btn-sm" @onclick="() => Checkout(amt)" disabled="@_busy">+$@amt</button>
-                }
-            </div>
+            @if (_providers is { Count: > 0 })
+            {
+                <div class="flex gap-2 mt-4" style="align-items:center;flex-wrap:wrap">
+                    <select class="input" style="width:auto;height:28px;font-size:12px" @bind="_provider">
+                        @foreach (var p in _providers) { <option value="@p.GetString()">@p.GetString()</option> }
+                    </select>
+                    @foreach (var amt in new[] { 10, 25, 50, 100 })
+                    {
+                        <button class="btn btn-sm" @onclick="() => Checkout(amt)" disabled="@_busy">+$@amt</button>
+                    }
+                </div>
+            }
+            else if (_payMsg is null)
+            {
+                <p class="muted sm mt-4">@Loc.T("billing.noProviders", "No payment provider configured yet.")</p>
+            }
             @if (!string.IsNullOrEmpty(_payMsg)) { <p class="muted sm mt-2">@_payMsg</p> }
         </div>
         <div class="card card-p">
@@ -76,8 +86,8 @@ else
 
 @code {
     private JsonElement? _me;
-    private List<JsonElement>? _ledger, _keys;
-    private string? _err, _payMsg;
+    private List<JsonElement>? _ledger, _keys, _providers;
+    private string? _err, _payMsg, _provider;
     private bool _busy;
 
     protected override async Task OnInitializedAsync()
@@ -90,6 +100,9 @@ else
             _ledger = led.TryGetProperty("entries", out var e) ? e.EnumerateArray().ToList() : [];
             var k = await Api.GetAsync("api/account/me/keys");
             _keys = k.TryGetProperty("keys", out var arr) ? arr.EnumerateArray().ToList() : [];
+            var p = await Api.GetAsync("api/payments/providers");
+            _providers = p.TryGetProperty("providers", out var pa) ? pa.EnumerateArray().ToList() : [];
+            _provider = _providers is { Count: > 0 } ? _providers[0].GetString() : null;
         }
         catch (HttpRequestException) { _err = "billing.unavailable"; }
     }
@@ -99,7 +112,7 @@ else
         _busy = true; _payMsg = null;
         try
         {
-            var r = await Api.PostAsync("api/payments/checkout", new { provider = "auto", amountUsd = (double)amount });
+            var r = await Api.PostAsync("api/payments/checkout", new { provider = _provider ?? "auto", amountUsd = (double)amount });
             if (r.TryGetProperty("checkoutUrl", out var url) && !string.IsNullOrEmpty(url.GetString()))
                 Nav.NavigateTo(url.GetString()!, true);
             else

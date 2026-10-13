@@ -53,13 +53,15 @@ public static class PaymentEndpoints
                 return Results.Json(new { error = "nenhum payment provider configurado" }, JsonOpts, statusCode: 503);
 
             var origin = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+            var txId = Guid.NewGuid().ToString("N")[..16];
             var (extId, url, currency) = await provider.CreateCheckoutAsync(hf.CreateClient(),
                 new PaymentCheckoutRequest(user.Id, user.Email, amount,
-                    $"{origin}/account/billing?paid=1", $"{origin}/account/billing?canceled=1"), ct);
+                    $"{origin}/account/billing?paid=1", $"{origin}/account/billing?canceled=1",
+                    txId), ct);
 
             var tx = new PaymentTransaction
             {
-                Id = Guid.NewGuid().ToString("N")[..16],
+                Id = txId,
                 UserId = user.Id, Provider = name, ExternalId = extId,
                 AmountUsd = amount, Currency = currency, CheckoutUrl = url, CreatedAt = Now(),
             };
@@ -81,12 +83,14 @@ public static class PaymentEndpoints
             {
                 var payload = await new StreamReader(req.Body).ReadToEndAsync(ct);
                 parsed = await pp.ParseWebhookAsync(payload,
-                    req.Headers["Stripe-Signature"].ToString(), ct);
+                    req.Headers["Stripe-Signature"].ToString(), hf.CreateClient(), ct);
             }
             catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
             if (parsed.extId == "") return Results.Ok(new { ok = true, ignored = true });
 
-            var tx = await db.PaymentTransactions.FirstOrDefaultAsync(t => t.ExternalId == parsed.extId, ct);
+            // match on the provider id OR our own ref (MP/PagSeguro echo ExternalRef back)
+            var tx = await db.PaymentTransactions.FirstOrDefaultAsync(
+                t => t.ExternalId == parsed.extId || t.Id == parsed.extId, ct);
             if (tx is null) return Results.NotFound(new { error = "tx desconhecida" });
             if (tx.Status == "paid") return Results.Ok(new { ok = true, idempotent = true });
             if (!parsed.paid) { tx.Status = "failed"; await db.SaveChangesAsync(); return Results.Ok(new { ok = true }); }

@@ -18,6 +18,20 @@ public static class PaymentEndpoints
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
     private static string Now() => DateTime.UtcNow.ToString("O");
 
+    /// <summary>SPEC-144: payments.feePct (default 0) — platform fee % charged on top of the credited amount.</summary>
+    internal static double PaymentFeePct(JsonElement sdata) =>
+        sdata.ValueKind == JsonValueKind.Object
+        && sdata.TryGetProperty("payments", out var p)
+        && p.TryGetProperty("feePct", out var f) && f.ValueKind == JsonValueKind.Number
+            ? Math.Clamp(f.GetDouble(), 0, 100) : 0;
+
+    /// <summary>SPEC-144: payments.freeDailyLimit (default 50) — requests/day for plan=free users.</summary>
+    internal static int FreeDailyLimit(JsonElement sdata) =>
+        sdata.ValueKind == JsonValueKind.Object
+        && sdata.TryGetProperty("payments", out var p)
+        && p.TryGetProperty("freeDailyLimit", out var f) && f.ValueKind == JsonValueKind.Number
+            ? Math.Clamp(f.GetInt32(), 0, 100_000) : 50;
+
     public static void Map(WebApplication app)
     {
         // list configured providers (public-ish — used by the billing page)
@@ -52,10 +66,15 @@ public static class PaymentEndpoints
             if (name is null || !providers.TryGetValue(name, out var provider))
                 return Results.Json(new { error = "nenhum payment provider configurado" }, JsonOpts, statusCode: 503);
 
+            // SPEC-144: platform fee — payments.feePct% is charged on top; the user
+            // still receives `amount` in credits when the webhook settles.
+            var feePct = PaymentFeePct(AuthEndpoints.Parse(s?.Data));
+            var charged = Math.Round(amount * (1 + feePct / 100.0), 2);
+
             var origin = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
             var txId = Guid.NewGuid().ToString("N")[..16];
             var (extId, url, currency) = await provider.CreateCheckoutAsync(hf.CreateClient(),
-                new PaymentCheckoutRequest(user.Id, user.Email, amount,
+                new PaymentCheckoutRequest(user.Id, user.Email, charged,
                     $"{origin}/account/billing?paid=1", $"{origin}/account/billing?canceled=1",
                     txId), ct);
 

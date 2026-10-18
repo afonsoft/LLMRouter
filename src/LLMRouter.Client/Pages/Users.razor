@@ -29,6 +29,7 @@
         <thead>
             <tr>
                 <th>Email</th><th>@Loc.T("users.name", "Name")</th><th>Role</th>
+                <th>Plan</th>
                 <th>@Loc.T("users.balance", "Balance")</th><th>@Loc.T("users.status", "Status")</th>
                 <th>@Loc.T("users.created", "Created")</th><th></th>
             </tr>
@@ -49,6 +50,13 @@
                                 <option>admin</option><option>operator</option><option>member</option><option>viewer</option>
                             </select>
                         </td>
+                        <td>
+                            <select class="input" style="padding:2px 6px;font-size:12px"
+                                    value="@(u.TryGetProperty("plan", out var pl) ? pl.GetString() : "free")"
+                                    @onchange="e => PatchPlan(uid, e.Value?.ToString())">
+                                <option>free</option><option>standard</option>
+                            </select>
+                        </td>
                         <td class="mono sm">$@u.GetProperty("balance").GetDouble().ToString("0.00")</td>
                         <td><span class="badge @(u.GetProperty("isActive").GetBoolean() ? "ok" : "warn")">@(u.GetProperty("isActive").GetBoolean() ? "active" : "inactive")</span></td>
                         <td class="muted sm">@u.GetProperty("createdAt").GetString()</td>
@@ -65,7 +73,7 @@
                     </tr>
                     @if (Expanded(uid))
                     {
-                        <tr><td colspan="7" style="background:var(--bg-subtle,#111520)">
+                        <tr><td colspan="8" style="background:var(--bg-subtle,#111520)">
                             <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px;padding:8px 4px">
                                 <div>
                                     <div class="bold sm mb-2">Virtual keys</div>
@@ -146,6 +154,13 @@
         }
         catch (HttpRequestException ex) { _msg = ex.Message; }
         _busy = false;
+    }
+
+    private async Task PatchPlan(string id, string? plan)
+    {
+        if (plan is null) return;
+        await Api.PatchAsync($"api/users/{id}", new { plan });
+        await Load();
     }
 
     private async Task PatchRole(string id, string? role)

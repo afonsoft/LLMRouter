@@ -864,6 +864,8 @@ public class User
     public string? OidcIssuer { get; set; }
     /// <summary>admin | operator | member | viewer.</summary>
     public string Role { get; set; } = "member";
+    /// <summary>SPEC-144: plano de billing — "free" (cap diário) ou "standard" (pay-as-you-go).</summary>
+    public string Plan { get; set; } = "free";
     public bool IsActive { get; set; } = true;
     /// <summary>Timestamp UTC (ISO 8601 "O").</summary>
     public string CreatedAt { get; set; } = "";

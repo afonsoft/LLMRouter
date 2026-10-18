@@ -184,6 +184,10 @@ public class RequestDetail
     public string? ConnectionId { get; set; }
     public string? Status { get; set; }
     public string Data { get; set; } = "{}";
+    // SPEC-143: opt-in "Input & Output Logging" — populated only when
+    // settings.observability.ioLogging is on; metadata-only by default.
+    public string? Prompt { get; set; }
+    public string? Response { get; set; }
 }
 
 [Table("compressionCombos")]

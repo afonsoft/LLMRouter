@@ -22,7 +22,9 @@ public sealed record UsageWrite(
     // SPEC-111: atribuição a usuário/virtual-key (null = chave admin/global).
     string? UserId = null, string? UserKeyId = null,
     // SPEC-116: proxy-journal fields captured at the send site (null = auto direct/global).
-    ProxyLogInfo? Proxy = null, string? CorrelationId = null);
+    ProxyLogInfo? Proxy = null, string? CorrelationId = null,
+    // SPEC-143: request/response payloads — only persisted when ioLogging is on.
+    string? Prompt = null, string? Response = null);
 
 /// <summary>
 /// SPEC-116: resolved egress-proxy info captured where the upstream send
@@ -451,6 +453,12 @@ public sealed class UsageWriter : BackgroundService
             await HotReads.OneProxyCurrentAsync(db, sdata), u.Proxy));
         var recording = !sdata.TryGetProperty("requestLogging", out var rl)
             || rl.ValueKind is not JsonValueKind.False;
+        // SPEC-143: ioLogging opt-in (settings.observability.ioLogging) — off =
+        // metadata-only rows (OpenRouter privacy default); on = payload stored.
+        var ioOn = sdata.TryGetProperty("observability", out var obs)
+            && obs.ValueKind is JsonValueKind.Object
+            && obs.TryGetProperty("ioLogging", out var iol)
+            && iol.ValueKind is JsonValueKind.True;
         if (recording)
         {
             db.RequestDetails.Add(new RequestDetail
@@ -462,6 +470,8 @@ public sealed class UsageWriter : BackgroundService
                 ConnectionId = u.ConnectionId,
                 Status = u.Status,
                 Data = u.DetailJson ?? "{}",
+                Prompt = ioOn ? u.Prompt : null,
+                Response = ioOn ? u.Response : null,
             });
         }
         await GatewayEngine.RollupDailyOnAsync(

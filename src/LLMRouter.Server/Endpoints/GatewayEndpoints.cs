@@ -992,7 +992,8 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName,
+                    ioPrompt: call.Body);
                 }
                 else
                 {
@@ -1067,7 +1068,8 @@ public static class GatewayEndpoints
                     await engine.LogUsageAsync(target.Provider.Id, target.UpstreamModel,
                         target.Connection.Id, apiKey, inbound, pt, ct, "200", null, sw.ElapsedMilliseconds,
                         savedDetail,
-                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName);
+                    userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid, plog: plog, comboName: target.ComboName,
+                    ioPrompt: call.Body, ioResponse: upstream.GetRawText());
                 }
                 return;
             }

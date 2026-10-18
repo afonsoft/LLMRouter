@@ -1713,7 +1713,13 @@ namespace LLMRouter.Core.Data.Migrations
                     b.Property<string>("Model")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Prompt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Provider")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Response")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Status")

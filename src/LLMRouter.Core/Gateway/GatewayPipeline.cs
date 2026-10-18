@@ -317,7 +317,10 @@ public sealed class GatewayEngine(
         string endpoint, int promptTokens, int completionTokens,
         string status, string? error, long latencyMs, JsonElement? detail = null,
         double? reportedCostUsd = null, string? userId = null, string? userKeyId = null,
-        ProxyLogInfo? plog = null, string? comboName = null)
+        ProxyLogInfo? plog = null, string? comboName = null,
+        // SPEC-143: request/response payloads for ioLogging (persisted only
+        // when settings.observability.ioLogging is on).
+        string? ioPrompt = null, string? ioResponse = null)
     {
         var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
         var sdata = await HotReads.SettingsDataAsync(db);
@@ -353,7 +356,7 @@ public sealed class GatewayEngine(
             await writer.PostUsageAsync(new UsageWrite(
                 now, provider, model, connectionId, apiKey, endpoint,
                 promptTokens, completionTokens, cost, latencyMs, status, detailText,
-                userId, userKeyId, plog, corr));
+                userId, userKeyId, plog, corr, ioPrompt, ioResponse));
 
             if (rateLimiter is not null)
             {
@@ -392,6 +395,10 @@ public sealed class GatewayEngine(
         // SPEC-116: settings.requestLogging=false pauses request-payload capture.
         var recording = !sdata.TryGetProperty("requestLogging", out var rl)
             || rl.ValueKind is not JsonValueKind.False;
+        var ioOn = sdata.TryGetProperty("observability", out var obs)
+            && obs.ValueKind is JsonValueKind.Object
+            && obs.TryGetProperty("ioLogging", out var iol)
+            && iol.ValueKind is JsonValueKind.True;
         if (recording)
         {
             db.RequestDetails.Add(new RequestDetail
@@ -403,6 +410,8 @@ public sealed class GatewayEngine(
                 ConnectionId = connectionId,
                 Status = status,
                 Data = detail?.GetRawText() ?? error ?? "{}",
+                Prompt = ioOn ? ioPrompt : null,
+                Response = ioOn ? ioResponse : null,
             });
         }
         await db.SaveChangesAsync();

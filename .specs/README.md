@@ -41,33 +41,58 @@ extras (pxpipe, basic-chat, token-saver, mitm page).
    least one endpoint test per new API group (WebApplicationFactory). Run the whole
    suite before pushing.
 7. **Docs**: update `docs/analysis/feature-matrix.md` status column when a spec lands.
+8. **Spec file in the same PR**: the `.specs/SPEC-NNN-*.md` file must be committed in
+   the same PR as the implementation — no code-first/doc-later. (Added after the
+   SPEC-145 audit found SPEC-126–130/140 landed without spec files.)
 
 ## Roadmap
 
+**Status (2026-10-18, SPEC-145 audit): every spec below is merged to `main`
+(PRs up to #184).** Per-spec PRs in git history (`git log --grep 'SPEC-'`).
+
 | Spec | Title | Status |
 |------|-------|--------|
-| SPEC-001 | Foundation: solution, design system, shell, auth, core gateway, core pages | in progress |
-| SPEC-002 | Provider connections management (all auth types, nodes, test) | pending |
-| SPEC-003 | Format translators complete + remaining gateway endpoints | pending |
-| SPEC-004 | Combos advanced (round-robin, sticky, vision adapter, combo studio) | pending |
-| SPEC-005 | Usage, analytics & costs (charts, daily rollup, pricing) | pending |
-| SPEC-006 | Logs, monitoring & resilience (request logger, console, health) | pending |
-| SPEC-007 | Settings pages (all sections incl. feature flags, sidebar prefs) | pending |
-| SPEC-008 | Quota tracker, token saver, proxy pools | pending |
-| SPEC-009 | CLI tools, translator UI, skills pages | pending |
-| SPEC-010 | Media providers (tts/stt/image/video/embedding/search) | pending |
-| SPEC-011 | OAuth flows + provider detail pages | pending |
-| SPEC-012 | MCP, A2A, conductor, orchestration | pending |
-| SPEC-013 | Landing, docs, error pages, PWA | pending |
-| SPEC-014 | MITM relay + traffic inspector | pending |
-| SPEC-015 | Gamification, radar, discovery, free-tiers, leaderboard | pending |
-| SPEC-016 | CLI binary, Docker, distribution | pending |
+| SPEC-001 | Foundation: solution, design system, shell, auth, core gateway, core pages | done |
+| SPEC-002 | Provider connections management (all auth types, nodes, test) | done |
+| SPEC-003 | Format translators complete + remaining gateway endpoints | done |
+| SPEC-004 | Combos advanced (round-robin, sticky, vision adapter, combo studio) | done |
+| SPEC-005 | Usage, analytics & costs (charts, daily rollup, pricing) | done |
+| SPEC-006 | Logs, monitoring & resilience (request logger, console, health) | done |
+| SPEC-007 | Settings pages (all sections incl. feature flags, sidebar prefs) | done |
+| SPEC-008 | Quota tracker, token saver, proxy pools | done |
+| SPEC-009 | CLI tools, translator UI, skills pages | done |
+| SPEC-010 | Media providers (tts/stt/image/video/embedding/search) | done |
+| SPEC-011 | OAuth flows + provider detail pages | done |
+| SPEC-012 | MCP, A2A, conductor, orchestration | done |
+| SPEC-013 | Landing, docs, error pages, PWA | done |
+| SPEC-014 | MITM relay + traffic inspector | done |
+| SPEC-015 | Gamification, radar, discovery, free-tiers, leaderboard | done |
+| SPEC-016 | CLI binary, Docker, distribution | done |
+
+### Landed spec waves (017+)
+
+Titles live in each spec file's H1 — this index tracks coverage, not content:
+
+| Range | Theme | Status |
+|-------|-------|--------|
+| SPEC-017–030 | Parity wave 1 (batches, translators depth, MCP tools/transports, combo strategies, resilience, CI/CD, guardrails, UX, memory, MITM, responses/free-tiers, PWA+E2E) | done |
+| SPEC-031–067 | Parity wave 2 (plugins, localCorpus, memory backends, context engines, usage/analytics, backups, jobs, rate-limit, files API, keys/quota, log export, playground, openapi, prompt cache, settings ops/routing, relay, session pools, device login, vscode tokens, evals, a2a/conductor, provider ops, radar, gamification, audit, skills extras, version manager, tunnels, sidecar, qdrant, media gateway, /v1 extras, bots, admin, remaining pages) | done |
+| SPEC-068–079 | Ops/registry depth (provider ops, combo ops/health, resilience core, model registry, auto-combos, core misc, throughput, protocol parity, custom headers, auto-router, sonar sweep) | done |
+| SPEC-081–100 | Upstream-delta waves + gap closure (small knobs, combo steps 2.0, mappings, routing brain, discovery, deltas v3.8.52 ×3, scoped providers, /v1 leftovers, usage-logs, combo analytics, mgmt batch, MCP tools, medium features, pages, kv partition, llmlingua, MITM policy) | done |
+| SPEC-101–110 | Market comparison (see table below) | done |
+| SPEC-111–125 | Virtual keys, public catalog/signup, UI-parity pages 113–124, oauth CLI cred import | done |
+| SPEC-126–130 | Feature-coverage queue (cli-tools depth, agent-bridge + traffic inspector, provider passthrough, a2a/gami depth, provider auth) | done — **specs retroativos** (docs escritos na SPEC-145) |
+| SPEC-131–144 | Element/UI fidelity + OpenRouter-style account (element fidelity, health sections, cli agents, users admin, signup/billing, stripe, MP/PagSeguro, account keys/activity, combo pricing, generation detail, plan tiers) | done — SPEC-140 retroativo |
+| SPEC-145 | Specs/docs reconciliation (esta reconciliação) | in progress |
+
+**SPEC-080 nunca foi usado** (número pulado — sem arquivo nem PR).
+SPEC-126–130 e SPEC-140 são specs retroativos — a regra 8 previne recorrência.
 
 ## Market-comparison specs (SPEC-101+)
 
 SPEC-001..100 closed the upstream parity roadmap (OmniRoute/9router). SPEC-101+
 come from `docs/analysis/comparativo-mercado-2026-10-11.md` (LLMRouter vs market
-gateways) — improvement work, not ports:
+gateways) — improvement work, not ports. All done:
 
 | Spec | Title | Origin (doc §8) |
 |------|-------|-----------------|
@@ -81,13 +106,16 @@ gateways) — improvement work, not ports:
 | SPEC-108 | Async usage sink | medium 8 |
 | SPEC-109 | EF Core migrations | medium 9 |
 | SPEC-110 | Tamper-evident audit hash-chain | structural 12 |
+| SPEC-111 | Virtual keys + credit ledger + per-user rate-limit | multiuser fase 1/2 |
+| SPEC-112 | Public model catalog + signup surface | multiuser fase 2 |
 
 Multi-user/RBAC/OIDC + Redis multi-node + OpenRouter-style API resale are
 documented as future evolution in
-`docs/analysis/evolucao-multiuser-openrouter.md` (depends on SPEC-109 first).
+`docs/analysis/evolucao-multiuser-openrouter.md` (SPEC-111/112 landed its
+foundation phases; OIDC/RBAC remain future work).
 
 UI-parity migration specs (OmniRoute → LLMRouter), ordered by impact —
-audit: `docs/analysis/ui-parity-audit-2026-10-11.md`:
+audit: `docs/analysis/ui-parity-audit-2026-10-11.md` — all done:
 
 | Spec | Title |
 |------|-------|
@@ -103,3 +131,4 @@ audit: `docs/analysis/ui-parity-audit-2026-10-11.md`:
 | SPEC-122 | Docs hub parity |
 | SPEC-123 | Settings sub-routes parity (optional) |
 | SPEC-124 | Home finishing parity |
+| SPEC-125 | OAuth / CLI credential import |

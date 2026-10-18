@@ -1,7 +1,8 @@
 # SPEC-031 — Plugins + search-tools funcionais
 
 ## Origem
-Gap do `pendencias.md`: plugins e search-tools eram placeholder (sem execução).
+Gap do `pendencias.md` (pendência #17): plugins e search-tools eram
+placeholder (sem execução).
 
 ## Escopo
 - **Plugin hooks no gateway** (`LLMRouter.Core/Extras/PluginHooks.cs`):
@@ -14,4 +15,6 @@ Gap do `pendencias.md`: plugins e search-tools eram placeholder (sem execução)
 
 ## Aceite
 - Testes `PluginHooksTests` (setModel+addHeaders, disabled skip, annotate) — 3 verdes
+- Plugin com hook `onRequest` alterando body é aplicado numa request de teste;
+  `searchTools.run` retorna conteúdo de URL mockada; página lista estado real.
 - CI verde

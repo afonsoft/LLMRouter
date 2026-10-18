@@ -3,40 +3,165 @@
 @inject Api Api
 @inject Loc Loc
 
+@* SPEC-142: unified activity hub — Feed (audit events) + Overview/Trends/Explore
+   usage-analytics tabs, OpenRouter Activity style. *@
 <div style="display:flex;align-items:center;justify-content:space-between">
     <div>
         <h1 class="page-title">@Loc.T("activity", "Activity")</h1>
         <p class="page-desc">Audit event feed across providers, combos, keys and settings</p>
     </div>
-    <button class="btn" @onclick="Load">Refresh</button>
+    <div class="flex gap-2">
+        <a class="btn btn-sm" href="api/usage/timeseries-csv?range=@_range" download>@Loc.T("activity.export", "Export CSV")</a>
+        <button class="btn" @onclick="Load">Refresh</button>
+    </div>
 </div>
 
 <div class="tabs mt-4">
-    @foreach (var c in _cats)
-    {
-        <a class="tab @(_cat == c.Id ? "on" : "")" href="/dashboard/activity" @onclick="() => Select(c.Id)" @onclick:preventDefault>@c.Label</a>
-    }
+    <a class="tab @(_tab == "feed" ? "on" : "")" href="#" @onclick='() => Tab("feed")' @onclick:preventDefault>Feed</a>
+    <a class="tab @(_tab == "overview" ? "on" : "")" href="#" @onclick='() => Tab("overview")' @onclick:preventDefault>Overview</a>
+    <a class="tab @(_tab == "trends" ? "on" : "")" href="#" @onclick='() => Tab("trends")' @onclick:preventDefault>Trends</a>
+    <a class="tab @(_tab == "explore" ? "on" : "")" href="#" @onclick='() => Tab("explore")' @onclick:preventDefault>Explore</a>
 </div>
 
-<div class="card mt-4">
-    @foreach (var day in _groups)
-    {
-        <div class="feed-day">@day.Label</div>
-        @foreach (var e in day.Events)
+@if (_tab == "feed")
+{
+    <div class="tabs mt-2">
+        @foreach (var c in _cats)
         {
-            var cat = Str(e, "category");
-            <div class="feed-row">
-                <span class="material-symbols-outlined feed-icon">@Icon(cat)</span>
-                <div class="feed-body">
-                    <div class="feed-action">@Str(e, "action")@if (Str(e, "target") is { Length: > 0 } t) { <span class="feed-target"> — @t</span> }</div>
-                    <div class="feed-meta">@(Str(e, "actor") is { Length: > 0 } a ? a : "system")</div>
+            <a class="tab @(_cat == c.Id ? "on" : "")" href="/dashboard/activity" @onclick="() => Select(c.Id)" @onclick:preventDefault>@c.Label</a>
+        }
+    </div>
+    <div class="card mt-4">
+        @foreach (var day in _groups)
+        {
+            <div class="feed-day">@day.Label</div>
+            @foreach (var e in day.Events)
+            {
+                var cat = Str(e, "category");
+                <div class="feed-row">
+                    <span class="material-symbols-outlined feed-icon">@Icon(cat)</span>
+                    <div class="feed-body">
+                        <div class="feed-action">@Str(e, "action")@if (Str(e, "target") is { Length: > 0 } t) { <span class="feed-target"> — @t</span> }</div>
+                        <div class="feed-meta">@(Str(e, "actor") is { Length: > 0 } a ? a : "system")</div>
+                    </div>
+                    <div class="feed-time" title="@Str(e, "at")">@Rel(Str(e, "at"))</div>
                 </div>
-                <div class="feed-time" title="@Str(e, "at")">@Rel(Str(e, "at"))</div>
+            }
+        }
+        @if (_groups.Count == 0) { <div class="empty"><span class="material-symbols-outlined">timeline</span>No events yet</div> }
+    </div>
+}
+else
+{
+    <div class="flex gap-2 mt-4" style="align-items:center">
+        <select class="input" style="width:auto" @bind="_range" @bind:after="LoadUsage">
+            <option value="today">today</option><option value="week">7d</option>
+            <option value="month">30d</option><option value="all">all</option>
+        </select>
+    </div>
+}
+
+@if (_tab == "overview" && _ov is not null)
+{
+    <div class="flex gap-3 mt-4" style="flex-wrap:wrap">
+        <div class="card card-p" style="min-width:140px"><div class="muted xs">Requests</div><div class="bold" style="font-size:20px">@_ov.Value.reqs</div></div>
+        <div class="card card-p" style="min-width:140px"><div class="muted xs">Tokens</div><div class="bold" style="font-size:20px">@_ov.Value.toks.ToString("N0")</div></div>
+        <div class="card card-p" style="min-width:140px"><div class="muted xs">Errors</div><div class="bold" style="font-size:20px;color:@(_ov.Value.errs > 0 ? "var(--err,#e5534b)" : "inherit")">@_ov.Value.errs</div></div>
+    </div>
+    <div class="flex gap-4 mt-4" style="flex-wrap:wrap">
+        @foreach (var (title, bars) in new[] { ("Top providers", _ov.Value.providers), ("Top models", _ov.Value.models), ("Top keys", _ov.Value.keys) })
+        {
+            <div class="card card-p" style="flex:1;min-width:260px">
+                <div class="bold sm mb-2">@title</div>
+                @foreach (var b in bars)
+                {
+                    <div class="flex gap-2" style="align-items:center;margin:3px 0">
+                        <span class="mono sm" style="width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@b.name</span>
+                        <div style="flex:1;height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden">
+                            <div style="height:100%;width:@((b.val / Math.Max(1, bars[0].val) * 100).ToString("0"))%;background:var(--primary)"></div>
+                        </div>
+                        <span class="mono sm">@b.val.ToString("N0")</span>
+                    </div>
+                }
+                @if (bars.Length == 0) { <div class="muted sm">—</div> }
             </div>
         }
+    </div>
+}
+
+@if (_tab == "trends" && _buckets.Count > 0)
+{
+    <div class="card card-p mt-4">
+        <div class="bold sm mb-2">Requests / time</div>
+        <svg viewBox="0 0 640 160" style="width:100%;height:160px">
+            @{
+                var max = Math.Max(1, _buckets.Max(b => b.reqs));
+                var pts = string.Join(" ", _buckets.Select((b, i) => $"{i * 640.0 / Math.Max(1, _buckets.Count - 1):0},{150 - b.reqs * 140.0 / max:0}"));
+            }
+            <polyline points="@pts" fill="none" stroke="var(--primary)" stroke-width="2" />
+        </svg>
+        <div class="flex between muted xs"><span>@_buckets[0].bucket</span><span>@_buckets[^1].bucket</span></div>
+    </div>
+    @if (_movers.Count > 0)
+    {
+        <div class="card card-p mt-4">
+            <div class="bold sm mb-2">Trending movers <span class="muted xs">(second half vs first half of range)</span></div>
+            <table class="table">
+                <thead><tr><th>Provider</th><th>1st half</th><th>2nd half</th><th>Δ</th></tr></thead>
+                <tbody>
+                    @foreach (var m in _movers)
+                    {
+                        <tr>
+                            <td class="mono sm">@m.name</td>
+                            <td class="mono sm">@m.first</td>
+                            <td class="mono sm">@m.second</td>
+                            <td class="mono sm" style="color:@(m.delta >= 0 ? "var(--ok,#3fb950)" : "var(--err,#e5534b)")">@(m.delta >= 0 ? "+" : "")@m.delta</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     }
-    @if (_groups.Count == 0) { <div class="empty"><span class="material-symbols-outlined">timeline</span>No events yet</div> }
-</div>
+}
+
+@if (_tab == "explore")
+{
+    <div class="flex gap-2 mt-2" style="align-items:center">
+        <select class="input" style="width:auto" @bind="_exMetric" @bind:after="LoadUsage">
+            <option value="reqs">requests</option><option value="toks">tokens</option><option value="cost">cost</option>
+        </select>
+        <span class="muted sm">by</span>
+        <select class="input" style="width:auto" @bind="_exGroup" @bind:after="LoadUsage">
+            <option value="model">model</option><option value="provider">provider</option>
+            <option value="key">api key</option><option value="endpoint">type</option>
+        </select>
+    </div>
+    @if (_explore.Count > 0)
+    {
+        <div class="card mt-4">
+            <table class="table">
+                <thead><tr><th>@_exGroup</th><th>requests</th><th>tokens</th><th>cost</th><th>share</th></tr></thead>
+                <tbody>
+                    @foreach (var r in _explore)
+                    {
+                        <tr>
+                            <td class="mono sm">@r.name</td>
+                            <td class="mono sm">@r.reqs</td>
+                            <td class="mono sm">@r.toks.ToString("N0")</td>
+                            <td class="mono sm">$@r.cost.ToString("0.0000")</td>
+                            <td><div style="width:120px;height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden"><div style="height:100%;width:@r.pct%;background:var(--primary)"></div></div></td>
+                        </tr>
+                    }
+                    @if (_exploreOther is { } o)
+                    {
+                        <tr class="muted"><td class="sm">Other</td><td class="mono sm">@o.reqs</td><td class="mono sm">@o.toks.ToString("N0")</td><td class="mono sm">$@o.cost.ToString("0.0000")</td><td></td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else { <div class="card card-p mt-4 muted sm">No usage in this range.</div> }
+}
 
 @code {
     private record Cat(string Id, string Label);
@@ -48,8 +173,18 @@
     ];
     private readonly Cat[] _cats = Cats;
     private string _cat = "all";
+    private string _tab = "feed", _range = "week";
     private List<DayGroup> _groups = [];
     private System.Threading.Timer? _timer;
+
+    private (int reqs, long toks, int errs, (string name, long val)[] providers,
+        (string name, long val)[] models, (string name, long val)[] keys)? _ov;
+    private List<(string bucket, int reqs)> _buckets = [];
+    private List<(string name, int first, int second, int delta)> _movers = [];
+    private string _exMetric = "reqs", _exGroup = "model";
+    private List<(string name, int reqs, long toks, double cost, int pct)> _explore = [];
+    private (int reqs, long toks, double cost)? _exploreOther;
+    private List<JsonElement> _raw = [];
 
     private sealed class DayGroup { public string Label = ""; public List<JsonElement> Events = []; }
 
@@ -59,14 +194,99 @@
         _timer = new(async _ => { await Load(); await InvokeAsync(StateHasChanged); }, null, 5000, 5000);
     }
 
+    private async Task Tab(string t)
+    {
+        _tab = t;
+        if (t != "feed" && _raw.Count == 0) await LoadUsage();
+    }
+
     private async Task Select(string id) { _cat = id; await Load(); }
 
     private async Task Load()
     {
-        var url = "api/audit/events?limit=200" + (_cat == "all" ? "" : $"&category={_cat}");
-        var r = await Api.GetAsync(url);
-        Group(r.GetProperty("events").EnumerateArray().ToList());
+        if (_tab == "feed")
+        {
+            var url = "api/audit/events?limit=200" + (_cat == "all" ? "" : $"&category={_cat}");
+            var r = await Api.GetAsync(url);
+            Group(r.GetProperty("events").EnumerateArray().ToList());
+        }
+        else await LoadUsage();
     }
+
+    private async Task LoadUsage()
+    {
+        try
+        {
+            var u = await Api.GetAsync($"api/usage?range={_range}");
+            _ov = (
+                u.GetProperty("totalRequests").GetInt32(),
+                u.GetProperty("totalTokens").GetInt64(),
+                u.GetProperty("errors").GetInt32(),
+                Bars(u, "byProvider", "provider"),
+                Bars(u, "byModel", "model"),
+                []);
+            var ts = await Api.GetAsync($"api/usage/timeseries?range={_range}");
+            _buckets = ts.GetProperty("buckets").EnumerateArray()
+                .Select(b => (b.GetProperty("bucket").GetString() ?? "",
+                    b.GetProperty("requests").GetInt32())).ToList();
+            // raw rows for explore + movers + top keys
+            var logs = await Api.GetAsync($"api/usage/call-logs?limit=500&from={FromRange()}");
+            _raw = logs.TryGetProperty("items", out var it) ? it.EnumerateArray().ToList() : [];
+            var keyBars = _raw.Where(r => Str(r, "key") is { Length: > 0 })
+                .GroupBy(r => MaskKey(Str(r, "key")))
+                .Select(g => (g.Key, (long)g.Count())).OrderByDescending(x => x.Item2).Take(5).ToArray();
+            _ov = _ov!.Value with { keys = keyBars };
+            // movers: per-provider first-half vs second-half by timestamp
+            var mid = _raw.Count / 2;
+            var byP = _raw.GroupBy(r => Str(r, "provider"));
+            _movers = byP.Select(g =>
+                {
+                    // rows are newest-first; "second half of range" = older tail
+                    var f = g.Skip(mid).Count();
+                    var s = g.Take(mid).Count();
+                    return (name: g.Key, first: f, second: s, delta: s - f);
+                })
+                .OrderByDescending(m => Math.Abs(m.delta)).Take(8).ToList();
+            // explore
+            var tot = Math.Max(1, _raw.Count);
+            var grouped = _raw.GroupBy(r => _exGroup switch
+            {
+                "provider" => Str(r, "provider"), "key" => MaskKey(Str(r, "key")),
+                "endpoint" => Str(r, "type"), _ => Str(r, "model"),
+            }).Select(g => (
+                g.Key is { Length: > 0 } n ? n : "—",
+                g.Count(),
+                g.Sum(r => Num(r, "inputTokens") + Num(r, "outputTokens")),
+                g.Sum(r => Dbl(r, "cost"))))
+                .OrderByDescending(x => _exMetric == "toks" ? x.Item3 : _exMetric == "cost" ? x.Item4 : x.Item2)
+                .ToList();
+            _explore = grouped.Take(10).Select(x => (x.Item1, x.Item2, x.Item3, x.Item4,
+                (int)Math.Round(100.0 * (_exMetric == "toks" ? x.Item3 : _exMetric == "cost" ? x.Item4 : x.Item2)
+                    / Math.Max(1, grouped.Select(g => _exMetric == "toks" ? g.Item3 : _exMetric == "cost" ? g.Item4 : g.Item2).Max())))).ToList();
+            var rest = grouped.Skip(10).ToList();
+            _exploreOther = rest.Count > 0 ? (rest.Sum(x => x.Item2), rest.Sum(x => x.Item3), rest.Sum(x => x.Item4)) : null;
+        }
+        catch { _ov = (0, 0, 0, [], [], []); _buckets = []; _movers = []; _explore = []; _exploreOther = null; }
+    }
+
+    private string FromRange() => (_range switch
+    {
+        "today" => DateTime.UtcNow.Date, "week" => DateTime.UtcNow.Date.AddDays(-7),
+        "month" => DateTime.UtcNow.Date.AddDays(-30), _ => DateTime.MinValue,
+    }).ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static (string name, long val)[] Bars(JsonElement u, string prop, string name) =>
+        u.TryGetProperty(prop, out var a) && a.ValueKind == JsonValueKind.Array
+            ? a.EnumerateArray().Select(x => (
+                x.TryGetProperty(name, out var n) ? n.GetString() ?? "?" : "?",
+                x.TryGetProperty("tokens", out var t) ? t.GetInt64() : 0))
+              .OrderByDescending(x => x.Item2).Take(5).ToArray() : [];
+
+    private static long Num(JsonElement e, string p) =>
+        e.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+    private static double Dbl(JsonElement e, string p) =>
+        e.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+    private static string MaskKey(string k) => k.Length <= 10 ? k : k[..8] + "…";
 
     private void Group(List<JsonElement> events)
     {

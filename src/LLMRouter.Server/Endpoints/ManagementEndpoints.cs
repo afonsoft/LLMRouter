@@ -686,6 +686,25 @@ public static class ManagementEndpoints
             return Results.Json(new { hourly, buckets }, JsonOpts);
         });
 
+        // SPEC-142: CSV export of the same timeseries buckets (activity page export).
+        g.MapGet("/usage/timeseries-csv", async (LlmRouterDbContext db, string? range, HttpContext ctx) =>
+        {
+            var since = range == "today" ? DateTime.UtcNow.Date
+                : range == "week" ? DateTime.UtcNow.Date.AddDays(-7)
+                : range == "month" ? DateTime.UtcNow.Date.AddDays(-30)
+                : DateTime.MinValue;
+            var s = since.ToString("yyyy-MM-dd HH:mm:ss");
+            var rows = await db.UsageHistory.Where(u => string.Compare(u.Timestamp, s) >= 0).ToListAsync();
+            var sb = new System.Text.StringBuilder("timestamp,provider,model,prompt_tokens,completion_tokens,cost_usd,status,latency_ms\n");
+            foreach (var u in rows.OrderBy(r => r.Timestamp))
+                sb.Append(u.Timestamp).Append(',').Append(u.Provider).Append(',')
+                  .Append(u.Model?.Replace(',', ';')).Append(',')
+                  .Append(u.PromptTokens).Append(',').Append(u.CompletionTokens).Append(',')
+                  .Append(u.Cost.ToString("0.000000")).Append(',')
+                  .Append(u.Status).Append(',').Append(u.LatencyMs).Append('\n');
+            return Results.Text(sb.ToString(), "text/csv");
+        });
+
         // SPEC-005: per-provider stats incl. p50/p95 latency and error rate
         g.MapGet("/provider-stats", async (LlmRouterDbContext db, string? range) =>
         {

@@ -37,7 +37,7 @@ public static class UserKeysEndpoints
 
     private static object UserDto(User u, double balance) => new
     {
-        u.Id, u.Email, u.Name, u.Role, u.IsActive, u.CreatedAt,
+        u.Id, u.Email, u.Name, u.Role, u.IsActive, u.CreatedAt, u.Plan,
         hasPassword = u.PasswordHash != null, u.OidcSubject, u.OidcIssuer, balance,
     };
 
@@ -89,6 +89,9 @@ public static class UserKeysEndpoints
             if (b.TryGetProperty("name", out var n)) u.Name = n.GetString() ?? u.Name;
             if (b.TryGetProperty("role", out var r)) u.Role = r.GetString() ?? u.Role;
             if (b.TryGetProperty("isActive", out var a)) u.IsActive = a.GetBoolean();
+            // SPEC-144: admin sets billing plan (free|standard)
+            if (b.TryGetProperty("plan", out var p) && p.GetString() is { Length: > 0 } plan
+                && plan is "free" or "standard") u.Plan = plan;
             await db.SaveChangesAsync();
             await AuditLog.RecordAsync(db, "admin", "user.update", id, null, ip(ctx));
             return Results.Json(UserDto(u, await Balance(db, id)), JsonOpts);

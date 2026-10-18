@@ -5,6 +5,24 @@
 <h1 class="page-title">@Loc.T("models.title", "Models & Combos")</h1>
 <p class="page-desc">@Loc.T("models.subtitle", "All models reachable through your connections")</p>
 
+@* SPEC-144: plan tiers — OpenRouter pricing-style block (Free vs Standard). *@
+<div class="flex gap-4 mt-4" style="flex-wrap:wrap">
+    <div class="card card-p" style="flex:1;min-width:260px;border:1px solid var(--border)">
+        <div class="flex between items-center">
+            <span class="bold">Free</span>
+            <span class="muted xs">@(_freeLimit > 0 ? $"{_freeLimit} req/day" : "—")</span>
+        </div>
+        <div class="muted sm mt-2">@Loc.T("models.tierFree", "N requests/day per user on all public models — no credits needed.")</div>
+    </div>
+    <div class="card card-p" style="flex:1;min-width:260px;border:1px solid var(--primary)">
+        <div class="flex between items-center">
+            <span class="bold">Standard</span>
+            <span class="muted xs">@(_feePct > 0 ? $"+{_feePct:0.#}% fee" : "no cap")</span>
+        </div>
+        <div class="muted sm mt-2">@Loc.T("models.tierStandard", "Pay-as-you-go credits, no daily limit. Platform fee applies on top-ups.")</div>
+    </div>
+</div>
+
 <div class="mt-4 flex gap-2" style="align-items:center;flex-wrap:wrap">
     <input class="input" style="max-width:340px" placeholder="@Loc.T("models.search", "Search models, providers, capabilities…")" @bind="_q" @bind:event="oninput" />
     <select class="input" style="max-width:180px" @bind="_provider">
@@ -178,10 +196,27 @@
     private List<SyncedRow> _synced = [];
     private string? _syncMsg;
     private bool _syncing;
+    private int _freeLimit = 50;
+    private double _feePct;
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(Reload(false), LoadOverrides(), LoadSynced());
+        await Task.WhenAll(Reload(false), LoadOverrides(), LoadSynced(), LoadTiers());
+    }
+
+    private async Task LoadTiers()
+    {
+        try
+        {
+            var t = await Api.GetAsync("api/public/models");
+            if (t.TryGetProperty("platformFeePct", out var f)) _feePct = f.GetDouble();
+            if (t.TryGetProperty("tiers", out var ts))
+                foreach (var tier in ts.EnumerateArray())
+                    if (tier.GetProperty("id").GetString() == "free"
+                        && tier.TryGetProperty("dailyLimit", out var dl) && dl.ValueKind == JsonValueKind.Number)
+                        _freeLimit = dl.GetInt32();
+        }
+        catch { /* public catalog disabled — keep defaults */ }
     }
 
     private async Task Reload(bool live)

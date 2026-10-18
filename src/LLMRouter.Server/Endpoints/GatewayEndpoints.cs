@@ -1656,6 +1656,29 @@ public static class GatewayEndpoints
                 return false;
             }
         }
+        // SPEC-144: plan=free users are capped at payments.freeDailyLimit requests/day
+        // (OpenRouter free tier). Standard/admin callers skip the cap.
+        if (auth.UserId is { } uid
+            && await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == uid, ctx.RequestAborted) is { Plan: "free" })
+        {
+            var s = await db.Settings.AsNoTracking().FirstOrDefaultAsync(ctx.RequestAborted);
+            var limit = PaymentEndpoints.FreeDailyLimit(AuthEndpoints.Parse(s?.Data));
+            if (limit > 0)
+            {
+                var today = DateTime.UtcNow.Date.ToString("yyyy-MM-dd");
+                var used = await db.UsageHistory.CountAsync(
+                    u => u.UserId == uid && string.Compare(u.Timestamp, today) >= 0, ctx.RequestAborted);
+                if (used >= limit)
+                {
+                    ctx.Response.StatusCode = 429;
+                    ctx.Response.Headers["Retry-After"] =
+                        ((int)(DateTime.UtcNow.Date.AddDays(1) - DateTime.UtcNow).TotalSeconds).ToString();
+                    await WriteError(ctx, inbound, "free_tier_limit",
+                        $"Free plan daily limit reached ({limit} requests/day). Add credits or ask admin to move to the standard plan.");
+                    return false;
+                }
+            }
+        }
         return true;
     }
 

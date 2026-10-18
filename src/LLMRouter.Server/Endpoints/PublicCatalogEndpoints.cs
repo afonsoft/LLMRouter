@@ -114,7 +114,23 @@ public static class PublicCatalogEndpoints
                 data.Add(new { id = combo.Name, name = combo.Name, context_length = (int?)null,
                     capabilities = new[] { "combo" }, pricing = (object?)null,
                     top_provider = (object?)null });
-            return Results.Json(new { data }, JsonOpts);
+            // SPEC-144: plan tiers — OpenRouter pricing-page style block so public
+            // consumers can advertise free-vs-standard like the pricing page does.
+            var payCfg = fresh.ValueKind == JsonValueKind.Object && fresh.TryGetProperty("payments", out var pay) ? pay : default;
+            var feePct = payCfg.ValueKind == JsonValueKind.Object && payCfg.TryGetProperty("feePct", out var fp) && fp.ValueKind == JsonValueKind.Number ? fp.GetDouble() : 0;
+            var freeCap = payCfg.ValueKind == JsonValueKind.Object && payCfg.TryGetProperty("freeDailyLimit", out var fl) && fl.ValueKind == JsonValueKind.Number ? fl.GetInt32() : 50;
+            return Results.Json(new
+            {
+                data,
+                platformFeePct = feePct,
+                tiers = new List<object>
+                {
+                    new { id = "free", name = "Free", dailyLimit = (int?)freeCap,
+                        description = "N requests/day per user, all public models." },
+                    new { id = "standard", name = "Standard", dailyLimit = (int?)null,
+                        description = "Pay-as-you-go credits, no daily cap." },
+                },
+            }, JsonOpts);
         });
 
         // ---------- signup → key (default off) ----------

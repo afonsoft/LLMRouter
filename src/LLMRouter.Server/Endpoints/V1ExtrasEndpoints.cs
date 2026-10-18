@@ -317,6 +317,80 @@ public static class V1ExtrasEndpoints
                     subscriptions = rows.Select(k => new { k.Key, data = k.Value }),
                 });
             });
+
+            // SPEC-143: GET /api/v1/generation?id= — OpenRouter-style generation
+            // detail: usage meta + provider-attempts waterfall (proxyLogs linked
+            // by correlationId). vk keys are scoped to their own rows.
+            g.MapGet("/generation", async (HttpContext ctx, LlmRouterDbContext db, long? id) =>
+            {
+                var auth = await GatewayEndpoints.AuthenticatedKey(ctx, db);
+                if (!auth.Authed) { ctx.Response.StatusCode = 401; return; }
+                var row = await db.UsageHistory.FindAsync(id);
+                if (row is null) { ctx.Response.StatusCode = 404; return; }
+                if (auth.UserId is not null && row.UserId != auth.UserId) { ctx.Response.StatusCode = 404; return; }
+                var corr = CorrelationOf(row.Meta);
+                var attempts = corr is null ? [] : await db.ProxyLogs.AsNoTracking()
+                    .Where(p => p.CorrelationId == corr)
+                    .OrderBy(p => p.AttemptNumber).ToListAsync();
+                await ctx.Response.WriteAsJsonAsync(new
+                {
+                    id = row.Id, at = row.Timestamp, row.Provider, row.Model,
+                    row.ConnectionId, row.Endpoint, row.Status,
+                    row.PromptTokens, row.CompletionTokens, row.Cost, row.LatencyMs,
+                    row.UserId, key = row.ApiKey, correlationId = corr,
+                    meta = row.Meta is { } m ? JsonDocument.Parse(m).RootElement.Clone() : (JsonElement?)null,
+                    waterfall = attempts.Select(a => new
+                    {
+                        a.AttemptNumber, a.Provider, a.TargetUrl, a.UpstreamStatus,
+                        a.LatencyMs, a.HeadersMs, a.FirstChunkMs, a.Error, a.Level,
+                    }),
+                });
+            });
+
+            // SPEC-143: GET /api/v1/generation/content?id= — request/response
+            // payloads; only when settings.observability.ioLogging is on.
+            g.MapGet("/generation/content", async (HttpContext ctx, LlmRouterDbContext db, long? id) =>
+            {
+                var auth = await GatewayEndpoints.AuthenticatedKey(ctx, db);
+                if (!auth.Authed) { ctx.Response.StatusCode = 401; return; }
+                var srow = await db.Settings.AsNoTracking().FirstOrDefaultAsync();
+                var ioOn = srow is not null
+                    && AuthEndpoints.Parse(srow.Data) is { ValueKind: JsonValueKind.Object } sd
+                    && sd.TryGetProperty("observability", out var obs)
+                    && obs.TryGetProperty("ioLogging", out var iol)
+                    && iol.ValueKind is JsonValueKind.True;
+                if (!ioOn)
+                {
+                    ctx.Response.StatusCode = 403;
+                    await ctx.Response.WriteAsJsonAsync(new { error = new { message = "Input & Output logging is off (settings.observability.ioLogging)", type = "forbidden" } });
+                    return;
+                }
+                var row = await db.UsageHistory.FindAsync(id);
+                if (row is null) { ctx.Response.StatusCode = 404; return; }
+                if (auth.UserId is not null && row.UserId != auth.UserId) { ctx.Response.StatusCode = 404; return; }
+                var corr = CorrelationOf(row.Meta);
+                var det = corr is not null
+                    ? await db.RequestDetails.AsNoTracking()
+                        .Where(r => r.Data.Contains(corr)).FirstOrDefaultAsync()
+                    : await db.RequestDetails.AsNoTracking()
+                        .Where(r => r.Timestamp == row.Timestamp && r.Model == row.Model
+                            && r.Provider == row.Provider && r.ConnectionId == row.ConnectionId)
+                        .FirstOrDefaultAsync();
+                await ctx.Response.WriteAsJsonAsync(new
+                {
+                    id = row.Id, correlationId = corr,
+                    prompt = det?.Prompt, response = det?.Response,
+                });
+            });
         }
+    }
+
+    // SPEC-143: correlationId is merged into Meta by ProxyJournal.MergeCorrelation.
+    private static string? CorrelationOf(string? meta)
+    {
+        if (meta is null) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(meta,
+            "\"correlationId\"\\s*:\\s*\"([0-9a-fA-F]{8,32})\"");
+        return m.Success ? m.Groups[1].Value : null;
     }
 }

@@ -12,6 +12,10 @@
             <input type="checkbox" checked="@_recording" @onchange="ToggleRecording" />
             @Loc.T("logs.recording", "Recording")
         </label>
+        <label class="flex muted sm" style="gap:6px;align-items:center" title="@Loc.T("logs.ioLoggingHint", "Store request/response payloads (OpenRouter-style Input & Output logging)")">
+            <input type="checkbox" checked="@_ioLogging" @onchange="ToggleIoLogging" />
+            @Loc.T("logs.ioLogging", "I/O logging")
+        </label>
         <a class="btn btn-sm" href="/api/log-export?fmt=csv" target="_blank">CSV</a>
         <a class="btn btn-sm" href="/api/log-export" target="_blank">JSONL</a>
         <button class="btn btn-sm" @onclick="Clean">@Loc.T("logs.cleanHistoryButton", "Clean history")</button>
@@ -85,7 +89,45 @@
                 </tr>
                 @if (_detail?.Id == l.Id)
                 {
-                    <tr><td colspan="8"><pre class="code" style="max-height:300px;overflow:auto">@_detailJson</pre></td></tr>
+                    <tr><td colspan="8">
+                        <div class="card" style="background:var(--bg-subtle)">
+                            @if (_gen is not null)
+                            {
+                                <div class="flex gap-4 mb-2" style="flex-wrap:wrap">
+                                    <span class="sm muted">Cost <b class="mono">$@_gen.Value.cost.ToString("0.0000")</b></span>
+                                    <span class="sm muted">Tokens <b class="mono">@_gen.Value.pt + @_gen.Value.ct</b></span>
+                                    <span class="sm muted">Endpoint <b class="mono">@(_gen.Value.endpoint ?? "—")</b></span>
+                                    @if (_gen.Value.corr is not null)
+                                    {
+                                        <span class="sm muted">corr <b class="mono">@_gen.Value.corr</b></span>
+                                    }
+                                </div>
+                                @if (_gen.Value.attempts.Length > 0)
+                                {
+                                    <div class="bold sm mb-1">Provider Responses</div>
+                                    <table class="table">
+                                        <thead><tr><th>#</th><th>Provider</th><th>Status</th><th>Level</th><th>Latency</th><th>TTFB</th><th>Error</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var a in _gen.Value.attempts)
+                                            {
+                                                <tr>
+                                                    <td class="mono sm">@a.attempt</td>
+                                                    <td class="mono sm">@a.provider</td>
+                                                    <td><span class="badge @StatusClass(a.status)">@(a.status ?? "—")</span></td>
+                                                    <td class="sm muted">@a.level</td>
+                                                    <td class="mono sm">@a.latency ms</td>
+                                                    <td class="mono sm">@(a.ttfb?.ToString() ?? "—") ms</td>
+                                                    <td class="sm muted">@(a.error ?? "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                }
+                            }
+                            <div class="bold sm mb-1 mt-2">Raw</div>
+                            <pre class="code" style="max-height:300px;overflow:auto">@_detailJson</pre>
+                        </div>
+                    </td></tr>
                 }
             }
             @if (_logs.Count == 0)
@@ -112,11 +154,14 @@
     private List<L> _logs = [];
     private L? _detail;
     private string _detailJson = "";
+    private (decimal cost, int pt, int ct, string? endpoint, string? corr,
+        (int attempt, string? provider, string? status, string? level, long latency, long? ttfb, string? error)[] attempts)? _gen;
     private Meta _meta = new([], [], [], [], []);
     private HashSet<string> _providers = new(StringComparer.OrdinalIgnoreCase);
     private string _q = "", _rid = "", _model = "", _conn = "", _key = "", _status = "", _preset = "";
     private int _total, _limit = 100;
     private bool _recording = true;
+    private bool _ioLogging;
 
     protected override async Task OnInitializedAsync()
     {
@@ -124,6 +169,8 @@
         {
             var s = await Api.GetAsync("api/settings");
             _recording = !s.TryGetProperty("requestLogging", out var rl) || rl.ValueKind != JsonValueKind.False;
+            _ioLogging = s.TryGetProperty("observability", out var obs) && obs.ValueKind == JsonValueKind.Object
+                && obs.TryGetProperty("ioLogging", out var iol) && iol.ValueKind == JsonValueKind.True;
         }
         catch { }
         try
@@ -189,15 +236,39 @@
 
     private async Task Toggle(L l)
     {
-        if (_detail?.Id == l.Id) { _detail = null; return; }
+        if (_detail?.Id == l.Id) { _detail = null; _gen = null; return; }
         _detail = l;
         _detailJson = "…";
+        _gen = null;
         try
         {
             var r = await Api.GetAsync($"api/usage/call-logs/{l.Id}");
             _detailJson = r.TryGetProperty("detail", out var d) ? Pretty(d.ToString()) : Pretty(r.GetProperty("call").ToString());
         }
         catch { _detailJson = "(unavailable)"; }
+        // SPEC-143: generation detail — meta + provider-attempts waterfall.
+        try
+        {
+            var g = await Api.GetAsync($"api/v1/generation?id={l.Id}");
+            var att = g.TryGetProperty("waterfall", out var w) && w.ValueKind == JsonValueKind.Array
+                ? w.EnumerateArray().Select(a => (
+                    a.TryGetProperty("attemptNumber", out var an) ? an.GetInt32() : 0,
+                    a.TryGetProperty("provider", out var ap) ? ap.GetString() : null,
+                    a.TryGetProperty("upstreamStatus", out var us) ? us.ToString() : null,
+                    a.TryGetProperty("level", out var lv) ? lv.GetString() : null,
+                    a.TryGetProperty("latencyMs", out var lm) ? lm.GetInt64() : 0,
+                    a.TryGetProperty("firstChunkMs", out var fc) && fc.ValueKind == JsonValueKind.Number ? fc.GetInt64() : (long?)null,
+                    a.TryGetProperty("error", out var er) ? er.GetString() : null)).ToArray()
+                : [];
+            _gen = (
+                g.TryGetProperty("cost", out var c) ? (decimal)c.GetDouble() : 0,
+                g.TryGetProperty("promptTokens", out var p) ? p.GetInt32() : 0,
+                g.TryGetProperty("completionTokens", out var ct) ? ct.GetInt32() : 0,
+                g.TryGetProperty("endpoint", out var ep) ? ep.GetString() : null,
+                g.TryGetProperty("correlationId", out var ci) ? ci.GetString() : null,
+                att);
+        }
+        catch { }
     }
 
     private void ToggleProvider(string p)
@@ -210,6 +281,22 @@
     {
         _recording = e.Value is bool b && b;
         try { await Api.PutAsync("api/settings", new { requestLogging = _recording }); } catch { }
+    }
+
+    private async Task ToggleIoLogging(ChangeEventArgs e)
+    {
+        _ioLogging = e.Value is bool b && b;
+        try
+        {
+            // PUT /api/settings replaces top-level keys — merge observability first.
+            var s = await Api.GetAsync("api/settings");
+            var dict = s.TryGetProperty("observability", out var obs) && obs.ValueKind == JsonValueKind.Object
+                ? obs.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone())
+                : new Dictionary<string, JsonElement>();
+            dict["ioLogging"] = JsonSerializer.SerializeToElement(_ioLogging);
+            await Api.PutAsync("api/settings", new { observability = dict });
+        }
+        catch { }
     }
 
     private async Task Clean()

@@ -81,7 +81,8 @@ try {
     return { fontSize: cs.fontSize, boxShadow: cs.boxShadow };
   });
   if (inputCss.fontSize !== '14px') fail(`input font ${inputCss.fontSize} != 14px`);
-  if (!/inset/.test(inputCss.boxShadow)) fail('input missing inset shadow');
+  // SPEC-140 removed the inset shadow to match OmniRoute; keep the font check only.
+  if (/inset/.test(inputCss.boxShadow)) fail('input has inset shadow (upstream removed it)');
   await page.goto(base + '/dashboard/providers', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.btn', { timeout: 60_000 });
   const btnCss = await page.$eval('.btn:not(.btn-sm):not(.btn-xs):not(.btn-lg)', (e) => {

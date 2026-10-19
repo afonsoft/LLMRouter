@@ -503,7 +503,16 @@ public static class GatewayEndpoints
                 var writer0 = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
                 var auditAction = block ? "guardrail.block" : "guardrail.flag";
                 var auditDetail = $"{inbound}: {string.Join(",", hits.Select(h => h.Name))}";
-                _ = writer0.PostAsync(d => Core.Extras.Extras.AuditAsync(d, auditAction, auditDetail));
+                var sev = hits.Max(h => h.Severity switch { "high" => 3, "medium" => 2, _ => 1 }) switch
+                { 3 => "high", 2 => "medium", _ => "low" };
+                var model0 = body.TryGetProperty("model", out var m0) ? m0.GetString() : null;
+                _ = writer0.PostAsync(d =>
+                {
+                    Core.Guardrails.SafetyEvents.Record(d, "prompt_injection", "prompt_injection",
+                        block ? "block" : "flag", sev,
+                        new { inbound, hits = hits.Select(h => h.Name).ToList() }, model: model0);
+                    return Core.Extras.Extras.AuditAsync(d, auditAction, auditDetail);
+                });
                 if (block)
                 {
                     ctx.Response.StatusCode = 400;
@@ -1010,6 +1019,17 @@ public static class GatewayEndpoints
                     {
                         foreach (var d in gDets)
                             Core.Gateway.GatewayMetrics.GuardrailHit("response", d.Name, respGuard.Mode);
+                        var writer3 = ctx.RequestServices.GetRequiredService<Core.Gateway.UsageWriter>();
+                        var sev3 = gDets.Max(d => d.Severity switch { "high" => 3, "medium" => 2, _ => 1 }) switch
+                        { 3 => "high", 2 => "medium", _ => "low" };
+                        var detNames = gDets.Select(d => d.Name).ToList();
+                        var mode3 = respGuard.Mode;
+                        _ = writer3.PostAsync(d =>
+                        {
+                            Core.Guardrails.SafetyEvents.Record(d, "response_guard", "response_pii",
+                                mode3, sev3, new { inbound, dets = detNames }, keyId: apiKey, model: model);
+                            return Task.CompletedTask;
+                        });
                         savedDetail = MergeGuardMeta(savedDetail, gDets, respGuard.Mode);
                         if (respGuard.Mode == "block"
                             && Core.Guardrails.ResponseGuard.ShouldBlock(gDets, respGuard.Threshold))

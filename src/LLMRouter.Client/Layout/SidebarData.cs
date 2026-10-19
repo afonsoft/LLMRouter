@@ -95,7 +95,8 @@ public static class SidebarData
         new("monitoring", "monitoringSection", "Monitoring",
             Items: [
             new("activity", "/dashboard/activity", "activity", "timeline", Subtitle: "activitySubtitle"),
-            new("alerts", "/dashboard/alerts", "alerts", "notifications", Label: "Alerts", Subtitle: "alertsSubtitle", SubtitleFallback: "Rules, channels and alert inbox")
+            new("alerts", "/dashboard/alerts", "alerts", "notifications", Label: "Alerts", Subtitle: "alertsSubtitle", SubtitleFallback: "Rules, channels and alert inbox"),
+            new("safety", "/dashboard/safety", "safety", "verified_user", Label: "Safety", Subtitle: "safetySubtitle", SubtitleFallback: "Guardrail events and review")
             ],
             Groups: [
                 new("logs", "logsGroup", "Logs", [

@@ -1,0 +1,163 @@
+@page "/dashboard/safety"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("safety.title", "Safety events")</h1>
+        <p class="page-desc">@Loc.T("safety.subtitle", "Guardrail hits — review, filter and dry-run rules")</p>
+    </div>
+    <button class="btn ghost sm" @onclick="Load">@Loc.T("common.refresh", "Refresh")</button>
+</div>
+
+<div class="grid mt-4" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+    <div class="card card-p"><div class="muted sm">total</div><div style="font-size:20px;font-weight:600">@_stats.Total</div></div>
+    <div class="card card-p"><div class="muted sm">@Loc.T("safety.unreviewed", "unreviewed")</div><div style="font-size:20px;font-weight:600">@_stats.Unreviewed</div></div>
+    @foreach (var kv in _stats.ByAction)
+    {
+        <div class="card card-p"><div class="muted sm">@kv.Key</div><div style="font-size:20px;font-weight:600">@kv.Value</div></div>
+    }
+</div>
+
+<div class="card card-p mt-4">
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+        <div><label class="muted sm">kind</label>
+            <select class="input" @bind="_fKind" @bind:after="Load">
+                <option value="">all</option>
+                @foreach (var k in new[] { "keyword","regex","length","json_schema","tool_permission","prompt_injection","response_pii" })
+                { <option>@k</option> }
+            </select>
+        </div>
+        <div><label class="muted sm">action</label>
+            <select class="input" @bind="_fAction" @bind:after="Load">
+                <option value="">all</option>
+                @foreach (var a in new[] { "block","warn","flag","divert","redact","log" })
+                { <option>@a</option> }
+            </select>
+        </div>
+        <div><label class="muted sm">guardrail</label><input class="input" style="width:150px" @bind="_fGuard" @bind:after="Load" /></div>
+        <div><label class="muted sm">model</label><input class="input" style="width:130px" @bind="_fModel" @bind:after="Load" /></div>
+        <div><label class="muted sm">key</label><input class="input" style="width:130px" @bind="_fKey" @bind:after="Load" /></div>
+        <label class="flex gap-1" style="align-items:center"><input type="checkbox" @bind="_fUnreviewed" @bind:after="Load" /> <span class="sm muted">@Loc.T("safety.unreviewed", "unreviewed")</span></label>
+    </div>
+    @if (_events.Count == 0)
+    {
+        <div class="empty"><span class="material-symbols-outlined">verified_user</span>@Loc.T("safety.none", "No safety events")</div>
+    }
+    else
+    {
+        <table class="table mt-2">
+            <thead><tr>
+                <th>@Loc.T("audit.time", "Time")</th><th>@Loc.T("safety.guardrail", "Guardrail")</th><th>kind</th>
+                <th>action</th><th>sev</th><th>model</th><th>key</th><th>@Loc.T("audit.detail", "Detail")</th><th></th>
+            </tr></thead>
+            <tbody>
+            @foreach (var e in _events)
+            {
+                <tr style="@(e.Reviewed ? "opacity:.55" : "")">
+                    <td class="muted sm" style="white-space:nowrap">@e.At</td>
+                    <td class="sm">@e.Guardrail</td>
+                    <td><span class="chip">@e.Kind</span></td>
+                    <td><span class="badge @(e.Action == "block" ? "err" : e.Action is "flag" or "divert" ? "info" : "")">@e.Action</span></td>
+                    <td><span class="badge @(e.Severity == "high" ? "err" : e.Severity == "medium" ? "info" : "")">@e.Severity</span></td>
+                    <td class="dim sm">@(e.Model ?? "—")</td>
+                    <td class="dim sm mono" style="max-width:100px;overflow:hidden;text-overflow:ellipsis">@(e.KeyId ?? "—")</td>
+                    <td class="dim sm" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@e.Detail">@e.Detail</td>
+                    <td>
+                        @if (!e.Reviewed)
+                        {
+                            <button class="btn ghost sm" @onclick="() => MarkReviewed(e.Id)">@Loc.T("safety.review", "review")</button>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="card card-p mt-4">
+    <h3 style="margin:0 0 8px">@Loc.T("safety.dryRun", "Dry-run text against rules")</h3>
+    <div class="flex gap-2">
+        <textarea class="input mono" style="flex:1;min-height:60px" @bind="_dryText" placeholder="text to scan…"></textarea>
+        <button class="btn btn-sm btn-primary" @onclick="DryRun">@Loc.T("safety.test", "Test")</button>
+    </div>
+    @if (_dryMatches is not null)
+    {
+        <div class="mt-2">
+            @if (_dryMatches.Count == 0) { <span class="badge ok">no matches</span> }
+            @foreach (var m in _dryMatches)
+            {
+                <div class="sm mono">@m</div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private sealed class Ev
+    {
+        public long Id { get; set; }
+        public string At { get; set; } = "";
+        public string Guardrail { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public string Action { get; set; } = "";
+        public string Severity { get; set; } = "";
+        public string? KeyId { get; set; }
+        public string? Model { get; set; }
+        public string Detail { get; set; } = "{}";
+        public bool Reviewed { get; set; }
+    }
+    private sealed class Stats
+    {
+        public int Total { get; set; }
+        public int Unreviewed { get; set; }
+        public Dictionary<string, int> ByAction { get; set; } = new();
+    }
+
+    private List<Ev> _events = new();
+    private Stats _stats = new();
+    private string _fKind = "", _fAction = "", _fGuard = "", _fModel = "", _fKey = "";
+    private bool _fUnreviewed;
+    private string _dryText = "";
+    private List<string>? _dryMatches;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var qs = "?limit=300"
+            + (string.IsNullOrEmpty(_fKind) ? "" : $"&kind={Uri.EscapeDataString(_fKind)}")
+            + (string.IsNullOrEmpty(_fAction) ? "" : $"&action={Uri.EscapeDataString(_fAction)}")
+            + (string.IsNullOrEmpty(_fGuard) ? "" : $"&guardrail={Uri.EscapeDataString(_fGuard)}")
+            + (string.IsNullOrEmpty(_fModel) ? "" : $"&model={Uri.EscapeDataString(_fModel)}")
+            + (string.IsNullOrEmpty(_fKey) ? "" : $"&keyId={Uri.EscapeDataString(_fKey)}")
+            + (_fUnreviewed ? "&reviewed=false" : "");
+        var r = await Api.GetAsync($"api/safety/events{qs}");
+        _events = r.GetProperty("events").Deserialize<List<Ev>>() ?? new();
+        var s = await Api.GetAsync("api/safety/stats");
+        _stats = new Stats
+        {
+            Total = s.TryGetProperty("total", out var t) ? t.GetInt32() : 0,
+            Unreviewed = s.TryGetProperty("unreviewed", out var u) ? u.GetInt32() : 0,
+            ByAction = s.TryGetProperty("byAction", out var ba)
+                ? JsonSerializer.Deserialize<Dictionary<string, int>>(ba.GetRawText()) ?? new()
+                : new(),
+        };
+    }
+
+    private async Task MarkReviewed(long id)
+    {
+        await Api.Raw.PostAsJsonAsync($"api/safety/events/{id}/reviewed", new { reviewed = true });
+        await Load();
+    }
+
+    private async Task DryRun()
+    {
+        if (string.IsNullOrWhiteSpace(_dryText)) { _dryMatches = null; return; }
+        var r = await Api.PostAsync("api/guardrails/test", new { text = _dryText });
+        _dryMatches = r.TryGetProperty("matches", out var ms)
+            ? ms.EnumerateArray().Select(m => $"{m.GetProperty("guardrail").GetString()} ({m.GetProperty("kind").GetString()})").ToList()
+            : new();
+    }
+}

@@ -15265,5 +15265,8 @@
  "safety.guardrail": "Guardrail",
  "safety.review": "review",
  "safety.dryRun": "Dry-run text against rules",
- "safety.test": "Test"
+ "safety.test": "Test",
+ "logs.views": "Views",
+ "logs.saveView": "Save current filters as view",
+ "logs.live": "live"
 }

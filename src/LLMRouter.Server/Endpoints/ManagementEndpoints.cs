@@ -846,8 +846,103 @@ public static class ManagementEndpoints
         });
 
         g.MapGet("/logs/{id}", async (string id, LlmRouterDbContext db) =>
-            await db.RequestDetails.FindAsync(id) is { } r
-                ? Results.Json(new { log = r }, JsonOpts) : Results.NotFound());
+        {
+            if (await db.RequestDetails.FindAsync(id) is not { } r) return Results.NotFound();
+            // SPEC-148: settings.logContent {mode:full|mask|hash|drop} aplica em
+            // Prompt/Response no detail (Data/metadata sempre retorna).
+            var sdata = await Core.Gateway.HotReads.SettingsDataAsync(db);
+            var mode = sdata.TryGetProperty("logContent", out var lc)
+                && lc.ValueKind is JsonValueKind.Object
+                && lc.TryGetProperty("mode", out var m) ? m.GetString() ?? "full" : "full";
+            if (mode != "full")
+            {
+                string? Apply(string? s) => s is null ? null : mode switch
+                {
+                    "drop" => null,
+                    "hash" => "sha256:" + Convert.ToHexString(
+                        System.Security.Cryptography.SHA256.HashData(
+                            System.Text.Encoding.UTF8.GetBytes(s))).ToLowerInvariant(),
+                    _ => MaskPii(s), // "mask" + qualquer valor desconhecido mascara
+                };
+                r.Prompt = Apply(r.Prompt);
+                r.Response = Apply(r.Response);
+            }
+            return Results.Json(new { log = r }, JsonOpts);
+        });
+
+        // SPEC-148: saved views — {id,name,filters{...}} em kv scope "logViews"
+        const string LogViewScope = "logViews";
+        g.MapGet("/logs/views", async (LlmRouterDbContext db) =>
+        {
+            var rows = await db.Kv.Where(k => k.Scope == LogViewScope).ToListAsync();
+            var views = rows.Select(r =>
+            {
+                try { return JsonSerializer.Deserialize<JsonElement>(r.Value); }
+                catch { return (JsonElement?)null; }
+            }).Where(v => v is not null).ToList();
+            return Results.Json(new { views }, JsonOpts);
+        });
+        g.MapPost("/logs/views", async (JsonElement body, LlmRouterDbContext db) =>
+        {
+            var name = body.TryGetProperty("name", out var n) ? n.GetString()?.Trim() : null;
+            if (string.IsNullOrEmpty(name)) return Results.BadRequest(new { error = "name_required" });
+            if (!body.TryGetProperty("filters", out var f) || f.ValueKind is not JsonValueKind.Object)
+                return Results.BadRequest(new { error = "filters_object_required" });
+            var id = body.TryGetProperty("id", out var i) && i.GetString() is { Length: > 0 } x
+                ? x : Guid.NewGuid().ToString("N")[..10];
+            var doc = JsonSerializer.Serialize(new { id, name, filters = f });
+            var row = await db.Kv.FindAsync(LogViewScope, id);
+            if (row is null) db.Kv.Add(new KvEntry { Scope = LogViewScope, Key = id, Value = doc });
+            else row.Value = doc;
+            await db.SaveChangesAsync();
+            return Results.Json(JsonSerializer.Deserialize<JsonElement>(doc), JsonOpts);
+        });
+        g.MapDelete("/logs/views/{id}", async (string id, LlmRouterDbContext db) =>
+        {
+            if (await db.Kv.FindAsync(LogViewScope, id) is not { } row) return Results.NotFound();
+            db.Kv.Remove(row);
+            await db.SaveChangesAsync();
+            return Results.Json(new { ok = true }, JsonOpts);
+        });
+
+        // SPEC-148: facets — counts por campo p/ sidebar de filtros
+        g.MapGet("/logs/facets", async (LlmRouterDbContext db, string? status,
+            string? provider, string? model, string? since) =>
+        {
+            var q = db.RequestDetails.AsQueryable();
+            if (status is not null) q = q.Where(x => x.Status == status);
+            if (provider is not null) q = q.Where(x => x.Provider == provider);
+            if (model is not null) q = q.Where(x => x.Model == model);
+            if (since is not null) q = q.Where(x => string.Compare(x.Timestamp, since) >= 0);
+            var rows = await q.Select(x => new { x.Status, x.Provider, x.Model }).Take(50_000).ToListAsync();
+            return Results.Json(new
+            {
+                providers = rows.Where(r => r.Provider != null).GroupBy(r => r.Provider!)
+                    .ToDictionary(g2 => g2.Key, g2 => g2.Count()),
+                models = rows.Where(r => r.Model != null).GroupBy(r => r.Model!)
+                    .ToDictionary(g2 => g2.Key, g2 => g2.Count()),
+                statuses = rows.Where(r => r.Status != null).GroupBy(r => r.Status!)
+                    .ToDictionary(g2 => g2.Key, g2 => g2.Count()),
+            }, JsonOpts);
+        });
+
+        // SPEC-148: SSE live tail de requestDetails recém-inseridos
+        g.MapGet("/logs/tail", async (HttpContext ctx) =>
+        {
+            ctx.Response.ContentType = "text/event-stream";
+            ctx.Response.Headers.CacheControl = "no-cache";
+            var reader = Core.Gateway.RequestLogTail.Stream;
+            while (!ctx.RequestAborted.IsCancellationRequested)
+            {
+                if (await reader.WaitToReadAsync(ctx.RequestAborted))
+                    while (reader.TryRead(out var r))
+                    {
+                        var line = JsonSerializer.Serialize(new
+                        { r.Id, r.Timestamp, r.Provider, r.Model, r.Status }, JsonOpts);
+                        await ctx.Response.WriteAsync($"data: {line}\n\n", ctx.RequestAborted);
+                    }
+            }
+        });
 
         // SPEC-006: console ring buffer + SSE live tail
         g.MapGet("/console", (int? tail) =>
@@ -1469,6 +1564,21 @@ public static class ManagementEndpoints
         el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
     private static string Now() => DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+    /// <summary>SPEC-148: mascarar PII comum em Prompt/Response (logContent mode=mask).</summary>
+    private static string MaskPii(string s)
+    {
+        s = System.Text.RegularExpressions.Regex.Replace(s,
+            @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[email]");
+        s = System.Text.RegularExpressions.Regex.Replace(s,
+            @"\b\d{3}[-. ]?\d{2}[-. ]?\d{4}\b", "[ssn]");
+        s = System.Text.RegularExpressions.Regex.Replace(s,
+            @"\b(?:\d[ -]*?){13,19}\b", "[cc]");
+        s = System.Text.RegularExpressions.Regex.Replace(s,
+            @"\b(sk|pk|api[_-]?key|token|bearer)[-_A-Za-z0-9]{16,}\b", "[secret]",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return s;
+    }
 }
 
 // SPEC-hotfix: GET /api/combos/{id} + GET /api/keys/{id} (páginas detalhe SPEC-067)

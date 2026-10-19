@@ -132,3 +132,4 @@ audit: `docs/analysis/ui-parity-audit-2026-10-11.md` — all done:
 | SPEC-123 | Settings sub-routes parity (optional) |
 | SPEC-124 | Home finishing parity |
 | SPEC-125 | OAuth / CLI credential import |
+| SPEC-146–157 | Antirion gap-scan wave (alerts engine, safety events + guardrails pack, request log pro, key scoping, budget overage, UX transversal, routing pack, change control, device auth, test-mode, log sinks, release hardening) | in progress |

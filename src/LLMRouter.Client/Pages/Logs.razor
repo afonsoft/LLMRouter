@@ -1,6 +1,8 @@
 @page "/dashboard/logs"
 @inject Api Api
 @inject Loc Loc
+@inject NavigationManager Nav
+@implements IAsyncDisposable
 
 <div class="flex between">
     <div>
@@ -55,13 +57,23 @@
             <option value="">All time</option>
             <option value="1h">1h</option><option value="1d">1D</option><option value="7d">7D</option><option value="30d">30D</option>
         </select>
+        <select class="input" style="width:auto" title="saved views" @bind="_viewId" @bind:after="ApplyView">
+            <option value="">@Loc.T("logs.views", "Views")</option>
+            @foreach (var v in _views) { <option value="@v.id">@v.name</option> }
+        </select>
+        <button class="btn ghost sm" title="@Loc.T("logs.saveView", "Save current filters as view")" @onclick="SaveView">
+            <span class="material-symbols-outlined" style="font-size:15px">bookmark_add</span>
+        </button>
+        <label class="flex muted sm" style="gap:6px;align-items:center">
+            <input type="checkbox" checked="@_live" @onchange="ToggleLive" /> @Loc.T("logs.live", "live")
+        </label>
     </div>
     @if (_meta.Providers.Count > 0)
     {
         <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
             @foreach (var p in _meta.Providers)
             {
-                <button class="chip @(_providers.Contains(p) ? "on" : "")" @onclick="() => ToggleProvider(p)">@p</button>
+                <button class="chip @(_providers.Contains(p) ? "on" : "")" @onclick="() => ToggleProvider(p)">@p@FacetCount("providers", p)</button>
             }
         </div>
     }
@@ -162,6 +174,13 @@
     private int _total, _limit = 100;
     private bool _recording = true;
     private bool _ioLogging;
+    // SPEC-148: saved views + facets + live tail
+    private List<(string id, string name, JsonElement filters)> _views = [];
+    private string _viewId = "";
+    private Dictionary<string, Dictionary<string, int>> _facets = new();
+    private bool _live;
+    private PeriodicTimer? _liveTimer;
+    private CancellationTokenSource? _liveCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -181,7 +200,105 @@
                 Strings(m, "types"), Strings(m, "accounts"));
         }
         catch { }
+        // SPEC-148: filtros espelhados na URL (?model=&status=&provider=&q=)
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var qp = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (!string.IsNullOrEmpty(qp["model"])) _model = qp["model"]!;
+            if (!string.IsNullOrEmpty(qp["status"])) _status = qp["status"]!;
+            if (!string.IsNullOrEmpty(qp["q"])) _q = qp["q"]!;
+            if (!string.IsNullOrEmpty(qp["provider"]))
+                foreach (var p in qp["provider"]!.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    _providers.Add(p);
+        }
+        catch { }
+        await LoadViews();
+        await LoadFacets();
         await Load();
+    }
+
+    private async Task LoadViews()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/logs/views");
+            _views = r.GetProperty("views").EnumerateArray()
+                .Where(v => v.ValueKind == JsonValueKind.Object)
+                .Select(v => (v.GetProperty("id").GetString() ?? "",
+                    v.GetProperty("name").GetString() ?? "",
+                    v.GetProperty("filters").Clone()))
+                .ToList();
+        }
+        catch { }
+    }
+
+    private async Task LoadFacets()
+    {
+        try
+        {
+            var r = await Api.GetAsync("api/logs/facets");
+            _facets = new();
+            foreach (var grp in new[] { "providers", "models", "statuses" })
+                if (r.TryGetProperty(grp, out var g))
+                    _facets[grp] = g.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetInt32());
+        }
+        catch { }
+    }
+
+    private string FacetCount(string grp, string name) =>
+        _facets.TryGetValue(grp, out var g) && g.TryGetValue(name, out var n) ? $" ({n})" : "";
+
+    private async Task ApplyView()
+    {
+        var v = _views.FirstOrDefault(x => x.id == _viewId);
+        if (v.id is null) return;
+        var f = v.filters;
+        _q = S(f, "q"); _rid = S(f, "rid"); _model = S(f, "model");
+        _conn = S(f, "conn"); _key = S(f, "key"); _status = S(f, "status"); _preset = S(f, "preset");
+        _providers = f.TryGetProperty("providers", out var ps) && ps.ValueKind == JsonValueKind.Array
+            ? new HashSet<string>(ps.EnumerateArray().Select(x => x.GetString() ?? ""), StringComparer.OrdinalIgnoreCase)
+            : new(StringComparer.OrdinalIgnoreCase);
+        await Load();
+        static string S(JsonElement f, string k) =>
+            f.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    }
+
+    private async Task SaveView()
+    {
+        var name = $"view {_views.Count + 1}";
+        await Api.PostAsync("api/logs/views", new
+        {
+            name,
+            filters = new { q = _q, rid = _rid, model = _model, conn = _conn, key = _key,
+                status = _status, preset = _preset, providers = _providers.ToArray() },
+        });
+        await LoadViews();
+    }
+
+    private async Task ToggleLive(ChangeEventArgs e)
+    {
+        _live = e.Value is bool b && b;
+        _liveCts?.Cancel();
+        if (!_live) return;
+        _liveCts = new();
+        _liveTimer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await _liveTimer.WaitForNextTickAsync(_liveCts.Token))
+                    await InvokeAsync(async () => { await Load(); StateHasChanged(); });
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _liveCts?.Cancel();
+        _liveTimer?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private static List<string> Strings(JsonElement e, string prop) =>

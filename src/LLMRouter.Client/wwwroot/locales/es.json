@@ -15204,5 +15204,8 @@
  "safety.guardrail": "Guardrail",
  "safety.review": "revisar",
  "safety.dryRun": "Probar texto contra reglas",
- "safety.test": "Probar"
+ "safety.test": "Probar",
+ "logs.views": "Vistas",
+ "logs.saveView": "Guardar filtros actuales como vista",
+ "logs.live": "en vivo"
 }

@@ -461,7 +461,7 @@ public sealed class UsageWriter : BackgroundService
             && iol.ValueKind is JsonValueKind.True;
         if (recording)
         {
-            db.RequestDetails.Add(new RequestDetail
+            var rd = new RequestDetail
             {
                 Id = Guid.NewGuid().ToString("N"),
                 Timestamp = u.Timestamp,
@@ -472,7 +472,9 @@ public sealed class UsageWriter : BackgroundService
                 Data = u.DetailJson ?? "{}",
                 Prompt = ioOn ? u.Prompt : null,
                 Response = ioOn ? u.Response : null,
-            });
+            };
+            db.RequestDetails.Add(rd);
+            RequestLogTail.Publish(rd); // SPEC-148: SSE live tail
         }
         await GatewayEngine.RollupDailyOnAsync(
             db, u.Provider ?? "", u.Model ?? "", (int)u.PromptTokens, (int)u.CompletionTokens);

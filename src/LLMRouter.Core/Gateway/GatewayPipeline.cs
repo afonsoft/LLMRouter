@@ -401,7 +401,7 @@ public sealed class GatewayEngine(
             && iol.ValueKind is JsonValueKind.True;
         if (recording)
         {
-            db.RequestDetails.Add(new RequestDetail
+            var rd = new RequestDetail
             {
                 Id = Guid.NewGuid().ToString("N"),
                 Timestamp = now,
@@ -412,7 +412,9 @@ public sealed class GatewayEngine(
                 Data = detail?.GetRawText() ?? error ?? "{}",
                 Prompt = ioOn ? ioPrompt : null,
                 Response = ioOn ? ioResponse : null,
-            });
+            };
+            db.RequestDetails.Add(rd);
+            RequestLogTail.Publish(rd); // SPEC-148: SSE live tail
         }
         await db.SaveChangesAsync();
         // SPEC-111: spend da vk + débito no ledger — caminho sync (sem writer).

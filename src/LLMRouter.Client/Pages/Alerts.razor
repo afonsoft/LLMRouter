@@ -1,0 +1,325 @@
+@page "/dashboard/alerts"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("alerts.title", "Alerts")</h1>
+        <p class="page-desc">@Loc.T("alerts.subtitle", "Rules → channels → inbox — metrics and events with ack/snooze/resolve")</p>
+    </div>
+    <button class="btn ghost sm" @onclick="Load">@Loc.T("common.refresh", "Refresh")</button>
+</div>
+
+<div class="flex gap-2 mt-4" role="tablist">
+    @foreach (var t in new[] { "inbox", "rules", "channels", "deliveries" })
+    {
+        <button class="btn sm @(_tab == t ? "btn-primary" : "ghost")" @onclick="() => _tab = t">@Loc.T($"alerts.tab.{t}", t)</button>
+    }
+</div>
+
+@if (_tab == "inbox")
+{
+    <div class="card card-p mt-4">
+        <div class="flex gap-2" style="align-items:end">
+            <div>
+                <label class="muted sm">state</label>
+                <select class="input" @bind="_stateFilter" @bind:after="LoadInstances">
+                    <option value="">@Loc.T("alerts.open", "open")</option>
+                    <option value="firing">firing</option>
+                    <option value="acked">acked</option>
+                    <option value="snoozed">snoozed</option>
+                    <option value="escalated">escalated</option>
+                    <option value="resolved">resolved</option>
+                    <option value="all">all</option>
+                </select>
+            </div>
+        </div>
+        @if (_instances.Count == 0)
+        {
+            <div class="empty"><span class="material-symbols-outlined">notifications_none</span>@Loc.T("alerts.none", "No alert instances")</div>
+        }
+        else
+        {
+            <table class="table mt-2">
+                <thead><tr>
+                    <th>@Loc.T("alerts.rule", "Rule")</th><th>@Loc.T("keys.status", "Status")</th>
+                    <th>@Loc.T("alerts.started", "Started")</th><th>@Loc.T("audit.detail", "Detail")</th><th></th>
+                </tr></thead>
+                <tbody>
+                @foreach (var i in _instances)
+                {
+                    <tr>
+                        <td>@RuleName(i.RuleId)</td>
+                        <td><span class="badge @(i.State == "firing" || i.State == "escalated" ? "err" : i.State == "resolved" ? "ok" : "info")">@i.State</span></td>
+                        <td class="sm muted" style="white-space:nowrap">@i.StartedAt</td>
+                        <td class="dim sm" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="@i.Detail">@i.Detail</td>
+                        <td class="sm" style="white-space:nowrap">
+                            @if (i.State != "resolved")
+                            {
+                                <button class="btn ghost sm" @onclick='() => Transition(i.Id, "acked")'>ack</button>
+                                <button class="btn ghost sm" @onclick='() => Transition(i.Id, "snoozed", 60)'>snooze 1h</button>
+                                <button class="btn ghost sm" @onclick='() => Transition(i.Id, "escalated")'>escalate</button>
+                                <button class="btn ghost sm" @onclick='() => Transition(i.Id, "resolved")'>resolve</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+else if (_tab == "rules")
+{
+    <div class="card card-p mt-4">
+        <h3 style="margin:0 0 8px">@Loc.T("alerts.newRule", "New rule")</h3>
+        <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+            <div><label class="muted sm">@Loc.T("keys.name", "Name")</label><input class="input" style="width:160px" @bind="_nr.Name" /></div>
+            <div>
+                <label class="muted sm">kind</label>
+                <select class="input" @bind="_nr.Kind"><option value="metric">metric</option><option value="event">event</option></select>
+            </div>
+            <div>
+                <label class="muted sm">severity</label>
+                <select class="input" @bind="_nr.Severity"><option>info</option><option selected>warn</option><option>critical</option></select>
+            </div>
+            <div><label class="muted sm">expr (json)</label><input class="input mono" style="width:300px" @bind="_nr.Expr" placeholder='{"metric":"error_rate","op":"gt","threshold":5,"windowMin":15}' /></div>
+            <div><label class="muted sm">@Loc.T("alerts.channels", "Channels")</label>
+                <select class="input" multiple size="3" @bind="_nrChannels">
+                    @foreach (var c in _channels) { <option value="@c.Id">@c.Name</option> }
+                </select>
+            </div>
+            <div><label class="muted sm">cooldown (min)</label><input class="input" style="width:80px" type="number" @bind="_nr.CooldownMin" /></div>
+            <button class="btn btn-sm btn-primary" @onclick="CreateRule">@Loc.T("keys.new", "New")</button>
+        </div>
+        @if (!string.IsNullOrEmpty(_err)) { <p class="badge err mt-2">@_err</p> }
+        <table class="table mt-4">
+            <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>kind</th><th>sev</th><th>expr</th><th>@Loc.T("keys.status", "Status")</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var r in _rules)
+            {
+                <tr>
+                    <td>@r.Name</td>
+                    <td><span class="chip">@r.Kind</span></td>
+                    <td><span class="badge @(r.Severity == "critical" ? "err" : r.Severity == "warn" ? "info" : "")">@r.Severity</span></td>
+                    <td class="dim sm mono" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@r.Expr</td>
+                    <td>
+                        <button class="btn ghost sm" @onclick="() => ToggleRule(r)">@(r.Enabled ? "on" : "off")</button>
+                    </td>
+                    <td class="sm">
+                        <button class="btn ghost sm" @onclick="() => DryRun(r)">dry</button>
+                        <button class="btn ghost sm" @onclick="() => DeleteRule(r.Id)">@Loc.T("keys.delete", "Delete")</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        @if (_dry is not null)
+        {
+            <div class="card mt-2" style="padding:8px"><span class="badge @(_dry.Value ? "err" : "ok")">@(_dry.Value ? "breached" : "ok")</span> <code class="sm">@_dryDetail</code></div>
+        }
+    </div>
+}
+else if (_tab == "channels")
+{
+    <div class="card card-p mt-4">
+        <h3 style="margin:0 0 8px">@Loc.T("alerts.newChannel", "New channel")</h3>
+        <div class="flex gap-2" style="flex-wrap:wrap;align-items:end">
+            <div><label class="muted sm">@Loc.T("keys.name", "Name")</label><input class="input" style="width:150px" @bind="_nc.Name" /></div>
+            <div>
+                <label class="muted sm">type</label>
+                <select class="input" @bind="_nc.Type"><option>webhook</option><option>slack</option><option>email</option></select>
+            </div>
+            <div><label class="muted sm">config (json)</label><input class="input mono" style="width:320px" @bind="_nc.Config" placeholder='{"url":"https://…","secret":"…"}' /></div>
+            <button class="btn btn-sm btn-primary" @onclick="CreateChannel">@Loc.T("keys.new", "New")</button>
+        </div>
+        @if (!string.IsNullOrEmpty(_cerr)) { <p class="badge err mt-2">@_cerr</p> }
+        <table class="table mt-4">
+            <thead><tr><th>@Loc.T("keys.name", "Name")</th><th>type</th><th>config</th><th>@Loc.T("keys.status", "Status")</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var c in _channels)
+            {
+                <tr>
+                    <td>@c.Name</td>
+                    <td><span class="chip">@c.Type</span></td>
+                    <td class="dim sm mono" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@c.Config</td>
+                    <td><button class="btn ghost sm" @onclick="() => ToggleChannel(c)">@(c.Enabled ? "on" : "off")</button></td>
+                    <td class="sm">
+                        <button class="btn ghost sm" @onclick="() => TestChannel(c.Id)">test</button>
+                        <button class="btn ghost sm" @onclick="() => DeleteChannel(c.Id)">@Loc.T("keys.delete", "Delete")</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        @if (_testResult is not null)
+        {
+            <p class="badge @(_testResult.Value ? "ok" : "err") mt-2">@(_testResult.Value ? "delivered" : _testError)</p>
+        }
+    </div>
+}
+else
+{
+    <div class="card card-p mt-4">
+        <table class="table">
+            <thead><tr><th>instance</th><th>channel</th><th>@Loc.T("keys.status", "Status")</th><th>@Loc.T("alerts.attempts", "Attempts")</th><th>@Loc.T("alerts.error", "Error")</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var d in _deliveries)
+            {
+                <tr>
+                    <td>#@d.InstanceId</td>
+                    <td class="sm">@ChannelName(d.ChannelId)</td>
+                    <td><span class="badge @(d.Status == "sent" ? "ok" : d.Status == "failed" ? "err" : "info")">@d.Status</span></td>
+                    <td>@d.Attempts</td>
+                    <td class="dim sm" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">@(d.LastError ?? "—")</td>
+                    <td>
+                        @if (d.Status == "failed")
+                        {
+                            <button class="btn ghost sm" @onclick="() => Redeliver(d.Id)">redeliver</button>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private sealed class Rule
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Kind { get; set; } = "metric";
+        public string Expr { get; set; } = "{}";
+        public string Severity { get; set; } = "warn";
+        public string ChannelIds { get; set; } = "[]";
+        public bool Enabled { get; set; } = true;
+        public int CooldownMin { get; set; } = 15;
+    }
+    private sealed class Channel
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "webhook";
+        public string Config { get; set; } = "{}";
+        public bool Enabled { get; set; } = true;
+    }
+    private sealed class Inst
+    {
+        public long Id { get; set; }
+        public string RuleId { get; set; } = "";
+        public string State { get; set; } = "";
+        public string Detail { get; set; } = "{}";
+        public string StartedAt { get; set; } = "";
+    }
+    private sealed class Del
+    {
+        public long Id { get; set; }
+        public long InstanceId { get; set; }
+        public string ChannelId { get; set; } = "";
+        public string Status { get; set; } = "";
+        public int Attempts { get; set; }
+        public string? LastError { get; set; }
+    }
+
+    private string _tab = "inbox";
+    private string _stateFilter = "";
+    private List<Rule> _rules = new();
+    private List<Channel> _channels = new();
+    private List<Inst> _instances = new();
+    private List<Del> _deliveries = new();
+    private Rule _nr = new();
+    private Channel _nc = new();
+    private string[] _nrChannels = Array.Empty<string>();
+    private string? _err, _cerr, _testError;
+    private bool? _dry, _testResult;
+    private string? _dryDetail;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var rr = await Api.GetAsync("api/alerts/rules");
+        _rules = rr.GetProperty("rules").Deserialize<List<Rule>>() ?? new();
+        var cr = await Api.GetAsync("api/alerts/channels");
+        _channels = cr.GetProperty("channels").Deserialize<List<Channel>>() ?? new();
+        await LoadInstances();
+        var dr = await Api.GetAsync("api/alerts/deliveries?limit=100");
+        _deliveries = dr.GetProperty("deliveries").Deserialize<List<Del>>() ?? new();
+    }
+
+    private async Task LoadInstances()
+    {
+        var r = await Api.GetAsync($"api/alerts/instances?limit=200{(string.IsNullOrEmpty(_stateFilter) ? "" : $"&state={_stateFilter}")}");
+        _instances = r.GetProperty("instances").Deserialize<List<Inst>>() ?? new();
+    }
+
+    private string RuleName(string id) => _rules.FirstOrDefault(r => r.Id == id)?.Name ?? id;
+    private string ChannelName(string id) => _channels.FirstOrDefault(c => c.Id == id)?.Name ?? id;
+
+    private async Task CreateRule()
+    {
+        _err = null;
+        _nr.ChannelIds = JsonSerializer.Serialize(_nrChannels);
+        var res = await Api.Raw.PostAsJsonAsync("api/alerts/rules", _nr);
+        if (!res.IsSuccessStatusCode) { _err = await res.Content.ReadAsStringAsync(); return; }
+        _nr = new(); _nrChannels = Array.Empty<string>();
+        await Load();
+    }
+
+    private async Task ToggleRule(Rule r)
+    {
+        r.Enabled = !r.Enabled;
+        await Api.PutAsync($"api/alerts/rules/{r.Id}", r);
+        await Load();
+    }
+
+    private async Task DeleteRule(string id) { await Api.DeleteAsync($"api/alerts/rules/{id}"); await Load(); }
+
+    private async Task DryRun(Rule r)
+    {
+        var res = await Api.PostAsync($"api/alerts/rules/{r.Id}/dry", new { });
+        _dry = res.TryGetProperty("breached", out var b) && b.GetBoolean();
+        _dryDetail = res.TryGetProperty("detail", out var d) ? d.GetRawText() : null;
+    }
+
+    private async Task CreateChannel()
+    {
+        _cerr = null;
+        var res = await Api.Raw.PostAsJsonAsync("api/alerts/channels", _nc);
+        if (!res.IsSuccessStatusCode) { _cerr = await res.Content.ReadAsStringAsync(); return; }
+        _nc = new();
+        await Load();
+    }
+
+    private async Task ToggleChannel(Channel c)
+    {
+        c.Enabled = !c.Enabled;
+        await Api.PutAsync($"api/alerts/channels/{c.Id}", c);
+        await Load();
+    }
+
+    private async Task DeleteChannel(string id) { await Api.DeleteAsync($"api/alerts/channels/{id}"); await Load(); }
+
+    private async Task TestChannel(string id)
+    {
+        var res = await Api.Raw.PostAsJsonAsync($"api/alerts/channels/{id}/test", new { });
+        _testResult = res.IsSuccessStatusCode;
+        _testError = _testResult.Value ? null : await res.Content.ReadAsStringAsync();
+    }
+
+    private async Task Transition(long id, string to, int minutes = 0)
+    {
+        var body = new Dictionary<string, object?> { ["to"] = to };
+        if (minutes > 0) body["minutes"] = minutes;
+        await Api.Raw.PostAsJsonAsync($"api/alerts/instances/{id}/transition", body);
+        await Load();
+    }
+
+    private async Task Redeliver(long id)
+    {
+        await Api.Raw.PostAsJsonAsync($"api/alerts/deliveries/{id}/redeliver", new { });
+        await Load();
+    }
+}

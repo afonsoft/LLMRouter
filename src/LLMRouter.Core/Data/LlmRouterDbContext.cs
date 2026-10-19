@@ -89,6 +89,14 @@ public class LlmRouterDbContext : DbContext
     public DbSet<InspectorSession> InspectorSessions => Set<InspectorSession>();
     public DbSet<InspectorSessionRequest> InspectorSessionRequests => Set<InspectorSessionRequest>();
     public DbSet<InspectorCustomHost> InspectorCustomHosts => Set<InspectorCustomHost>();
+    /// <summary>SPEC-146: regras de alerta.</summary>
+    public DbSet<AlertRule> AlertRules => Set<AlertRule>();
+    /// <summary>SPEC-146: canais de entrega.</summary>
+    public DbSet<AlertChannel> AlertChannels => Set<AlertChannel>();
+    /// <summary>SPEC-146: instâncias firing/resolved.</summary>
+    public DbSet<AlertInstance> AlertInstances => Set<AlertInstance>();
+    /// <summary>SPEC-146: entregas por canal.</summary>
+    public DbSet<AlertDelivery> AlertDeliveries => Set<AlertDelivery>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

@@ -348,4 +348,25 @@ public static class BuiltinJobs
             return n > 0 ? $"re-enabled {n}" : "none due";
         }
     }
+
+    /// <summary>SPEC-146: alert evaluator — fires/resolves alertInstances and
+    /// delivers pending deliveries through alertChannels (retry built in).</summary>
+    public sealed class AlertsJob : IJob
+    {
+        public string Id => "alerts";
+        public string Name => "Alert evaluator + delivery";
+        public TimeSpan Interval => TimeSpan.FromMinutes(1);
+        public bool EnabledByDefault => true;
+        public async Task<string> RunAsync(IServiceProvider services, CancellationToken ct)
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.LlmRouterDbContext>();
+            var hf = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
+            var log = scope.ServiceProvider.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                ?.CreateLogger("AlertsJob");
+            var r = await Alerts.AlertEngine.EvaluateAsync(db, ct);
+            var sent = await Alerts.AlertEngine.DeliverPendingAsync(db, hf, log, ct);
+            return $"fired={r.Fired} resolved={r.Resolved} delivered={sent}";
+        }
+    }
 }

@@ -1092,3 +1092,78 @@ public class InspectorCustomHost
     public bool Enabled { get; set; } = true;
     public string CreatedAt { get; set; } = "";
 }
+
+/// <summary>SPEC-146: regra de alerta — métrica (usageHistory) ou evento.</summary>
+[Table("alertRules")]
+public class AlertRule
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>metric | event</summary>
+    public string Kind { get; set; } = "metric";
+    /// <summary>JSON: {metric,op,threshold,windowMin,filters} p/ metric; {event,match} p/ event.</summary>
+    public string Expr { get; set; } = "{}";
+    /// <summary>info | warn | critical</summary>
+    public string Severity { get; set; } = "warn";
+    /// <summary>JSON array de alertChannels.Id.</summary>
+    public string ChannelIds { get; set; } = "[]";
+    public bool Enabled { get; set; } = true;
+    /// <summary>Minutos entre firings repetidos da mesma regra.</summary>
+    public int CooldownMin { get; set; } = 15;
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-146: canal de entrega de alertas.</summary>
+[Table("alertChannels")]
+public class AlertChannel
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>webhook | slack | email</summary>
+    public string Type { get; set; } = "webhook";
+    /// <summary>JSON: webhook {url,secret}; slack {webhookUrl}; email {to} (usa settings.smtp).</summary>
+    public string Config { get; set; } = "{}";
+    public bool Enabled { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+    public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-146: instância de alerta com ciclo de vida.</summary>
+[Table("alertInstances")]
+public class AlertInstance
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string RuleId { get; set; } = "";
+    /// <summary>firing | acked | snoozed | escalated | resolved</summary>
+    public string State { get; set; } = "firing";
+    /// <summary>JSON: {metric,value,threshold,windowMin,samples}.</summary>
+    public string Detail { get; set; } = "{}";
+    public string StartedAt { get; set; } = "";
+    public string? ResolvedAt { get; set; }
+    public string? SnoozedUntil { get; set; }
+    public string? Note { get; set; }
+    public string? Actor { get; set; }
+    public string UpdatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-146: tentativa de entrega num canal.</summary>
+[Table("alertDeliveries")]
+public class AlertDelivery
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public long InstanceId { get; set; }
+    public string ChannelId { get; set; } = "";
+    /// <summary>pending | sent | failed</summary>
+    public string Status { get; set; } = "pending";
+    public int Attempts { get; set; }
+    public string? LastError { get; set; }
+    public string At { get; set; } = "";
+    public string? DeliveredAt { get; set; }
+}

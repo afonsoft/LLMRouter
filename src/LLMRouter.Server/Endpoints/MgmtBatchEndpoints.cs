@@ -42,7 +42,7 @@ public static partial class MgmtBatchEndpoints
     // ==================== GUARDRAILS ====================
 
     private sealed record Guardrail(string Id, string Name, string Kind, string Pattern,
-        string Action, string Target, bool Enabled);
+        string Action, string Target, bool Enabled, string? DivertTo = null);
 
     private static async Task<List<Guardrail>> LoadGuardrails(LlmRouterDbContext db)
     {
@@ -60,7 +60,8 @@ public static partial class MgmtBatchEndpoints
                     d.TryGetProperty("pattern", out var p) ? p.GetString() ?? "" : "",
                     d.TryGetProperty("action", out var a) ? a.GetString() ?? "block" : "block",
                     d.TryGetProperty("target", out var t) ? t.GetString() ?? "request" : "request",
-                    !d.TryGetProperty("enabled", out var e) || e.GetBoolean()));
+                    !d.TryGetProperty("enabled", out var e) || e.GetBoolean(),
+                    d.TryGetProperty("divertTo", out var dt) ? dt.GetString() : null));
             }
             catch (JsonException) { /* skip malformed rule */ }
         }
@@ -80,6 +81,78 @@ public static partial class MgmtBatchEndpoints
         }
         catch (RegexMatchTimeoutException) { return false; }
         catch (ArgumentException) { return false; } // invalid regex pattern
+    }
+
+    /// <summary>SPEC-147: json_schema — valida o conteúdo (texto = última mensagem ou body)
+    /// contra schema mínimo {required:[], properties:{k:{type}}}. Match = violação.</summary>
+    public static bool JsonSchemaViolates(string schemaJson, string text)
+    {
+        try
+        {
+            var schema = JsonDocument.Parse(schemaJson).RootElement;
+            // texto pode ser JSON direto ou um body de chat — extrai o primeiro objeto JSON
+            JsonElement doc;
+            try { doc = JsonDocument.Parse(text).RootElement; }
+            catch
+            {
+                var start = text.IndexOf('{');
+                var end = text.LastIndexOf('}');
+                if (start < 0 || end <= start) return true; // não é JSON → viola schema
+                doc = JsonDocument.Parse(text[start..(end + 1)]).RootElement;
+            }
+            if (doc.ValueKind != JsonValueKind.Object) return true;
+            if (schema.TryGetProperty("required", out var req) && req.ValueKind == JsonValueKind.Array)
+                foreach (var r in req.EnumerateArray())
+                    if (!doc.TryGetProperty(r.GetString() ?? "", out _)) return true;
+            if (schema.TryGetProperty("properties", out var props) && props.ValueKind == JsonValueKind.Object)
+                foreach (var p in props.EnumerateObject())
+                    if (doc.TryGetProperty(p.Name, out var v)
+                        && p.Value.TryGetProperty("type", out var t))
+                    {
+                        var expected = t.GetString();
+                        var ok = expected switch
+                        {
+                            "string" => v.ValueKind == JsonValueKind.String,
+                            "number" => v.ValueKind == JsonValueKind.Number,
+                            "boolean" => v.ValueKind is JsonValueKind.True or JsonValueKind.False,
+                            "array" => v.ValueKind == JsonValueKind.Array,
+                            "object" => v.ValueKind == JsonValueKind.Object,
+                            "null" => v.ValueKind == JsonValueKind.Null,
+                            _ => true,
+                        };
+                        if (!ok) return true;
+                    }
+            return false;
+        }
+        catch (JsonException) { return true; } // schema ou texto inválido → viola
+    }
+
+    /// <summary>SPEC-147: tool_permission — tools[] do body fora da allowlist do pattern
+    /// (JSON array ou lista separada por vírgula). Match = tool não permitida presente.</summary>
+    public static bool ToolPermissionViolates(string allowlist, JsonElement body)
+    {
+        if (!body.TryGetProperty("tools", out var tools) || tools.ValueKind != JsonValueKind.Array)
+            return false;
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var arr = JsonDocument.Parse(allowlist).RootElement;
+            if (arr.ValueKind == JsonValueKind.Array)
+                foreach (var t in arr.EnumerateArray())
+                    if (t.GetString() is { Length: > 0 } s) allowed.Add(s);
+        }
+        catch
+        {
+            foreach (var s in allowlist.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                allowed.Add(s);
+        }
+        foreach (var tool in tools.EnumerateArray())
+        {
+            var name = tool.TryGetProperty("function", out var f) && f.TryGetProperty("name", out var fn) ? fn.GetString()
+                : tool.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (name is { Length: > 0 } && allowed.Count > 0 && !allowed.Contains(name)) return true;
+        }
+        return false;
     }
 
     private static string ApplyRedact(IEnumerable<Guardrail> rules, string text)
@@ -107,10 +180,22 @@ public static partial class MgmtBatchEndpoints
         var text = body.GetRawText();
         if (text.Length > Core.Guardrails.PromptGuard.MaxScanChars)
             text = text[..Core.Guardrails.PromptGuard.MaxScanChars];
+        var model = body.TryGetProperty("model", out var mp) ? mp.GetString() : null;
+        // SPEC-147: match estendido — json_schema/tool_permission operam no body,
+        // demais kinds no texto.
+        bool Matches(Guardrail r) => r.Kind switch
+        {
+            "json_schema" => JsonSchemaViolates(r.Pattern, text),
+            "tool_permission" => ToolPermissionViolates(r.Pattern, body),
+            _ => RuleMatches(r, text),
+        };
         foreach (var r in rules.Where(r => r.Action == "block"))
         {
-            if (RuleMatches(r, text))
+            if (Matches(r))
             {
+                Core.Guardrails.SafetyEvents.Record(db, r.Name, r.Kind, "block", "high",
+                    new { rule = r.Id, target = r.Target }, model: model);
+                await db.SaveChangesAsync();
                 ctx.Response.StatusCode = 400;
                 ctx.Response.ContentType = "application/json";
                 await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
@@ -120,15 +205,57 @@ public static partial class MgmtBatchEndpoints
                 return (false, body);
             }
         }
-        var warns = rules.Where(r => r.Action == "warn" && RuleMatches(r, text)).Select(r => r.Name).ToList();
-        if (warns.Count > 0) ctx.Response.Headers["X-Guardrail-Warn"] = string.Join(",", warns);
+        var warns = rules.Where(r => r.Action == "warn" && Matches(r)).Select(r => r.Name).ToList();
+        if (warns.Count > 0)
+        {
+            ctx.Response.Headers["X-Guardrail-Warn"] = string.Join(",", warns);
+            foreach (var r in rules.Where(r => r.Action == "warn" && warns.Contains(r.Name)))
+                Core.Guardrails.SafetyEvents.Record(db, r.Name, r.Kind, "warn", "medium",
+                    new { rule = r.Id, target = r.Target }, model: model);
+        }
+        // SPEC-147: flag — marca e passa; divert — re-escreve model p/ o fallback da regra.
+        var flags = rules.Where(r => r.Action == "flag" && Matches(r)).ToList();
+        if (flags.Count > 0)
+        {
+            ctx.Response.Headers["X-Guardrail-Flag"] = string.Join(",", flags.Select(f => f.Name));
+            foreach (var r in flags)
+                Core.Guardrails.SafetyEvents.Record(db, r.Name, r.Kind, "flag", "low",
+                    new { rule = r.Id, target = r.Target }, model: model);
+        }
+        var diverted = false;
+        foreach (var r in rules.Where(r => r.Action == "divert" && r.DivertTo is { Length: > 0 }))
+        {
+            if (Matches(r))
+            {
+                Core.Guardrails.SafetyEvents.Record(db, r.Name, r.Kind, "divert", "medium",
+                    new { rule = r.Id, target = r.Target, from = model, to = r.DivertTo }, model: model);
+                if (body.ValueKind == JsonValueKind.Object && !string.IsNullOrEmpty(r.DivertTo))
+                {
+                    var node = System.Text.Json.Nodes.JsonNode.Parse(body.GetRawText())!.AsObject();
+                    node["model"] = r.DivertTo;
+                    body = JsonDocument.Parse(node.ToJsonString()).RootElement;
+                    diverted = true;
+                    break;
+                }
+            }
+        }
         var redacts = rules.Where(r => r.Action == "redact").ToList();
         if (redacts.Count > 0)
         {
+            var matchedRedact = redacts.Where(Matches).ToList();
+            if (matchedRedact.Count > 0)
+            {
+                foreach (var r in matchedRedact)
+                    Core.Guardrails.SafetyEvents.Record(db, r.Name, r.Kind, "redact", "medium",
+                        new { rule = r.Id, target = r.Target }, model: model);
+            }
             var redacted = ApplyRedact(redacts, body.GetRawText());
+            if (flags.Count > 0 || matchedRedact.Count > 0 || diverted)
+                await db.SaveChangesAsync();
             try { return (true, JsonDocument.Parse(redacted).RootElement.Clone()); }
             catch (JsonException) { return (true, body); } // redaction broke json — pass original
         }
+        if (flags.Count > 0 || diverted || warns.Count > 0) await db.SaveChangesAsync();
         return (true, body);
     }
 

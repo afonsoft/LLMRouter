@@ -15255,5 +15255,15 @@
  "alerts.channels": "Channels",
  "alerts.newChannel": "New channel",
  "alerts.attempts": "Attempts",
- "alerts.error": "Error"
+ "alerts.error": "Error",
+ "safety": "Safety",
+ "safetySubtitle": "Guardrail events and review",
+ "safety.title": "Safety events",
+ "safety.subtitle": "Guardrail hits — review, filter and dry-run rules",
+ "safety.unreviewed": "unreviewed",
+ "safety.none": "No safety events",
+ "safety.guardrail": "Guardrail",
+ "safety.review": "review",
+ "safety.dryRun": "Dry-run text against rules",
+ "safety.test": "Test"
 }

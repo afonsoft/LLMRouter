@@ -341,6 +341,7 @@ GamiEndpoints.Map(app);
 BotsEndpoints.Map(app);
 DetailEndpoints.Map(app);
 AlertsEndpoints.Map(app);
+SafetyEndpoints.Map(app);
 app.MapQuotaProxyEndpoints();
 app.MapToolsEndpoints();
 app.MapOAuthEndpoints();

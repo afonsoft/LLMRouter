@@ -15194,5 +15194,15 @@
  "alerts.channels": "Canales",
  "alerts.newChannel": "Nuevo canal",
  "alerts.attempts": "Intentos",
- "alerts.error": "Error"
+ "alerts.error": "Error",
+ "safety": "Seguridad",
+ "safetySubtitle": "Eventos de guardrails y revisión",
+ "safety.title": "Eventos de seguridad",
+ "safety.subtitle": "Hits de guardrail — revisar, filtrar y probar reglas",
+ "safety.unreviewed": "sin revisar",
+ "safety.none": "Sin eventos de seguridad",
+ "safety.guardrail": "Guardrail",
+ "safety.review": "revisar",
+ "safety.dryRun": "Probar texto contra reglas",
+ "safety.test": "Probar"
 }

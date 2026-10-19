@@ -1167,3 +1167,26 @@ public class AlertDelivery
     public string At { get; set; } = "";
     public string? DeliveredAt { get; set; }
 }
+
+/// <summary>SPEC-147: evento de segurança revisável — gravado em todo hit de guardrail.</summary>
+[Table("safetyEvents")]
+public class SafetyEvent
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string At { get; set; } = "";
+    /// <summary>Nome da regra ou builtin (ex: keyword:pii, prompt_injection, response:api_key).</summary>
+    public string Guardrail { get; set; } = "";
+    /// <summary>keyword | regex | length | json_schema | tool_permission | prompt_injection | response_pii | builtin</summary>
+    public string Kind { get; set; } = "";
+    /// <summary>block | warn | flag | divert | redact | log</summary>
+    public string Action { get; set; } = "";
+    /// <summary>low | medium | high</summary>
+    public string Severity { get; set; } = "medium";
+    public string? KeyId { get; set; }
+    public string? Model { get; set; }
+    /// <summary>JSON: {rule, match, target, extra}.</summary>
+    public string Detail { get; set; } = "{}";
+    public bool Reviewed { get; set; }
+}

@@ -97,6 +97,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<AlertInstance> AlertInstances => Set<AlertInstance>();
     /// <summary>SPEC-146: entregas por canal.</summary>
     public DbSet<AlertDelivery> AlertDeliveries => Set<AlertDelivery>();
+    /// <summary>SPEC-147: eventos de segurança revisáveis.</summary>
+    public DbSet<SafetyEvent> SafetyEvents => Set<SafetyEvent>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

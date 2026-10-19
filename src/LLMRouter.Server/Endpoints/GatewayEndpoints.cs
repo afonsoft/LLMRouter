@@ -163,8 +163,10 @@ public static class GatewayEndpoints
             return;
         }
         // SPEC-092: key-group scope permissions → 403 when group denies the family
-        if (!await MgmtBatchEndpoints.KeyGroupGateAsync(ctx, db, apiKey,
-                MgmtBatchEndpoints.ScopeFromPath(ctx.Request.Path))) return;
+        var scope0 = MgmtBatchEndpoints.ScopeFromPath(ctx.Request.Path);
+        if (!await MgmtBatchEndpoints.KeyGroupGateAsync(ctx, db, apiKey, scope0)) return;
+        // SPEC-149: per-key allowedEndpoints/IP ranges + anomaly feed
+        if (!await MgmtBatchEndpoints.KeyScopeGateAsync(ctx, db, apiKey, scope0)) return;
 
         string model = "";
         JsonElement body = default;
@@ -460,6 +462,7 @@ public static class GatewayEndpoints
             return;
         }
         if (!await MgmtBatchEndpoints.KeyGroupGateAsync(ctx, db, apiKey, "chat")) return;
+        if (!await MgmtBatchEndpoints.KeyScopeGateAsync(ctx, db, apiKey, "chat")) return;
 
         JsonElement body;
         try { body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body); }
@@ -1621,7 +1624,10 @@ public static class GatewayEndpoints
               ?? ctx.Request.Query["key"].FirstOrDefault();
         if (string.IsNullOrEmpty(key)) return new AuthKey("", false);
         var found = await Core.Gateway.HotReads.ApiKeyAsync(db, key);
-        if (found is { IsActive: true })
+        // SPEC-149: rotate grace — chave antiga expira em RetiresAt
+        if (found is { IsActive: true }
+            && (found.RetiresAt is null
+                || (DateTimeOffset.TryParse(found.RetiresAt, out var ra) && ra > DateTimeOffset.UtcNow)))
             return new AuthKey(key, true, found.UserId, ApiKeyRow: found);
         // SPEC-111: virtual keys vk-… — exige o usuário ativo também.
         if (key.StartsWith("vk-", StringComparison.OrdinalIgnoreCase)

@@ -15023,7 +15023,16 @@
   "status": "Estado",
   "empty": "Ninguna key creada",
   "created": "Key creada — cópiala ahora, no se mostrará de nuevo",
-  "expiring": "Credenciales por expirar"
+  "expiring": "Credenciales por expirar",
+  "endpointsScoped": "endpoints restringidos",
+  "ipScoped": "ip restringida",
+  "anomalies": "anomalías de la key",
+  "scope": "Ámbito",
+  "rotate": "Rotar",
+  "rotateHint": "Nueva key; la anterior expira en 5min",
+  "allowedEndpoints": "endpoints permitidos",
+  "allowedIpRanges": "CIDRs de IP permitidos",
+  "rotated": "nueva key"
  },
  "inspector": {
   "title": "Traffic Inspector",

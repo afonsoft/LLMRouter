@@ -80,14 +80,36 @@
             <div class="flex muted sm mt-1" style="gap:10px;flex-wrap:wrap">
                 <span class="badge info">@LimitSummary(k)</span>
                 <span>created @k.CreatedAt</span>
+                @if (!string.IsNullOrEmpty(k.AllowedEndpoints)) { <span class="chip">@Loc.T("keys.endpointsScoped", "endpoints scoped")</span> }
+                @if (!string.IsNullOrEmpty(k.AllowedIpRanges)) { <span class="chip">@Loc.T("keys.ipScoped", "ip scoped")</span> }
+                @if (_anomalies.TryGetValue(k.Id, out var ac) && ac > 0)
+                {
+                    <span class="badge warn" title="@Loc.T("keys.anomalies", "key anomalies")">@ac ⚠</span>
+                }
             </div>
             <div class="flex gap-2 mt-2" style="flex-wrap:wrap">
                 <a class="btn btn-sm" href="/dashboard/api-manager/@k.Id/routing">Routing</a>
                 <button class="btn btn-sm" @onclick="() => OpenLimits(k)">@Loc.T("keys.limitsBtn", "Limits")</button>
+                <button class="btn btn-sm" @onclick="() => OpenScope(k)">@Loc.T("keys.scope", "Scope")</button>
+                <button class="btn btn-sm" @onclick="() => Rotate(k)" title="@Loc.T("keys.rotateHint", "New key; old expires in 5min")">@Loc.T("keys.rotate", "Rotate")</button>
                 <button class="btn btn-sm" @onclick="() => Regenerate(k)">@Loc.T("keys.regenerate", "Regenerate")</button>
                 <button class="btn btn-sm" @onclick="() => Toggle(k)">@(k.IsActive ? "Disable" : "Enable")</button>
                 <button class="btn btn-sm btn-danger" @onclick="() => Delete(k.Id)">Delete</button>
             </div>
+            @if (_scopeFor == k.Id)
+            {
+                <div class="flex gap-2 mt-2" style="flex-wrap:wrap;align-items:end;border-top:1px solid var(--border);padding-top:10px">
+                    <div><label class="muted sm">@Loc.T("keys.allowedEndpoints", "allowed endpoints")</label>
+                        <input class="input" style="width:220px" placeholder="chat,embeddings,media (* = all)" @bind="_scopeEndpoints" /></div>
+                    <div><label class="muted sm">@Loc.T("keys.allowedIpRanges", "allowed IP CIDRs")</label>
+                        <input class="input" style="width:220px" placeholder="10.0.0.0/8, 192.168.1.5/32" @bind="_scopeIps" /></div>
+                    <button class="btn btn-sm btn-primary" @onclick="() => SaveScope(k)">@Loc.T("common.save", "Save")</button>
+                    @if (_rotated is not null)
+                    {
+                        <span class="sm ok mono">@Loc.T("keys.rotated", "new key"): @_rotated</span>
+                    }
+                </div>
+            }
             @if (_limitsFor == k.Id)
             {
                 <div class="flex gap-2 mt-2" style="flex-wrap:wrap;align-items:end;border-top:1px solid var(--border);padding-top:10px">
@@ -146,7 +168,8 @@
 </div>
 
 @code {
-    private record K(string Id, string Key, string Name, bool IsActive, string CreatedAt);
+    private record K(string Id, string Key, string Name, bool IsActive, string CreatedAt,
+        string? AllowedEndpoints, string? AllowedIpRanges);
     private sealed record Lim { public int Rpm { get; set; } public int Tpm { get; set; } public int DailyTokens { get; set; } }
     private sealed class G { public string Id = ""; public string Name = ""; public List<string> KeyIds = []; }
 
@@ -165,6 +188,11 @@
     private List<G> _groups = [];
     private string? _reveal;
     private string? _limitsFor;
+    private string? _scopeFor;
+    private string _scopeEndpoints = "";
+    private string _scopeIps = "";
+    private string? _rotated;
+    private readonly Dictionary<string, int> _anomalies = new();
     private Lim _lim = new();
     private long _dailyUsed;
     private string _groupName = "";
@@ -197,7 +225,23 @@
             k.GetProperty("id").GetString()!, k.GetProperty("key").GetString()!,
             k.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
             k.GetProperty("isActive").GetBoolean(),
-            k.TryGetProperty("createdAt", out var c) ? c.GetString() ?? "" : "")).ToList();
+            k.TryGetProperty("createdAt", out var c) ? c.GetString() ?? "" : "",
+            k.TryGetProperty("allowedEndpoints", out var ae) && ae.ValueKind == JsonValueKind.String ? ae.GetString() : null,
+            k.TryGetProperty("allowedIpRanges", out var ai) && ai.ValueKind == JsonValueKind.String ? ai.GetString() : null)).ToList();
+
+        // SPEC-149: anomaly badges por chave (unreviewed count)
+        try
+        {
+            var an = await Api.GetAsync("api/keys/anomalies?reviewed=false&limit=500");
+            _anomalies.Clear();
+            if (an.TryGetProperty("anomalies", out var aa))
+                foreach (var a in aa.EnumerateArray())
+                {
+                    var kid = a.GetProperty("keyId").GetString() ?? "";
+                    _anomalies[kid] = _anomalies.GetValueOrDefault(kid) + 1;
+                }
+        }
+        catch { }
 
         var gr = await Api.GetAsync("api/keys/groups");
         _groups = gr.TryGetProperty("groups", out var ga)
@@ -296,6 +340,37 @@
     }
 
     private async Task Toggle(K k) { await Api.PutAsync($"api/keys/{k.Id}", new { isActive = !k.IsActive }); await Load(); }
+
+    // SPEC-149: scope editor + rotate
+    private void OpenScope(K k)
+    {
+        _scopeFor = _scopeFor == k.Id ? null : k.Id;
+        _scopeEndpoints = k.AllowedEndpoints is null ? "" :
+            string.Join(",", JsonDocument.Parse(k.AllowedEndpoints).RootElement.EnumerateArray().Select(x => x.GetString()));
+        _scopeIps = k.AllowedIpRanges is null ? "" :
+            string.Join(",", JsonDocument.Parse(k.AllowedIpRanges).RootElement.EnumerateArray().Select(x => x.GetString()));
+        _rotated = null;
+    }
+
+    private async Task SaveScope(K k)
+    {
+        await Api.PutAsync($"api/keys/{k.Id}", new
+        {
+            allowedEndpoints = string.IsNullOrWhiteSpace(_scopeEndpoints) ? null : _scopeEndpoints,
+            allowedIpRanges = string.IsNullOrWhiteSpace(_scopeIps) ? null : _scopeIps,
+        });
+        await Load();
+    }
+
+    private async Task Rotate(K k)
+    {
+        var r = await Api.PostAsync($"api/keys/{k.Id}/rotate", new { });
+        _rotated = r.TryGetProperty("key", out var nk) && nk.TryGetProperty("key", out var ks)
+            ? ks.GetString() : null;
+        await Load();
+        _scopeFor = k.Id; // mostra a nova chave no editor de scope
+        _rotated ??= null;
+    }
     private async Task Delete(string id) { await Api.DeleteAsync($"api/keys/{id}"); await Load(); }
     private async Task Copy(string t) => await JS.InvokeVoidAsync("llmrouter.copy", t);
 

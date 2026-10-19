@@ -15129,7 +15129,16 @@
   "status": "Status",
   "created": "Created",
   "empty": "No API keys — create one to start using the gateway",
-  "expiring": "Credentials expiring soon"
+  "expiring": "Credentials expiring soon",
+  "endpointsScoped": "endpoints scoped",
+  "ipScoped": "ip scoped",
+  "anomalies": "key anomalies",
+  "scope": "Scope",
+  "rotate": "Rotate",
+  "rotateHint": "New key; old expires in 5min",
+  "allowedEndpoints": "allowed endpoints",
+  "allowedIpRanges": "allowed IP CIDRs",
+  "rotated": "new key"
  },
  "changelog": {
   "title": "Changelog"

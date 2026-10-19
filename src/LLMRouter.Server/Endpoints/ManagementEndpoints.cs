@@ -336,6 +336,21 @@ public static class ManagementEndpoints
             if (b.TryGetProperty("name", out _)) k.Name = Get(b, "name") ?? k.Name;
             if (b.TryGetProperty("accessRestricted", out var ar)) k.AccessRestricted = ar.GetBoolean();
             if (b.TryGetProperty("accessAllow", out var aa)) k.AccessAllow = aa.GetString();
+            // SPEC-149: scopes da chave — arrays JSON ou string separada por vírgula
+            static string? JsonList(JsonElement body, string name)
+            {
+                if (!body.TryGetProperty(name, out var v)) return null;
+                if (v.ValueKind == JsonValueKind.Null) return "";
+                if (v.ValueKind == JsonValueKind.Array)
+                    return JsonSerializer.Serialize(v.EnumerateArray()
+                        .Select(x => x.GetString()).Where(s => !string.IsNullOrEmpty(s)).ToList());
+                if (v.ValueKind == JsonValueKind.String)
+                    return JsonSerializer.Serialize(v.GetString()!
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                return null;
+            }
+            if (JsonList(b, "allowedEndpoints") is { } ae) k.AllowedEndpoints = ae == "" ? null : ae;
+            if (JsonList(b, "allowedIpRanges") is { } ai) k.AllowedIpRanges = ai == "" ? null : ai;
             await db.SaveChangesAsync();
             return Results.Json(new { key = k }, JsonOpts);
         });

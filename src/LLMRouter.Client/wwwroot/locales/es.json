@@ -15177,5 +15177,22 @@
   "rank": "Rank",
   "name": "Nombre",
   "score": "Score"
- }
+ },
+ "alerts": "Alertas",
+ "alertsSubtitle": "Reglas, canales e inbox de alertas",
+ "alerts.title": "Alertas",
+ "alerts.subtitle": "Reglas → canales → inbox — métricas y eventos con ack/snooze/resolver",
+ "alerts.tab.inbox": "Inbox",
+ "alerts.tab.rules": "Reglas",
+ "alerts.tab.channels": "Canales",
+ "alerts.tab.deliveries": "Entregas",
+ "alerts.open": "abiertas",
+ "alerts.none": "Sin instancias de alerta",
+ "alerts.rule": "Regla",
+ "alerts.started": "Inicio",
+ "alerts.newRule": "Nueva regla",
+ "alerts.channels": "Canales",
+ "alerts.newChannel": "Nuevo canal",
+ "alerts.attempts": "Intentos",
+ "alerts.error": "Error"
 }

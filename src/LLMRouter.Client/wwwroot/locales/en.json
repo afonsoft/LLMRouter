@@ -15238,5 +15238,22 @@
   "rank": "Rank",
   "name": "Name",
   "score": "Score"
- }
+ },
+ "alerts": "Alerts",
+ "alertsSubtitle": "Rules, channels and alert inbox",
+ "alerts.title": "Alerts",
+ "alerts.subtitle": "Rules → channels → inbox — metrics and events with ack/snooze/resolve",
+ "alerts.tab.inbox": "Inbox",
+ "alerts.tab.rules": "Rules",
+ "alerts.tab.channels": "Channels",
+ "alerts.tab.deliveries": "Deliveries",
+ "alerts.open": "open",
+ "alerts.none": "No alert instances",
+ "alerts.rule": "Rule",
+ "alerts.started": "Started",
+ "alerts.newRule": "New rule",
+ "alerts.channels": "Channels",
+ "alerts.newChannel": "New channel",
+ "alerts.attempts": "Attempts",
+ "alerts.error": "Error"
 }

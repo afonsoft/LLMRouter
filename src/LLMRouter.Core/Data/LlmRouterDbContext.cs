@@ -99,6 +99,7 @@ public class LlmRouterDbContext : DbContext
     public DbSet<AlertDelivery> AlertDeliveries => Set<AlertDelivery>();
     /// <summary>SPEC-147: eventos de segurança revisáveis.</summary>
     public DbSet<SafetyEvent> SafetyEvents => Set<SafetyEvent>();
+    public DbSet<KeyAnomaly> KeyAnomalies => Set<KeyAnomaly>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

@@ -91,6 +91,54 @@ public static class KeysQuotaEndpoints
             return Results.Json(new { key = k.Key }, JsonOpts);
         });
 
+        // SPEC-149: rotate — nova sk- + antiga viva por grace (default 5min via RetiresAt)
+        g.MapPost("/keys/{id}/rotate", async (string id, HttpContext ctx, LlmRouterDbContext db) =>
+        {
+            var k = await db.ApiKeys.FindAsync(id);
+            if (k is null) return NotFound("key");
+            var graceMin = ctx.Request.Query["graceMinutes"].FirstOrDefault() is { } g2
+                && int.TryParse(g2, out var gm) ? gm : 5;
+            var newKey = new ApiKey
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Key = $"sk-{Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)).ToLowerInvariant()}",
+                Name = k.Name, IsActive = true, CreatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                AccessRestricted = k.AccessRestricted, AccessAllow = k.AccessAllow,
+                UserId = k.UserId, TeamId = k.TeamId,
+                AllowedEndpoints = k.AllowedEndpoints, AllowedIpRanges = k.AllowedIpRanges,
+            };
+            k.RetiresAt = DateTimeOffset.UtcNow.AddMinutes(graceMin).ToString("O");
+            db.ApiKeys.Add(newKey);
+            // kv-scoped settings seguem a string da chave — copia quota/limits
+            var oldKv = await db.Kv.Where(x => x.Scope == QuotaScope && x.Key == k.Key).ToListAsync();
+            foreach (var r in oldKv)
+                db.Kv.Add(new KvEntry { Scope = r.Scope, Key = newKey.Key, Value = r.Value });
+            await db.SaveChangesAsync();
+            await Core.Extras.Extras.AuditAsync(db, "apikey.rotate", $"{k.Name ?? k.Id} → {newKey.Id}");
+            return Results.Json(new { key = newKey, oldRetiresAt = k.RetiresAt }, JsonOpts);
+        });
+
+        // SPEC-149: anomaly feed
+        g.MapGet("/keys/anomalies", async (LlmRouterDbContext db,
+            string? keyId, string? kind, bool? reviewed, int? limit) =>
+        {
+            var q = db.KeyAnomalies.AsQueryable();
+            if (!string.IsNullOrEmpty(keyId)) q = q.Where(a => a.KeyId == keyId);
+            if (!string.IsNullOrEmpty(kind)) q = q.Where(a => a.Kind == kind);
+            if (reviewed is { } rv) q = q.Where(a => a.Reviewed == rv);
+            var rows = await q.OrderByDescending(a => a.Id)
+                .Take(Math.Clamp(limit ?? 200, 1, 1000)).ToListAsync();
+            return Results.Json(new { anomalies = rows }, JsonOpts);
+        });
+        g.MapPost("/keys/anomalies/{id}/reviewed", async (long id, LlmRouterDbContext db) =>
+        {
+            var a = await db.KeyAnomalies.FindAsync(id);
+            if (a is null) return NotFound("anomaly");
+            a.Reviewed = true;
+            await db.SaveChangesAsync();
+            return Results.Json(a, JsonOpts);
+        });
+
         // ---- per-key usage limits ----
         g.MapGet("/keys/{id}/usage-limits", async (string id, LlmRouterDbContext db) =>
         {

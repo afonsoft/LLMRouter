@@ -287,6 +287,12 @@ namespace LLMRouter.Core.Data.Migrations
                     b.Property<bool>("AccessRestricted")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AllowedEndpoints")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AllowedIpRanges")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CreatedAt")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -302,6 +308,9 @@ namespace LLMRouter.Core.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RetiresAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("TeamId")
@@ -1118,6 +1127,36 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("jobStates");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.KeyAnomaly", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("At")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Reviewed")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("keyAnomalies");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.KeyGroup", b =>

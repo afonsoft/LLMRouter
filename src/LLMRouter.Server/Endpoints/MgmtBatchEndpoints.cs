@@ -613,6 +613,138 @@ public static partial class MgmtBatchEndpoints
         _ => "chat",
     };
 
+    // ==================== KEY SCOPING (SPEC-149) ====================
+
+    private const string KeyIpsScope = "keyIps";
+    /// <summary>contagem horária em memória p/ usage_spike (baseline móvel).</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> HourlyKeyHits = new();
+
+    /// <summary>SPEC-149: allowedEndpoints + allowedIpRanges + anomalias (new_ip,
+    /// usage_spike, scope_denied). Escreve 403 key_scope|key_ip e retorna false
+    /// quando nega. Segue KeyGroupGateAsync: chamado no pipeline /v1 após auth.</summary>
+    internal static async Task<bool> KeyScopeGateAsync(HttpContext ctx, LlmRouterDbContext db,
+        string apiKey, string scope)
+    {
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "dashboard" || apiKey.StartsWith("relay:"))
+            return true;
+        var key = await db.ApiKeys.AsNoTracking()
+            .FirstOrDefaultAsync(k => k.Key == apiKey, ctx.RequestAborted);
+        if (key is null) return true;
+        var ip = ClientIp(ctx, db);
+
+        var allowed = ParseList(key.AllowedEndpoints);
+        if (allowed is { Count: > 0 } && !allowed.Contains("*") && !allowed.Contains(scope))
+        {
+            await NoteAnomaly(db, key.Id, "scope_denied", new { scope, ip });
+            ctx.Response.StatusCode = 403;
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                error = new { code = "key_scope", message = $"API key is not allowed to use '{scope}' endpoints." },
+            }, JsonOpts), ctx.RequestAborted);
+            return false;
+        }
+        var cidrs = ParseList(key.AllowedIpRanges);
+        if (cidrs is { Count: > 0 } && !cidrs.Any(c => CidrMatch(ip, c)))
+        {
+            await NoteAnomaly(db, key.Id, "scope_denied", new { scope, ip, why = "ip_range" });
+            ctx.Response.StatusCode = 403;
+            ctx.Response.ContentType = "application/json";
+            await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                error = new { code = "key_ip", message = "API key is not allowed from this IP." },
+            }, JsonOpts), ctx.RequestAborted);
+            return false;
+        }
+        // anomalies: new_ip (kv seen-set, cap 100) + usage_spike (in-memory hourly)
+        try
+        {
+            var row = await db.Kv.FindAsync([KeyIpsScope, key.Id], ctx.RequestAborted);
+            var seen = row is null ? [] : ParseList(row.Value) ?? [];
+            if (!seen.Contains(ip))
+            {
+                seen.Add(ip);
+                if (seen.Count > 100) seen.RemoveAt(0);
+                if (row is null)
+                    db.Kv.Add(new KvEntry { Scope = KeyIpsScope, Key = key.Id, Value = JsonSerializer.Serialize(seen) });
+                else row.Value = JsonSerializer.Serialize(seen);
+                await NoteAnomaly(db, key.Id, "new_ip", new { ip });
+            }
+            var sdata = await Core.Gateway.HotReads.SettingsDataAsync(db);
+            var thr = sdata.TryGetProperty("keyAnomaly", out var ka)
+                && ka.ValueKind == JsonValueKind.Object
+                && ka.TryGetProperty("spikeThreshold", out var st)
+                && st.TryGetInt32(out var t) ? t : 0;
+            if (thr > 0)
+            {
+                var bucket = $"{key.Id}:{DateTime.UtcNow:yyyyMMddHH}";
+                var n = HourlyKeyHits.AddOrUpdate(bucket, 1, (_, c) => c + 1);
+                if (n == thr) // uma anomalia por hora quando cruza o limiar
+                    await NoteAnomaly(db, key.Id, "usage_spike", new { hour = DateTime.UtcNow.ToString("HH:00"), count = n, threshold = thr });
+            }
+        }
+        catch (Exception) { /* anomaly tracking is best-effort */ }
+        return true;
+    }
+
+    private static List<string>? ParseList(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            var arr = JsonSerializer.Deserialize<List<string>>(json);
+            return arr?.Where(s => !string.IsNullOrEmpty(s)).ToList();
+        }
+        catch (JsonException) { return null; }
+    }
+
+    internal static string ClientIp(HttpContext ctx, LlmRouterDbContext? db = null)
+    {
+        var trustProxy = db is not null
+            && Core.Gateway.HotReads.SettingsDataAsync(db).GetAwaiter().GetResult()
+                is { } s
+            && s.TryGetProperty("trustProxy", out var tp)
+            && tp.ValueKind is JsonValueKind.True;
+        if (trustProxy && ctx.Request.Headers.TryGetValue("X-Forwarded-For", out var xff)
+            && xff.FirstOrDefault() is { Length: > 0 } first)
+            return first.Split(',')[0].Trim();
+        return ctx.Connection.RemoteIpAddress?.ToString() ?? "";
+    }
+
+    /// <summary>Match IP (v4 ou v6) contra CIDR "a.b.c.d/n" ou IP exato.</summary>
+    public static bool CidrMatch(string ip, string cidr)
+    {
+        try
+        {
+            var ipAddr = System.Net.IPAddress.Parse(ip);
+            var parts = cidr.Split('/');
+            var baseAddr = System.Net.IPAddress.Parse(parts[0]);
+            if (ipAddr.AddressFamily != baseAddr.AddressFamily) return false;
+            var prefix = parts.Length == 2 && int.TryParse(parts[1], out var p)
+                ? p : (ipAddr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128);
+            var ib = ipAddr.GetAddressBytes(); var bb = baseAddr.GetAddressBytes();
+            var bits = prefix;
+            for (var i = 0; i < ib.Length && bits > 0; i++)
+            {
+                var mask = bits >= 8 ? 0xFF : (0xFF << (8 - bits)) & 0xFF;
+                if ((ib[i] & mask) != (bb[i] & mask)) return false;
+                bits -= 8;
+            }
+            return true;
+        }
+        catch { return false; }
+    }
+
+    internal static async Task NoteAnomaly(LlmRouterDbContext db, string keyId, string kind, object detail)
+    {
+        db.KeyAnomalies.Add(new KeyAnomaly
+        {
+            At = DateTime.UtcNow.ToString("O"), KeyId = keyId, Kind = kind,
+            Detail = JsonSerializer.Serialize(detail, JsonOpts),
+        });
+        await db.SaveChangesAsync();
+    }
+
     // ==================== WEBHOOKS DETAIL ====================
 
     private static Task<List<JsonElement>> WebhookList(LlmRouterDbContext db)

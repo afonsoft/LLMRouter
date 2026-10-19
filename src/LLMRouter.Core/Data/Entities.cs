@@ -81,6 +81,26 @@ public class ApiKey
     public string? UserId { get; set; }
     /// <summary>SPEC-111: reservado p/ agrupamento futuro (teams).</summary>
     public string? TeamId { get; set; }
+    /// <summary>SPEC-149: endpoints permitidos — JSON array (chat|embeddings|media|*); null/vazio = todos.</summary>
+    public string? AllowedEndpoints { get; set; }
+    /// <summary>SPEC-149: CIDRs permitidos — JSON array; null/vazio = qualquer IP.</summary>
+    public string? AllowedIpRanges { get; set; }
+    /// <summary>SPEC-149: após rotate, a chave velha morre neste instante (ISO "O"); null = viva.</summary>
+    public string? RetiresAt { get; set; }
+}
+
+/// <summary>SPEC-149: anomalia detectada no uso de uma apiKey — new_ip | usage_spike | scope_denied.</summary>
+[Table("keyAnomalies")]
+public class KeyAnomaly
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string At { get; set; } = "";
+    public string KeyId { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Detail { get; set; } = "{}";
+    public bool Reviewed { get; set; }
 }
 
 [Table("combos")]

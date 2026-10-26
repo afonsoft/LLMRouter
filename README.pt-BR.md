@@ -1,7 +1,7 @@
 # LLMRouter
 
 > Gateway unificado de LLMs — um único endpoint para todas as providers.
-> Porte em C#/.NET 10 + Blazor WebAssembly do [OmniRoute](https://github.com/diegosouzapw/OmniRoute) (v3.8.52) e do [9router](https://github.com/decolua/9router).
+> Porte em C#/.NET 10 + Blazor WebAssembly do [OmniRoute](https://github.com/cheaper-inference/OmniRoute) (`release/v3.8.53`) e do [9router](https://github.com/decolua/9router).
 
 **English version:** [README.md](README.md)
 

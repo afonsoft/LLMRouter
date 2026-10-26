@@ -1,10 +1,13 @@
 # OmniRoute → LLMRouter migration review
 
-**Baseline requested:** `cheaper-inference/OmniRoute` v3.8.53  
-**Baseline available:** v3.8.52, commit `ad6f33f66bda34eba98645d3bfdabbde294bc843`, released 2026-10-19  
-**Status:** v3.8.53 was not present in the upstream tags or releases when this review was run. The
-comparison therefore uses the latest published release and keeps the version gap explicit instead of
-inventing a v3.8.53 delta.
+**Baseline requested:** `cheaper-inference/OmniRoute` branch `release/v3.8.53`
+
+**Exact upstream commit:** `412319f0bdda06a1c7db93dd62bdf8b6317edc1e`
+
+**Commit date:** 2026-10-26T04:04:17-03:00 (UTC-03:00)
+
+**Status:** verified from the upstream Git ref. The literal `v3.8.53` tag/branch was not returned; this review
+uses the existing `release/v3.8.53` branch and must not describe it as a published tag.
 
 ## Executive summary
 
@@ -14,8 +17,8 @@ combos, translators, resilience, usage, logs, and most of the dashboard surface.
 
 The remaining work is mostly **depth and release drift**, not a rewrite:
 
-1. finish the approved SPEC-152–157 wave;
-2. revalidate the port against the v3.8.52 source tree after every upstream release;
+1. finish the approved SPEC-154–157 wave;
+2. revalidate the port against the pinned `release/v3.8.53` source tree after every upstream release;
 3. add an explicit migration contract for versioned schemas, route/API shapes, and UI screenshots;
 4. prioritize the operational surfaces where OmniRoute is visibly stronger: provider health, routing
    decisions, settings/change safety, live request inspection, and release diagnostics.
@@ -25,13 +28,14 @@ The remaining work is mostly **depth and release drift**, not a rewrite:
 | Item | Evidence |
 |---|---|
 | Requested upstream | `https://github.com/cheaper-inference/OmniRoute` |
-| Published baseline used | tag `v3.8.52` |
-| Exact commit | `ad6f33f66bda34eba98645d3bfdabbde294bc843` |
+| Published baseline used | branch `release/v3.8.53` (not a literal tag) |
+| Exact commit | `412319f0bdda06a1c7db93dd62bdf8b6317edc1e` |
+| Commit date | `2026-10-26T04:04:17-03:00` |
 | Upstream stack | Next.js/React/TypeScript, SQLite, embedded dashboard |
 | LLMRouter stack | ASP.NET Core/.NET 10, Blazor WASM, EF Core, SQLite |
-| Upstream dashboard routes | 54 `page.tsx` entries under `src/app/(dashboard)/dashboard` |
+| Upstream dashboard routes | 123 `page.tsx` entries under `src/app/(dashboard)/dashboard` |
 | LLMRouter dashboard pages | 100 `.razor` pages under `src/LLMRouter.Client/Pages` |
-| Upstream API route files | 750 `route.ts` files, including nested compatibility and provider routes |
+| Upstream API route files | 757 `route.ts` files, including nested compatibility and provider routes |
 | LLMRouter endpoint files | 72 endpoint classes |
 
 The upstream README advertises 375 providers, 20 combo strategies, headless mode, quota-aware
@@ -39,17 +43,37 @@ routing, live quota telemetry, model discovery, compression, MCP/A2A, guardrails
 CLI/desktop integrations. LLMRouter already ports the docker/core subset and intentionally excludes
 some Electron, MITM, subscription-auth, and desktop-only behavior.
 
+## Verified `release/v3.8.53` delta
+
+The branch contains 992 changed files versus the local v3.8.52 reference (41,280 additions and
+33,103 deletions in the dashboard/API/open-sse/lib scope). The migration-relevant changes verified
+from changelogs and source include:
+
+- **Authentication:** optional OIDC role/group claim admission, fail-closed validation, and
+  security-sensitive settings re-authentication. This is a new parity gap for LLMRouter.
+- **Routing/resilience:** isolated hedge branch failures, improved interleaving, better health
+  autopilot signals, cooldown behavior, and explicit stream first-output budgets.
+- **Media/SSE:** URL audio transcription now injects the remote media downloader instead of
+  depending on an implicit implementation.
+- **Provider operations:** stale-model badges, model health/cooldown routing, egress quota rotation,
+  provider load-generation fixes, and expanded MCP/A2A combo selection behavior.
+- **Release quality:** release-green workflows, provenance/SBOM-oriented checks, generated release
+  assets, API route typecheck restoration, and broad i18n/resilience documentation sync.
+
+These findings extend the migration backlog rather than invalidate the already merged routing and
+change-control work.
+
 ## Feature parity and migration priorities
 
 | Area | OmniRoute v3.8.52 | LLMRouter now | Migration action |
 |---|---|---|---|
 | Gateway protocols | OpenAI, Claude, Gemini, Responses, media/passthrough | Same protocol families and `/v1` + `/api/v1` mounting | Keep contract tests against upstream fixtures |
 | Provider catalog | Large live catalog, free tiers, synced model availability | Embedded registry plus synced models and capability overrides | Add release revalidation and catalog drift report |
-| Combo routing | 20 strategies, auto-combo, fusion/pipeline, quota/cache affinity | Most strategies, auto-router, fusion/pipeline, virtual `auto/*` | Finish SPEC-152 hedging, prefix affinity, predicates, mirror |
+| Combo routing | 20 strategies plus release fixes for hedging, cooldowns, health autopilot, and first-output budgets | Most strategies, auto-router, fusion/pipeline, virtual `auto/*` | Keep SPEC-152 parity tests and add stream-first-output/hedge isolation coverage |
 | Resilience | Provider breaker, account cooldown, model lockout, quota-aware selection | Equivalent core layers already ported | Add route-decision evidence and stress tests |
 | Request observability | Analytics, logs, call detail, route decision headers, quota telemetry | Analytics, logs, request detail, activity, health | Finish log sinks and richer attempt/decision detail |
-| Governance | Settings groups, guardrails, scoped keys, backup/restore | Guardrails, scoped keys, budgets, audit, backups | Finish change control, device auth, test mode |
-| Dashboard | 54 route pages with dark local-first console | 100 Razor pages with bilingual layout and screenshots | Close high-value visual/interaction gaps, not raw page count |
+| Governance | Settings groups, guardrails, scoped keys, backup/restore, OIDC role/group admission | Guardrails, scoped keys, budgets, audit, backups, revision foundation | Complete device auth, test mode, approval workflow, and OIDC admission parity |
+| Dashboard | 123 route pages with dark local-first console and expanded release UI | 100 Razor pages with bilingual layout and screenshots | Port high-value flows; page-count parity is not the goal |
 | Desktop/CLI | Electron, CLI setup, provider OAuth helpers | Core CLI and selected integrations | Keep out of docker parity unless explicitly promoted |
 | Release operations | SBOM/provenance, release channels, health tooling | Docker/binary release workflow | Finish SPEC-157 and publish migration evidence |
 
@@ -118,9 +142,13 @@ They are intentionally aligned with the current LLMRouter pages and the upstream
 1. **SPEC-152 — Routing pack:** hedge, prefix affinity, response predicates, shadow mirror.
 2. **SPEC-153 — Change control:** revisions, approvals, diff, rollback.
 3. **SPEC-154 — Device authorization:** CLI device code flow.
-4. **SPEC-155 — Test mode:** reset, seed, clock skew, controlled failures.
-5. **SPEC-156 — Log sinks:** bounded NDJSON audit/request exporters.
-6. **SPEC-157 — Release hardening:** SBOM, provenance, image scan.
+4. **New follow-up — OIDC admission parity:** claim-path/value policy, fail-closed validation,
+   security re-authentication, and dashboard login tests.
+5. **New follow-up — Stream first-output resilience:** first-frame timeout, empty-stream fallback,
+   hedge isolation, and route-decision evidence.
+6. **SPEC-155 — Test mode:** reset, seed, clock skew, controlled failures.
+7. **SPEC-156 — Log sinks:** bounded NDJSON audit/request exporters.
+8. **SPEC-157 — Release hardening:** SBOM, provenance, image scan.
 
 ### New migration specs
 

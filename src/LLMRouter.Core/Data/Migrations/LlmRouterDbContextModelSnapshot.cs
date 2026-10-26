@@ -479,6 +479,43 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("capabilityOverrides");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.ChangeRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("At")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DecidedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Decider")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Patch")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("changeRequests");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.ChatSession", b =>
                 {
                     b.Property<string>("Id")
@@ -735,6 +772,37 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasIndex("State");
 
                     b.ToTable("conductorTasks");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.ConfigRevision", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("At")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Patch")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Prev")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("configRevisions");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.CredentialExpiration", b =>

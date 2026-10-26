@@ -153,6 +153,34 @@ public class OverageGrant
     public bool Revoked { get; set; }
 }
 
+[Table("configRevisions")]
+public class ConfigRevision
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string At { get; set; } = "";
+    public string Actor { get; set; } = "";
+    public string Area { get; set; } = "";
+    public string Patch { get; set; } = "{}";
+    public string Prev { get; set; } = "{}";
+}
+
+[Table("changeRequests")]
+public class ChangeRequest
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string At { get; set; } = "";
+    public string Actor { get; set; } = "";
+    public string Area { get; set; } = "";
+    public string Patch { get; set; } = "{}";
+    public string State { get; set; } = "pending";
+    public string? Decider { get; set; }
+    public string? DecidedAt { get; set; }
+}
+
 [Table("combos")]
 public class Combo
 {

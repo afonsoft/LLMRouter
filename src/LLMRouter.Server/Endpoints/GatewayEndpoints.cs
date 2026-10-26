@@ -687,6 +687,7 @@ public static class GatewayEndpoints
         // SPEC-092: model alias resolution before combo expansion
         model = await MgmtBatchEndpoints.ResolveAliasAsync(db, model);
         var comboEntity = await Core.Gateway.HotReads.ComboAsync(db, model);
+        var routingPack = comboEntity is null ? null : Core.Routing.RoutingPackOptions.From(comboEntity);
         // SPEC-091: budget gate — 429 budget_exceeded when the resolved scope is over cap
         if (!await ComboAnalyticsEndpoints.BudgetGate(ctx, db, model, comboEntity?.Name)) return;
         if (comboEntity?.Kind == "vision-adapter"
@@ -999,7 +1000,7 @@ public static class GatewayEndpoints
                     Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
-                    RecordStrategiesSuccess(target, body);
+                    await RecordStrategiesSuccess(db, target, body);
                     await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
                         target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
@@ -1013,6 +1014,26 @@ public static class GatewayEndpoints
                 {
                     var upstream = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ctx.RequestAborted);
                     var translated = Translators.TranslateResponse(upstream, call.OutboundFormat, inbound, model);
+                    if (routingPack is { Predicates.Count: > 0 })
+                    {
+                        using var predicateDoc = JsonDocument.Parse(translated.ToJsonString(JsonOpts));
+                        var predicate = Core.Routing.ResponsePredicates.Evaluate(
+                            predicateDoc.RootElement, routingPack.Predicates, sw.ElapsedMilliseconds);
+                        if (!predicate.Passed)
+                        {
+                            lastError = new InvalidOperationException(
+                                $"response predicate failed: {predicate.FailedPredicate}");
+                            Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
+                            Core.Resilience.ProviderBreaker.ReportStatus(
+                                target.Provider.Id, 502, target.Provider.AuthType);
+                            if (pooled is not null)
+                                await Core.Routing.SessionPoolOps.ReleaseAsync(
+                                    db, pooled, success: false);
+                            try { await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: false); }
+                            catch { }
+                            continue;
+                        }
+                    }
                     if (ctx.Items["plugins"] is System.Text.Json.Nodes.JsonArray plArr
                         && translated is JsonObject tj)
                         Core.Extras.PluginHooks.ApplyResponse(plArr, tj);
@@ -1083,7 +1104,7 @@ public static class GatewayEndpoints
                     Core.Resilience.ProviderBreaker.ReportSuccess(target.Provider.Id);
                     Core.Resilience.ModelLockout.Unlock(target.Provider.Id,
                         target.Connection.Id, target.UpstreamModel);
-                    RecordStrategiesSuccess(target, body);
+                    await RecordStrategiesSuccess(db, target, body);
                     await Core.Routing.ComboSteps.AutoPromoteAsync(db, sdata,
                         target.ComboName, $"{target.Provider.Id}/{target.UpstreamModel}");
                     await ReportConnAsync(ctx, db, sdata, target.Connection.Id, success: true);
@@ -1126,12 +1147,16 @@ public static class GatewayEndpoints
     }
 
     /// <summary>SPEC-020: remember the serving model for lkgp / cache-optimized.</summary>
-    private static void RecordStrategiesSuccess(Core.Gateway.ResolvedTarget target, JsonElement body)
+    private static async Task RecordStrategiesSuccess(
+        LlmRouterDbContext db, Core.Gateway.ResolvedTarget target, JsonElement body)
     {
         var modelRef = $"{target.Provider.Id}/{target.UpstreamModel}";
         Core.Routing.ComboStrategies.RecordSuccess(target.ComboName, modelRef);
         var hash = Core.Routing.ComboStrategies.PromptHash(body);
         if (hash.Length > 0) Core.Routing.ComboStrategies.RecordCacheHit(target.ComboName, hash, modelRef);
+        if (hash.Length > 0)
+            await Core.Routing.PrefixAffinity.PutAsync(
+                db, hash, modelRef, TimeSpan.FromMinutes(15), CancellationToken.None);
     }
 
     /// <summary>Non-stream upstream call; returns translated response text.</summary>

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace LLMRouter.Shared.Ux;
 
 public sealed record TimeRange(DateTimeOffset From, DateTimeOffset To, DateTimeOffset CompareFrom, DateTimeOffset CompareTo)
@@ -21,13 +23,13 @@ public sealed record TimeRange(DateTimeOffset From, DateTimeOffset To, DateTimeO
     public static TimeRange FromQuery(string? from, string? to, bool compare, DateTimeOffset? now = null)
     {
         var fallback = FromPreset("1d", now);
-        if (!DateTimeOffset.TryParse(from, out var start) ||
-            !DateTimeOffset.TryParse(to, out var end) ||
+        if (!DateTimeOffset.TryParse(from, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var start) ||
+            !DateTimeOffset.TryParse(to, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var end) ||
             end <= start)
-            return compare ? fallback : fallback with { CompareFrom = fallback.From, CompareTo = fallback.From };
+            return compare ? fallback : fallback with { CompareFrom = fallback.From };
 
         var span = end - start;
-        return new(start, end, compare ? start - span : start, compare ? start : start);
+        return new(start, end, compare ? start - span : start, start);
     }
 
     public string ToQuery(bool compare = true) =>

@@ -893,6 +893,11 @@ public static class GatewayEndpoints
             WarnUncatalogedOnce(ctx, $"{t.Provider.Id}/{t.UpstreamModel}");
         }
 
+        if (!stream && routingPack?.HedgeDelayMs is > 0 && targets.Count >= 2
+            && await TryHedgeAsync(ctx, engine, httpFactory, targets[0], targets[1],
+                routingPack.HedgeDelayMs.Value, inbound, body, model, apiKey, sw))
+            return;
+
         Exception? lastError = null;
         foreach (var target in targets)
         {
@@ -1075,6 +1080,8 @@ public static class GatewayEndpoints
                     var outJson = respGuard.Enabled && respGuard.Mode == "redact" && gDets.Count > 0
                         ? Core.Guardrails.ResponseGuard.Redact(translated.ToJsonString(JsonOpts), respGuard)
                         : translated.ToJsonString(JsonOpts);
+                    if (routingPack?.MirrorModel is { Length: > 0 } mirrorModel)
+                        StartShadowMirror(ctx, body.Clone(), inbound, mirrorModel, pt + ct);
                     if (cacheHash is not null)
                         await CacheStoreAsync(ctx, sdata, cacheHash,
                             target.Provider.Id, model, body.GetRawText(), outJson,
@@ -1157,6 +1164,162 @@ public static class GatewayEndpoints
         if (hash.Length > 0)
             await Core.Routing.PrefixAffinity.PutAsync(
                 db, hash, modelRef, TimeSpan.FromMinutes(15), CancellationToken.None);
+    }
+
+    private sealed record HedgeAttempt(
+        Core.Gateway.ResolvedTarget Target,
+        string Body,
+        int StatusCode,
+        long LatencyMs);
+
+    private static async Task<bool> TryHedgeAsync(
+        HttpContext ctx, GatewayEngine engine, IHttpClientFactory httpFactory,
+        Core.Gateway.ResolvedTarget first, Core.Gateway.ResolvedTarget second,
+        int delayMs, string inbound, JsonElement body, string model, string apiKey,
+        Stopwatch sw)
+    {
+        async Task<HedgeAttempt?> Send(Core.Gateway.ResolvedTarget target, CancellationToken ct)
+        {
+            var call = engine.BuildCall(target, inbound, body, stream: false);
+            using var request = new HttpRequestMessage(HttpMethod.Post, call.Url)
+            {
+                Content = new StringContent(call.Body, Encoding.UTF8, "application/json"),
+            };
+            foreach (var header in call.Headers)
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            var started = sw.ElapsedMilliseconds;
+            using var response = await httpFactory.CreateClient("upstream")
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            var text = await response.Content.ReadAsStringAsync(ct);
+            var attempt = new HedgeAttempt(
+                target, text, (int)response.StatusCode, sw.ElapsedMilliseconds - started);
+            if (!response.IsSuccessStatusCode)
+            {
+                Core.Resilience.CooldownTracker.ReportFailure(target.Connection.Id);
+                Core.Resilience.ProviderBreaker.ReportStatus(
+                    target.Provider.Id, attempt.StatusCode, target.Provider.AuthType);
+            }
+            return attempt;
+        }
+
+        var winner = await Core.Routing.HedgedDispatch.ExecuteAsync(
+            ct => Send(first, ct),
+            ct => Send(second, ct),
+            TimeSpan.FromMilliseconds(delayMs),
+            attempt => attempt is { StatusCode: >= 200 and < 300 },
+            ctx.RequestAborted);
+        if (winner is null || winner.StatusCode is < 200 or >= 300)
+            return false;
+
+        JsonElement upstream;
+        try { upstream = JsonSerializer.Deserialize<JsonElement>(winner.Body); }
+        catch { return false; }
+        var translated = Translators.TranslateResponse(
+            upstream, winner.Target.Provider.Format, inbound, model);
+        var output = translated.ToJsonString(JsonOpts);
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "application/json";
+        ctx.Response.Headers["x-llmr-route"] =
+            $"{winner.Target.Provider.Id}/{winner.Target.UpstreamModel}/{winner.Target.Connection.Id}";
+        await ctx.Response.WriteAsync(
+            await MgmtBatchEndpoints.RedactResponseAsync(
+                ctx.RequestServices.GetRequiredService<LlmRouterDbContext>(), output),
+            ctx.RequestAborted);
+        Core.Resilience.CooldownTracker.ReportSuccess(winner.Target.Connection.Id);
+        Core.Resilience.ProviderBreaker.ReportSuccess(winner.Target.Provider.Id);
+        Core.Resilience.ModelLockout.Unlock(
+            winner.Target.Provider.Id, winner.Target.Connection.Id, winner.Target.UpstreamModel);
+        await RecordStrategiesSuccess(
+            ctx.RequestServices.GetRequiredService<LlmRouterDbContext>(), winner.Target, body);
+        await engine.LogUsageAsync(
+            winner.Target.Provider.Id, winner.Target.UpstreamModel, winner.Target.Connection.Id,
+            apiKey, inbound, 0, 0, "200", null, sw.ElapsedMilliseconds,
+            JsonSerializer.SerializeToElement(new
+            {
+                hedge = new
+                {
+                    winner = $"{winner.Target.Provider.Id}/{winner.Target.UpstreamModel}",
+                    latencyMs = winner.LatencyMs,
+                },
+            }),
+            userId: AuthIds(ctx).Uid, userKeyId: AuthIds(ctx).Ukid,
+            comboName: winner.Target.ComboName, ioResponse: winner.Body);
+        return true;
+    }
+
+    private static void StartShadowMirror(
+        HttpContext ctx, JsonElement body, string inbound, string mirrorModel, long primaryTokens)
+    {
+        var scopeFactory = ctx.RequestServices
+            .GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var services = scope.ServiceProvider;
+                var db = services.GetRequiredService<LlmRouterDbContext>();
+                var engine = services.GetRequiredService<GatewayEngine>();
+                var httpFactory = services.GetRequiredService<IHttpClientFactory>();
+                var target = (await engine.ResolveAsync(mirrorModel, body, CancellationToken.None))
+                    .FirstOrDefault();
+                if (target is null) return;
+                var call = engine.BuildCall(target, inbound, body, stream: false);
+                using var request = new HttpRequestMessage(HttpMethod.Post, call.Url)
+                {
+                    Content = new StringContent(call.Body, Encoding.UTF8, "application/json"),
+                };
+                foreach (var header in call.Headers)
+                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                using var response = await httpFactory.CreateClient("upstream")
+                    .SendAsync(request, CancellationToken.None);
+                var raw = await response.Content.ReadAsStringAsync(CancellationToken.None);
+                var mirrorTokens = 0L;
+                try
+                {
+                    using var document = JsonDocument.Parse(raw);
+                    var usage = document.RootElement.TryGetProperty("usage", out var u) ? u : default;
+                    if (usage.ValueKind == JsonValueKind.Object)
+                    {
+                        if (usage.TryGetProperty("prompt_tokens", out var p)) mirrorTokens += p.GetInt64();
+                        if (usage.TryGetProperty("completion_tokens", out var c)) mirrorTokens += c.GetInt64();
+                    }
+                }
+                catch (JsonException) { }
+                var detail = JsonSerializer.Serialize(new
+                {
+                    shadow = new
+                    {
+                        model = mirrorModel,
+                        status = (int)response.StatusCode,
+                        tokens = mirrorTokens,
+                        divergent = Core.Routing.ShadowMirror.IsDivergent(
+                            200, primaryTokens, (int)response.StatusCode, mirrorTokens),
+                    },
+                });
+                var writer = services.GetRequiredService<UsageWriter>();
+                await writer.PostAsync(d =>
+                {
+                    var row = new RequestDetail
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        Timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                        Provider = target.Provider.Id,
+                        Model = target.UpstreamModel,
+                        ConnectionId = target.Connection.Id,
+                        Status = ((int)response.StatusCode).ToString(),
+                        Data = detail,
+                    };
+                    d.RequestDetails.Add(row);
+                    RequestLogTail.Publish(row);
+                    return Task.CompletedTask;
+                });
+            }
+            catch
+            {
+                // Shadow traffic is observational and must never affect the primary request.
+            }
+        });
     }
 
     /// <summary>Non-stream upstream call; returns translated response text.</summary>

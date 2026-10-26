@@ -79,6 +79,19 @@ public static class ComboStrategies
         CancellationToken ct = default)
     {
         if (models.Count <= 1) return models.ToList();
+        var affinity = requestBody is { } body
+            ? await PrefixAffinity.GetAsync(db, PrefixAffinity.ComputeHash(body), ct)
+            : null;
+        var ordered = await OrderWithoutAffinityAsync(
+            kind, comboName, models, db, registry, requestBody, stickyLimit, ct);
+        return MoveToHead(ordered, affinity);
+    }
+
+    private static async Task<List<string>> OrderWithoutAffinityAsync(
+        string? kind, string? comboName, List<string> models,
+        LlmRouterDbContext db, ProviderRegistry registry,
+        JsonElement? requestBody, int stickyLimit, CancellationToken ct)
+    {
         var k = (kind ?? "fallback").ToLowerInvariant();
 
         // SPEC-078: auto-router strategies (upstream autoCombo/routerStrategy.ts)

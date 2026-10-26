@@ -173,6 +173,12 @@ public class Combo
     /// <summary>SPEC-139: {"input":x,"output":y} USD/1M tok — resale price charged
     /// to the user instead of real upstream cost. Null = charge real cost.</summary>
     public string? PricingJson { get; set; }
+    /// <summary>SPEC-152: optional non-stream hedge configuration, e.g. {"delayMs":150}.</summary>
+    public string? HedgeJson { get; set; }
+    /// <summary>SPEC-152: response predicates JSON array.</summary>
+    public string? PredicatesJson { get; set; }
+    /// <summary>SPEC-152: optional fire-and-forget mirror, e.g. {"model":"provider/model"}.</summary>
+    public string? MirrorJson { get; set; }
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
 }

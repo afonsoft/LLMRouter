@@ -559,7 +559,13 @@ namespace LLMRouter.Core.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("HedgeJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Kind")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MirrorJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Models")
@@ -568,6 +574,9 @@ namespace LLMRouter.Core.Data.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PredicatesJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PricingJson")

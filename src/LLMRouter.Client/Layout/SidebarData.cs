@@ -89,7 +89,8 @@ public static class SidebarData
             new("costs-budget", "/dashboard/costs/budget", "costsBudget", "savings", Subtitle: "costsBudgetSubtitle"),
             new("costs-free-tiers", "/dashboard/free-tiers", "costsFreeTiers", "request_quote", Subtitle: "costsFreeTiersSubtitle"),
             new("free-provider-rankings", "/dashboard/free-provider-rankings", "freeProviderRankings", "leaderboard", Subtitle: "freeProviderRankingsSubtitle"),
-            new("radar", "/dashboard/radar", "radar", "radar", Subtitle: "radarSubtitle")
+            new("radar", "/dashboard/radar", "radar", "radar", Subtitle: "radarSubtitle"),
+            new("budgets", "/dashboard/budgets", "budgets", "savings", Label: "Budgets", Subtitle: "budgetsSubtitle", SubtitleFallback: "Spend limits and overage approvals")
             ]
         ),
         new("monitoring", "monitoringSection", "Monitoring",

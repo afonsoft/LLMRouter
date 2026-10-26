@@ -364,6 +364,48 @@ namespace LLMRouter.Core.Data.Migrations
                     b.ToTable("auditEvents");
                 });
 
+            modelBuilder.Entity("LLMRouter.Core.Data.Budget", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("LimitTokens")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("LimitUsd")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Period")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("budgets");
+                });
+
             modelBuilder.Entity("LLMRouter.Core.Data.CacheEntry", b =>
                 {
                     b.Property<string>("Id")
@@ -1336,6 +1378,74 @@ namespace LLMRouter.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("modelCooldowns");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.OverageGrant", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("Amount")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("BudgetId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExpiresAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Revoked")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("overageGrants");
+                });
+
+            modelBuilder.Entity("LLMRouter.Core.Data.OverageRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("Amount")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("BudgetId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DecidedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Decider")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Requester")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("overageRequests");
                 });
 
             modelBuilder.Entity("LLMRouter.Core.Data.PaymentTransaction", b =>

@@ -100,6 +100,9 @@ public class LlmRouterDbContext : DbContext
     /// <summary>SPEC-147: eventos de segurança revisáveis.</summary>
     public DbSet<SafetyEvent> SafetyEvents => Set<SafetyEvent>();
     public DbSet<KeyAnomaly> KeyAnomalies => Set<KeyAnomaly>();
+    public DbSet<Budget> Budgets => Set<Budget>();
+    public DbSet<OverageRequest> OverageRequests => Set<OverageRequest>();
+    public DbSet<OverageGrant> OverageGrants => Set<OverageGrant>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

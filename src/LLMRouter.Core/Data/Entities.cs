@@ -103,6 +103,56 @@ public class KeyAnomaly
     public bool Reviewed { get; set; }
 }
 
+/// <summary>SPEC-150: budget de governança — complementa creditLedger/quotas.
+/// Scope: gateway|user|key|model; OwnerId casa com users.Id / apiKeys.Key / model name.
+/// Mode: soft (só reporta), hard (bloqueia 402), held (abre overageRequest).</summary>
+[Table("budgets")]
+public class Budget
+{
+    [Key]
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Scope { get; set; } = "gateway"; // gateway|user|key|model
+    public string? OwnerId { get; set; }           // users.Id | apiKeys.Key | model; null p/ gateway
+    public double? LimitUsd { get; set; }
+    public long? LimitTokens { get; set; }
+    public string Period { get; set; } = "monthly"; // daily|weekly|monthly
+    public string Mode { get; set; } = "soft";      // soft|hard|held
+    public bool Enabled { get; set; } = true;
+    public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-150: pedido de estouro criado por budget mode=held.</summary>
+[Table("overageRequests")]
+public class OverageRequest
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string BudgetId { get; set; } = "";
+    public string Requester { get; set; } = ""; // userId ou apiKey
+    public double Amount { get; set; }          // USD extra pedida (0 = até o fim do período)
+    public string? Reason { get; set; }
+    public string State { get; set; } = "pending"; // pending|approved|denied
+    public string? Decider { get; set; }
+    public string? DecidedAt { get; set; }
+    public string CreatedAt { get; set; } = "";
+}
+
+/// <summary>SPEC-150: grant temporário aprovado — estende o limite até ExpiresAt.</summary>
+[Table("overageGrants")]
+public class OverageGrant
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public long Id { get; set; }
+    public string BudgetId { get; set; } = "";
+    public double Amount { get; set; }
+    public string ExpiresAt { get; set; } = ""; // ISO "O"
+    public string CreatedAt { get; set; } = "";
+    public bool Revoked { get; set; }
+}
+
 [Table("combos")]
 public class Combo
 {

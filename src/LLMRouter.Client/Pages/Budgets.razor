@@ -1,0 +1,211 @@
+@page "/dashboard/budgets"
+@inject Api Api
+@inject Loc Loc
+
+<div class="flex between">
+    <div>
+        <h1 class="page-title">@Loc.T("budgets.title", "Budgets")</h1>
+        <p class="page-desc">@Loc.T("budgets.subtitle", "Governance spend limits — soft/hard/held with overage approval workflow")</p>
+    </div>
+    <button class="btn ghost sm" @onclick="Load">@Loc.T("common.refresh", "Refresh")</button>
+</div>
+
+<div class="flex gap-2 mt-4" role="tablist">
+    @foreach (var t in new[] { "budgets", "requests", "grants" })
+    {
+        <button class="btn sm @(_tab == t ? "btn-primary" : "ghost")" @onclick="() => _tab = t">@Loc.T($"budgets.tab.{t}", t)</button>
+    }
+</div>
+
+@if (_tab == "budgets")
+{
+    <div class="card card-p mt-4">
+        <h3 class="card-t">@Loc.T("budgets.new", "New budget")</h3>
+        <div class="flex gap-2 mt-2" style="flex-wrap:wrap;align-items:end">
+            <div><label class="muted sm">@Loc.T("budgets.name", "name")</label><input class="input" @bind="_nb.Name" /></div>
+            <div><label class="muted sm">@Loc.T("budgets.scope", "scope")</label>
+                <select class="input" @bind="_nb.Scope">
+                    <option>gateway</option><option>user</option><option>key</option><option>model</option>
+                </select></div>
+            <div><label class="muted sm">@Loc.T("budgets.owner", "owner id")</label><input class="input" style="width:180px" placeholder="user id / key / model" @bind="_nb.OwnerId" /></div>
+            <div><label class="muted sm">limit USD</label><input class="input" style="width:90px" type="number" @bind="_nb.LimitUsd" /></div>
+            <div><label class="muted sm">limit tokens</label><input class="input" style="width:110px" type="number" @bind="_nb.LimitTokens" /></div>
+            <div><label class="muted sm">@Loc.T("budgets.period", "period")</label>
+                <select class="input" @bind="_nb.Period"><option>daily</option><option>weekly</option><option>monthly</option></select></div>
+            <div><label class="muted sm">@Loc.T("budgets.mode", "mode")</label>
+                <select class="input" @bind="_nb.Mode"><option>soft</option><option>hard</option><option>held</option></select></div>
+            <button class="btn btn-sm btn-primary" @onclick="Create">@Loc.T("common.create", "Create")</button>
+        </div>
+    </div>
+
+    <div class="card card-p mt-4">
+        @if (_budgets.Count == 0)
+        {
+            <div class="empty"><span class="material-symbols-outlined">savings</span>@Loc.T("budgets.empty", "No budgets")</div>
+        }
+        @foreach (var b in _budgets)
+        {
+            var pct = b.LimitUsd is > 0 ? Math.Min(100, b.SpentUsd / (b.LimitUsd.Value + b.GrantUsd) * 100) : 0;
+            <div style="border-top:1px solid var(--border);padding:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <div style="flex:1;min-width:220px">
+                    <div class="flex gap-2" style="align-items:center">
+                        <span class="mono">@b.Name</span>
+                        <span class="chip">@b.Scope@(b.OwnerId is not null ? $":{b.OwnerId}" : "")</span>
+                        <span class="badge @ModeCls(b.Mode)">@b.Mode</span>
+                        <span class="chip">@b.Period</span>
+                        @if (!b.Enabled) { <span class="badge warn">off</span> }
+                    </div>
+                    <div class="muted sm mt-1">
+                        $@b.SpentUsd.ToString("0.####") / $@((b.LimitUsd + b.GrantUsd)?.ToString("0.##") ?? "∞")
+                        @if (b.GrantUsd > 0) { <span class="badge ok">+@b.GrantUsd.ToString("0.##") grant</span> }
+                        @if (b.LimitTokens is { } lt) { <span> · @b.SpentTokens/@lt tok</span> }
+                    </div>
+                    @if (b.LimitUsd is not null)
+                    {
+                        <div class="mt-1" style="background:var(--surface-2);border-radius:4px;height:6px;max-width:400px"><div style="background:@(pct >= 100 ? "var(--error)" : pct >= 80 ? "var(--warning)" : "var(--success)");height:6px;border-radius:4px;width:@pct.ToString("0")%"></div></div>
+                    }
+                </div>
+                <button class="btn sm ghost" @onclick="() => Toggle(b)">@(b.Enabled ? "off" : "on")</button>
+                <button class="btn sm ghost danger" @onclick="() => Del(b.Id)">@Loc.T("common.delete", "Delete")</button>
+            </div>
+        }
+    </div>
+}
+
+@if (_tab == "requests")
+{
+    <div class="card card-p mt-4">
+        @if (_requests.Count == 0)
+        {
+            <div class="empty"><span class="material-symbols-outlined">inbox</span>@Loc.T("budgets.noRequests", "No overage requests")</div>
+        }
+        @foreach (var r in _requests)
+        {
+            <div style="border-top:1px solid var(--border);padding:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <div style="flex:1">
+                    <span class="mono sm">#@r.Id</span> <span class="mono">@r.Requester</span>
+                    → <span>@r.Budget</span>
+                    <span class="badge @StateCls(r.State)">@r.State</span>
+                    @if (r.Amount > 0) { <span class="chip">+$@r.Amount.ToString("0.##")</span> }
+                    <div class="muted sm">@r.CreatedAt @(r.Decider is not null ? $"· {r.Decider} @ {r.DecidedAt}" : "")</div>
+                </div>
+                @if (r.State == "pending")
+                {
+                    <button class="btn sm btn-primary" @onclick="() => Approve(r)">@Loc.T("budgets.approve", "Approve")</button>
+                    <button class="btn sm ghost danger" @onclick="() => Deny(r)">@Loc.T("budgets.deny", "Deny")</button>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (_tab == "grants")
+{
+    <div class="card card-p mt-4">
+        @if (_grants.Count == 0)
+        {
+            <div class="empty"><span class="material-symbols-outlined">redeem</span>@Loc.T("budgets.noGrants", "No grants")</div>
+        }
+        @foreach (var g in _grants)
+        {
+            <div style="border-top:1px solid var(--border);padding:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <div style="flex:1">
+                    <span class="mono">+$@g.Amount.ToString("0.##")</span> <span class="chip">@g.BudgetId</span>
+                    <span class="badge @(g.Revoked ? "err" : g.Active ? "ok" : "")">@(g.Revoked ? "revoked" : g.Active ? "active" : "expired")</span>
+                    <div class="muted sm">expires @g.ExpiresAt</div>
+                </div>
+                @if (g.Active)
+                {
+                    <button class="btn sm ghost danger" @onclick="() => Revoke(g.Id)">@Loc.T("budgets.revoke", "Revoke")</button>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string _tab = "budgets";
+    private List<B> _budgets = [];
+    private List<R> _requests = [];
+    private List<G> _grants = [];
+    private NB _nb = new();
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        var b = await Api.GetAsync("api/budgets");
+        _budgets = b.TryGetProperty("budgets", out var bb)
+            ? bb.EnumerateArray().Select(x => new B(
+                x.GetProperty("id").GetString()!, x.GetProperty("name").GetString()!,
+                x.GetProperty("scope").GetString()!,
+                x.TryGetProperty("ownerId", out var o) && o.ValueKind == JsonValueKind.String ? o.GetString() : null,
+                x.TryGetProperty("limitUsd", out var lu) && lu.ValueKind == JsonValueKind.Number ? lu.GetDouble() : null,
+                x.TryGetProperty("limitTokens", out var lt) && lt.ValueKind == JsonValueKind.Number ? lt.GetInt64() : null,
+                x.GetProperty("period").GetString()!, x.GetProperty("mode").GetString()!,
+                x.GetProperty("enabled").GetBoolean(),
+                x.GetProperty("spentUsd").GetDouble(), x.GetProperty("spentTokens").GetInt64(),
+                x.GetProperty("grantUsd").GetDouble())).ToList()
+            : [];
+        var r = await Api.GetAsync("api/budgets/requests");
+        _requests = r.TryGetProperty("requests", out var rr)
+            ? rr.EnumerateArray().Select(x => new R(
+                x.GetProperty("id").GetInt64(), x.GetProperty("budgetId").GetString()!,
+                x.TryGetProperty("budget", out var bn) && bn.ValueKind == JsonValueKind.String ? bn.GetString() : null,
+                x.GetProperty("requester").GetString()!,
+                x.GetProperty("amount").GetDouble(), x.GetProperty("state").GetString()!,
+                x.TryGetProperty("decider", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
+                x.TryGetProperty("decidedAt", out var da) && da.ValueKind == JsonValueKind.String ? da.GetString() : null,
+                x.GetProperty("createdAt").GetString()!)).ToList()
+            : [];
+        var g = await Api.GetAsync("api/budgets/grants");
+        _grants = g.TryGetProperty("grants", out var gg)
+            ? gg.EnumerateArray().Select(x => new G(
+                x.GetProperty("id").GetInt64(), x.GetProperty("budgetId").GetString()!,
+                x.GetProperty("amount").GetDouble(), x.GetProperty("expiresAt").GetString()!,
+                x.GetProperty("revoked").GetBoolean(), x.GetProperty("active").GetBoolean())).ToList()
+            : [];
+    }
+
+    private async Task Create()
+    {
+        await Api.PostAsync("api/budgets", new
+        {
+            name = _nb.Name, scope = _nb.Scope,
+            ownerId = string.IsNullOrWhiteSpace(_nb.OwnerId) ? null : _nb.OwnerId,
+            limitUsd = _nb.LimitUsd > 0 ? _nb.LimitUsd : null,
+            limitTokens = _nb.LimitTokens > 0 ? _nb.LimitTokens : null,
+            period = _nb.Period, mode = _nb.Mode,
+        });
+        _nb = new();
+        await Load();
+    }
+
+    private async Task Toggle(B b) { await Api.PutAsync($"api/budgets/{b.Id}", new { enabled = !b.Enabled }); await Load(); }
+    private async Task Del(string id) { await Api.DeleteAsync($"api/budgets/{id}"); await Load(); }
+    private async Task Approve(R r) { await Api.PostAsync($"api/budgets/requests/{r.Id}/approve", new { }); await Load(); }
+    private async Task Deny(R r) { await Api.PostAsync($"api/budgets/requests/{r.Id}/deny", new { }); await Load(); }
+    private async Task Revoke(long id) { await Api.DeleteAsync($"api/budgets/grants/{id}"); await Load(); }
+
+    private static string ModeCls(string m) => m == "hard" ? "err" : m == "held" ? "warn" : "ok";
+    private static string StateCls(string s) => s == "pending" ? "warn" : s == "approved" ? "ok" : "err";
+
+    private sealed class NB
+    {
+        public string Name { get; set; } = "";
+        public string Scope { get; set; } = "gateway";
+        public string? OwnerId { get; set; }
+        public double? LimitUsd { get; set; }
+        public long? LimitTokens { get; set; }
+        public string Period { get; set; } = "monthly";
+        public string Mode { get; set; } = "soft";
+    }
+
+    private sealed record B(string Id, string Name, string Scope, string? OwnerId,
+        double? LimitUsd, long? LimitTokens, string Period, string Mode, bool Enabled,
+        double SpentUsd, long SpentTokens, double GrantUsd);
+    private sealed record R(long Id, string BudgetId, string? Budget, string Requester,
+        double Amount, string State, string? Decider, string? DecidedAt, string CreatedAt);
+    private sealed record G(long Id, string BudgetId, double Amount, string ExpiresAt,
+        bool Revoked, bool Active);
+}

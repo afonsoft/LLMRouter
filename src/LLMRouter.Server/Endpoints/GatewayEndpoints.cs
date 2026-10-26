@@ -185,6 +185,7 @@ public static class GatewayEndpoints
 
         // SPEC-111: gates da virtual key (modelsAllow + budget) antes do rate-limit.
         if (!await VirtualKeyGatesAsync(ctx, db, auth, model, "openai")) return;
+        if (!await BudgetGateAsync(ctx, db, auth, apiKey, model, "openai")) return;
 
         // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
         // scope is enforced per-target inside the dispatch loop below.
@@ -648,6 +649,7 @@ public static class GatewayEndpoints
 
         // SPEC-111: gates da virtual key (modelsAllow + budget) antes do rate-limit.
         if (!await VirtualKeyGatesAsync(ctx, db, auth, model, inbound)) return;
+        if (!await BudgetGateAsync(ctx, db, auth, apiKey, model, inbound)) return;
 
         // SPEC-039: rate limiting — apiKey/model scopes pre-resolution; provider
         // scope is enforced per-target inside the dispatch loop below.
@@ -1651,6 +1653,36 @@ public static class GatewayEndpoints
         ctx.Response.Headers["x-ratelimit-limit-requests"] = v.Limit.ToString();
         ctx.Response.Headers["x-ratelimit-remaining-requests"] = "0";
         ctx.Response.Headers["x-ratelimit-reset"] = v.RetryAfterSec.ToString();
+    }
+
+    /// <summary>
+    /// SPEC-150: budgets de governança (gateway|user|key|model). hard → 402
+    /// budget_exceeded; held → 402 budget_held + overageRequest pendente;
+    /// soft → sempre passa. Dashboard/relay pulam como nos outros gates.
+    /// </summary>
+    private static async Task<bool> BudgetGateAsync(
+        HttpContext ctx, LlmRouterDbContext db, AuthKey auth, string apiKey,
+        string model, string inbound)
+    {
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "dashboard" || apiKey.StartsWith("relay:"))
+            return true;
+        var eval = await Core.Budgets.BudgetGate.EvaluateAsync(db, auth.UserId, apiKey, model);
+        switch (eval.Verdict)
+        {
+            case Core.Budgets.BudgetGate.Verdict.HardBlock:
+                ctx.Response.StatusCode = 402;
+                await WriteError(ctx, inbound, "budget_exceeded",
+                    $"Budget '{eval.Budget!.Name}' ({eval.Budget.Period}) exceeded.");
+                return false;
+            case Core.Budgets.BudgetGate.Verdict.Held:
+                ctx.Response.StatusCode = 402;
+                ctx.Response.Headers["x-budget-request"] = eval.RequestId?.ToString() ?? "";
+                await WriteError(ctx, inbound, "budget_held",
+                    $"Budget '{eval.Budget!.Name}' exceeded — overage request #{eval.RequestId} pending approval.");
+                return false;
+            default:
+                return true;
+        }
     }
 
     /// <summary>

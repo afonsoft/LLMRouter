@@ -17,6 +17,18 @@ LLMRouter é um proxy/roteador de LLM self-hosted: você conecta providers (Open
 - **SQLite embutido**: schema espelhando o upstream (`providerConnections`, `apiKeys`, `combos`, `usageHistory`, `requestDetails`…), export/import em JSON, backups.
 - **Registry de 288 providers** portado 1:1 do OmniRoute (modelos, capacidades, pricing, formatos) + catálogos sincronizados ao vivo e overrides de capacidade por modelo.
 
+## Prints do dashboard
+
+O dashboard é um console Blazor WebAssembly para configurar providers, rotear tráfego e acompanhar a atividade do gateway.
+
+| Home | Providers |
+|---|---|
+| ![Dashboard inicial do LLMRouter](docs/screenshots/dashboard.png) | ![Catálogo de providers do LLMRouter](docs/screenshots/providers.png) |
+
+| Analytics | Logs de requisições |
+|---|---|
+| ![Dashboard de analytics do LLMRouter](docs/screenshots/analytics.png) | ![Logs de requisições do LLMRouter](docs/screenshots/logs.png) |
+
 ## OmniRoute vs LLMRouter
 
 | Área | OmniRoute (upstream) | LLMRouter |

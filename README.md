@@ -17,6 +17,18 @@ LLMRouter is a self-hosted LLM proxy/router: you connect providers (OpenAI, Anth
 - **Embedded SQLite**: schema mirroring upstream (`providerConnections`, `apiKeys`, `combos`, `usageHistory`, `requestDetails`…), JSON export/import, backups.
 - **288-provider registry** ported 1:1 from OmniRoute (models, capabilities, pricing, formats) + synced live model catalogs and per-model capability overrides.
 
+## Dashboard screenshots
+
+The dashboard is a Blazor WebAssembly console for configuring providers, routing traffic, and monitoring gateway activity.
+
+| Home | Providers |
+|---|---|
+| ![LLMRouter home dashboard](docs/screenshots/dashboard.png) | ![LLMRouter providers catalog](docs/screenshots/providers.png) |
+
+| Analytics | Request logs |
+|---|---|
+| ![LLMRouter analytics dashboard](docs/screenshots/analytics.png) | ![LLMRouter request logs](docs/screenshots/logs.png) |
+
 ## OmniRoute vs LLMRouter
 
 | Area | OmniRoute (upstream) | LLMRouter |

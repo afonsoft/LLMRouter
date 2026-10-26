@@ -103,6 +103,8 @@ public class LlmRouterDbContext : DbContext
     public DbSet<Budget> Budgets => Set<Budget>();
     public DbSet<OverageRequest> OverageRequests => Set<OverageRequest>();
     public DbSet<OverageGrant> OverageGrants => Set<OverageGrant>();
+    public DbSet<ConfigRevision> ConfigRevisions => Set<ConfigRevision>();
+    public DbSet<ChangeRequest> ChangeRequests => Set<ChangeRequest>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {

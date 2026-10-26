@@ -290,6 +290,7 @@ MediumFeaturesEndpoints.Map(app);
 SettingsExtrasEndpoints.Map(app);
 app.MapGatewayEndpoints();
 app.MapManagementEndpoints();
+app.MapConfigRevisionEndpoints();
 CompressionEndpoints.Map(app);
 CliEndpoints.Map(app);
 AnalyticsEndpoints.Map(app);

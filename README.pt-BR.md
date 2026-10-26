@@ -44,7 +44,7 @@ O dashboard é um console Blazor WebAssembly para configurar providers, rotear t
 | Desktop/proxy/CLI | Electron, proxy MITM, auth por assinatura de CLI | **fora de escopo** (alvo docker) |
 | Deploy | app Node.js | binário único ou imagem docker (multi-arch) |
 
-Detalhe por feature: [`docs/analysis/feature-matrix.md`](docs/analysis/feature-matrix.md), [`docs/analysis/core-gap-v3.8.52.md`](docs/analysis/core-gap-v3.8.52.md), [`docs/analysis/omniroute-3.8.52-delta.md`](docs/analysis/omniroute-3.8.52-delta.md).
+Detalhe por feature: [`docs/analysis/feature-matrix.md`](docs/analysis/feature-matrix.md), [`docs/analysis/core-gap-v3.8.52.md`](docs/analysis/core-gap-v3.8.52.md), [`docs/analysis/omniroute-3.8.52-delta.md`](docs/analysis/omniroute-3.8.52-delta.md) e a [`revisão de migração v3.8.53`](docs/analysis/omniroute-migration-v3.8.53.md).
 
 ## Executando
 

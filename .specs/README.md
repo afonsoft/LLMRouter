@@ -9,11 +9,11 @@ Fetch these exact trees when executing a spec — do not migrate a moving target
 
 | Repo | Commit | Date |
 |------|--------|------|
-| `github.com/diegosouzapw/OmniRoute` | `61e07fb7e0d4e1e76111495d3718c9e4d06d2a62` | 2026-10-08 |
+| `github.com/cheaper-inference/OmniRoute` | `ad6f33f66bda34eba98645d3bfdabbde294bc843` (`v3.8.52`) | 2026-10-19 |
 | `github.com/decolua/9router` | `ce4460ef79382bfddb4aa5fc0ff9f3cb0d5f95a8` | 2026-10-08 |
 
 ```bash
-git clone https://github.com/diegosouzapw/OmniRoute /tmp/omniroute && git -C /tmp/omniroute checkout 61e07fb7e0d4e1e76111495d3718c9e4d06d2a62
+git clone https://github.com/cheaper-inference/OmniRoute /tmp/omniroute && git -C /tmp/omniroute checkout ad6f33f66bda34eba98645d3bfdabbde294bc843
 git clone https://github.com/decolua/9router /tmp/9router && git -C /tmp/9router checkout ce4460ef79382bfddb4aa5fc0ff9f3cb0d5f95a8
 ```
 

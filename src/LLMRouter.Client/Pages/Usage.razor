@@ -1,13 +1,20 @@
 @page "/dashboard/usage"
 @inject Api Api
 @inject Loc Loc
+@inject NavigationManager Nav
 
 <div class="flex between">
     <div>
         <h1 class="page-title">@Loc.T("usage.title", "Usage")</h1>
         <p class="page-desc">@Loc.T("usage.subtitle", "Requests and tokens through the gateway")</p>
     </div>
-    <select class="input" style="width:150px" @bind="_range" @bind:after="Load">
+    <div class="flex gap-2" style="align-items:center">
+        <label class="flex muted sm" style="gap:6px;align-items:center">
+            <input type="checkbox" @bind="_compare" @bind:after="PersistFilters" /> compare
+        </label>
+        <CopyLinkButton />
+    </div>
+    <select class="input" style="width:150px" @bind="_range" @bind:after="PersistFilters">
         <option value="today">@Loc.T("usage.today", "Today")</option>
         <option value="week">@Loc.T("usage.week", "Last 7 days")</option>
         <option value="month">@Loc.T("usage.month", "Last 30 days")</option>
@@ -87,13 +94,30 @@
 
 @code {
     private string _range = "today";
+    private bool _compare;
     private long _requests, _tokens, _prompt, _completion;
     private double _cost;
     private List<(string Bucket, long Requests, long Tokens)> _series = [];
     private List<(string Provider, int Requests, long Tokens)> _byProvider = [];
     private List<(string Model, int Requests, long Tokens)> _byModel = [];
 
-    protected override async Task OnInitializedAsync() => await Load();
+    protected override async Task OnInitializedAsync()
+    {
+        var filters = LLMRouter.Shared.Ux.UrlFilters.Parse(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (filters.TryGetValue("range", out var range)) _range = range;
+        _compare = filters.TryGetValue("cmp", out var cmp) && cmp is "1" or "true";
+        await Load();
+    }
+
+    private async Task PersistFilters()
+    {
+        var query = LLMRouter.Shared.Ux.UrlFilters.Build([
+            new("range", _range),
+            new("cmp", _compare ? "1" : null)
+        ]);
+        Nav.NavigateTo($"/dashboard/usage?{query}", replace: true);
+        await Load();
+    }
 
     private async Task Load()
     {

@@ -1,0 +1,19 @@
+@inject FavoritesService Favorites
+
+<button class="btn btn-sm ghost" title="@(Starred ? "Remove from starred" : "Add to starred")" aria-label="@(Starred ? "Remove from starred" : "Add to starred")" @onclick="Toggle">
+    <span class="material-symbols-outlined" style="font-size:15px">@(Starred ? "star" : "star_outline")</span>
+</button>
+
+@code {
+    [Parameter, EditorRequired] public string Type { get; set; } = "";
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    private bool Starred;
+
+    protected override async Task OnInitializedAsync() => Starred = await Favorites.IsStarredAsync(Type, Id);
+
+    private async Task Toggle()
+    {
+        await Favorites.ToggleAsync(Type, Id);
+        Starred = !Starred;
+    }
+}

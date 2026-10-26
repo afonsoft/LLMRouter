@@ -1,0 +1,14 @@
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<button class="btn btn-sm ghost" title="@Title" @onclick="Copy">
+    <span class="material-symbols-outlined" style="font-size:15px">link</span>
+    @Label
+</button>
+
+@code {
+    [Parameter] public string Label { get; set; } = "Copy link";
+    [Parameter] public string Title { get; set; } = "Copy link to this view";
+
+    private async Task Copy() => await Js.InvokeVoidAsync("llmrouter.copy", Nav.Uri);
+}

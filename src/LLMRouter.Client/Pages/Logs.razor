@@ -22,6 +22,7 @@
         <a class="btn btn-sm" href="/api/log-export" target="_blank">JSONL</a>
         <button class="btn btn-sm" @onclick="Clean">@Loc.T("logs.cleanHistoryButton", "Clean history")</button>
         <button class="btn btn-sm" @onclick="Load"><span class="material-symbols-outlined" style="font-size:15px">refresh</span>@Loc.T("logs.refresh", "Refresh")</button>
+        <CopyLinkButton />
     </div>
 </div>
 

@@ -42,7 +42,7 @@
 
 <div class="card mt-4 scroll-x">
     <table class="table">
-        <thead><tr><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("models.type", "Type")</th><th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("models.context", "Context")</th><th>@Loc.T("providers.name", "Connection")</th></tr></thead>
+        <thead><tr><th>@Loc.T("providers.provider", "Provider")</th><th>@Loc.T("models.model", "Model")</th><th>@Loc.T("models.type", "Type")</th><th>@Loc.T("models.capabilities", "Capabilities")</th><th>@Loc.T("models.context", "Context")</th><th>@Loc.T("providers.name", "Connection")</th><th></th></tr></thead>
         <tbody>
             @foreach (var m in Filtered().Take(500))
             {
@@ -58,6 +58,7 @@
                     </td>
                     <td class="muted sm">@(m.ContextLength?.ToString("N0") ?? "—")</td>
                     <td class="muted sm">@m.Connection</td>
+                    <td><FavoriteButton Type="model" Id="@m.Model" /></td>
                 </tr>
             }
             @if (!_models.Any())

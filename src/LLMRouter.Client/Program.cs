@@ -12,5 +12,6 @@ builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<Loc>();
 builder.Services.AddScoped<Api>();
 builder.Services.AddScoped<AuthState>();
+builder.Services.AddScoped<FavoritesService>();
 
 await builder.Build().RunAsync();
